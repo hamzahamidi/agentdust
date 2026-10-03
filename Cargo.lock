@@ -5,6 +5,20 @@ version = 4
 [[package]]
 name = "agentdust"
 version = "0.0.0"
+dependencies = [
+ "agentdust-agents",
+ "agentdust-core",
+]
+
+[[package]]
+name = "agentdust-agents"
+version = "0.0.0"
+dependencies = [
+ "agentdust-core",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "agentdust-core"

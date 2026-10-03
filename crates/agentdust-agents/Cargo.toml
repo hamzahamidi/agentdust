@@ -1,5 +1,5 @@
 [package]
-name = "agentdust"
+name = "agentdust-agents"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,4 +8,6 @@ publish.workspace = true
 
 [dependencies]
 agentdust-core.workspace = true
-agentdust-agents.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
