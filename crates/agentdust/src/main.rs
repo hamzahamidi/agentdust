@@ -10,6 +10,10 @@ fn main() -> ExitCode {
             hook::run_claude();
             ExitCode::SUCCESS
         }
+        ["hook", ..] => {
+            hook::drain_stdin();
+            ExitCode::SUCCESS
+        }
         ["mcp"] => mcp(),
         ["version"] => {
             println!("agentdust {}", env!("CARGO_PKG_VERSION"));

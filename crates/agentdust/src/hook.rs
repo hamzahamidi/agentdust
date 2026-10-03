@@ -32,3 +32,7 @@ fn record(event: &HookEvent) -> Result<(), Box<dyn Error>> {
     journal::append(&paths::data_dir()?, &record)?;
     Ok(())
 }
+
+pub fn drain_stdin() {
+    let _ = io::copy(&mut io::stdin().lock(), &mut io::sink());
+}

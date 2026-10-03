@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -16,14 +17,26 @@ pub fn scratch_dir(name: &str) -> PathBuf {
 }
 
 pub fn run_hook(data_dir: &Path, input: &[u8]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_agentdust"))
-        .args(["hook", "claude"])
-        .env("AGENTDUST_DATA_DIR", data_dir)
+    run_hook_with(
+        &["hook", "claude"],
+        &[("AGENTDUST_DATA_DIR", data_dir.as_os_str())],
+        None,
+        input,
+    )
+}
+
+pub fn run_hook_with(args: &[&str], envs: &[(&str, &OsStr)], cwd: Option<&Path>, input: &[u8]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agentdust"));
+    command
+        .args(args)
+        .envs(envs.iter().copied())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .stderr(Stdio::piped());
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
+    let mut child = command.spawn().unwrap();
     child.stdin.take().unwrap().write_all(input).unwrap();
     child.wait_with_output().unwrap()
 }

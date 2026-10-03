@@ -1,10 +1,11 @@
 mod common;
 
+use std::ffi::OsStr;
 use std::fs;
 use std::thread;
 
 use agentdust_core::journal::{self, Agent, Kind};
-use common::{pre_tool_use, run_hook, scratch_dir};
+use common::{pre_tool_use, run_hook, run_hook_with, scratch_dir};
 
 #[test]
 fn pre_tool_use_appends_one_shell_start_record() {
@@ -105,4 +106,63 @@ fn concurrent_hooks_append_complete_records() {
     assert_eq!(report.skipped_lines, 0);
     assert_eq!(report.records.len(), 16);
     fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn an_unknown_agent_hook_exits_zero_silently() {
+    let dir = scratch_dir("unknown-agent");
+    for args in [&["hook", "codex"][..], &["hook"][..]] {
+        let output = run_hook_with(
+            args,
+            &[("AGENTDUST_DATA_DIR", dir.as_os_str())],
+            None,
+            &pre_tool_use("s1", "toolu_1"),
+        );
+        assert!(output.status.success(), "{args:?}");
+        assert!(output.stdout.is_empty(), "{args:?}");
+        assert!(output.stderr.is_empty(), "{args:?}");
+    }
+    assert_eq!(journal::read(&dir).unwrap().records.len(), 0);
+}
+
+#[test]
+fn an_empty_data_dir_override_writes_under_home_not_the_working_directory() {
+    let root = scratch_dir("empty-override");
+    let (home, cwd) = (root.join("home"), root.join("repo"));
+    fs::create_dir_all(&home).unwrap();
+    fs::create_dir_all(&cwd).unwrap();
+    let output = run_hook_with(
+        &["hook", "claude"],
+        &[("AGENTDUST_DATA_DIR", OsStr::new("")), ("HOME", home.as_os_str())],
+        Some(&cwd),
+        &pre_tool_use("s1", "toolu_1"),
+    );
+    assert!(output.status.success());
+    assert!(fs::read_dir(&cwd).unwrap().next().is_none());
+    let data_dir = home.join("Library/Application Support/agentdust");
+    assert_eq!(journal::read(&data_dir).unwrap().records.len(), 1);
+    fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn a_relative_data_dir_override_records_nothing() {
+    let root = scratch_dir("relative-override");
+    let (home, cwd) = (root.join("home"), root.join("repo"));
+    fs::create_dir_all(&home).unwrap();
+    fs::create_dir_all(&cwd).unwrap();
+    let output = run_hook_with(
+        &["hook", "claude"],
+        &[
+            ("AGENTDUST_DATA_DIR", OsStr::new("rel")),
+            ("HOME", home.as_os_str()),
+        ],
+        Some(&cwd),
+        &pre_tool_use("s1", "toolu_1"),
+    );
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+    assert!(fs::read_dir(&cwd).unwrap().next().is_none());
+    assert!(fs::read_dir(&home).unwrap().next().is_none());
+    fs::remove_dir_all(&root).unwrap();
 }
