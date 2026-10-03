@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::ptr;
 
 use crate::identity::{KernelIdentity, ProcessInfo};
+use crate::procargs;
 
 pub fn boot_session_uuid() -> io::Result<String> {
     let mut buf = [0u8; 64];
@@ -70,6 +71,41 @@ pub fn exe_path(pid: i32) -> io::Result<Option<PathBuf>> {
     }
     buf.truncate(len as usize);
     Ok(Some(PathBuf::from(OsString::from_vec(buf))))
+}
+
+pub fn procargs2(pid: i32) -> io::Result<Option<Vec<u8>>> {
+    let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid];
+    let mut len: libc::size_t = 0;
+    // SAFETY: a null buffer asks the kernel for the required size only.
+    let rc = unsafe { libc::sysctl(mib.as_mut_ptr(), 3, ptr::null_mut(), &mut len, ptr::null_mut(), 0) };
+    if rc != 0 {
+        return missing_or(io::Error::last_os_error());
+    }
+    let mut buf = vec![0u8; len];
+    // SAFETY: `buf` is writable for `len` bytes.
+    let rc = unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            3,
+            buf.as_mut_ptr().cast(),
+            &mut len,
+            ptr::null_mut(),
+            0,
+        )
+    };
+    if rc != 0 {
+        return missing_or(io::Error::last_os_error());
+    }
+    buf.truncate(len);
+    Ok(Some(buf))
+}
+
+pub fn env_var(pid: i32, name: &str) -> io::Result<Option<Vec<u8>>> {
+    let Some(buf) = procargs2(pid)? else {
+        return Ok(None);
+    };
+    let parsed = procargs::parse(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    Ok(procargs::env_value(&parsed, name).map(<[u8]>::to_vec))
 }
 
 fn missing_or<T>(err: io::Error) -> io::Result<Option<T>> {

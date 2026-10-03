@@ -1,0 +1,22 @@
+[package]
+name = "agentdust-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+agentdust-core = { path = "../crates/agentdust-core" }
+
+[[bin]]
+name = "procargs"
+path = "fuzz_targets/procargs.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]
