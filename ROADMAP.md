@@ -1,6 +1,6 @@
-# agent-hygiene roadmap
+# AgentDust roadmap
 
-Working name. The binary is `hygiene`. Status: planning, no code yet. Design: [the design spec](docs/superpowers/specs/2026-10-03-agent-hygiene-design.md).
+The binary is `agentdust`. Status: planning, no code yet. Design: [the design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
 
 ## Goal
 
@@ -15,12 +15,12 @@ A macOS developer who uses Claude Code, Codex and Cursor installs the tool in tw
 
 ## v1.0 success criteria
 
-1. Install: `brew install` pours a prebuilt binary and never compiles. `hygiene setup` finishes in under 5 seconds on a declared fixture account and prints a diff before changing anything.
+1. Install: `brew install` pours a prebuilt binary and never compiles. `agentdust setup` finishes in under 5 seconds on a declared fixture account and prints a diff before changing anything.
 2. Hook cost: p50 under 10 ms and p95 under 20 ms on the release binary, including three agents writing the journal at once.
 3. Idle: the MCP server does no periodic work when idle. CPU over a 60 second idle window stays under 0.1%. Resident memory is reported per release (target under 10 MB).
 4. Actionability: `apply` rejects managed and unknown items, even when the model supplies their ID. Owned-ended items can be approved as one batch with one typed code. Every suspect item needs its own typed code, shows its evidence, and is never signalled as part of a process group.
 5. Classifier: fixtures carry ground-truth labels (`true_owned_ended`, `true_live_owned`, `true_detached`, `true_managed`, `true_unknown`). No fixture outside `true_owned_ended` is classified owned-ended, no `true_managed` or `true_unknown` fixture is ever actionable, and every `true_owned_ended` fixture is classified owned-ended.
-6. Privacy: fixture secrets never appear anywhere under the hygiene data directory, checked by a test.
+6. Privacy: fixture secrets never appear anywhere under the AgentDust data directory, checked by a test.
 7. Supply chain: dependencies are locked from the first commit. Each release ships a checksum, an artifact attestation, an SBOM, and two independent macOS arm64 builds that produce a byte-identical binary.
 8. Evidence: at least three independent machines run 0.x builds for two weeks, with sessions, proposed kills, false positives and failures counted.
 
@@ -30,21 +30,20 @@ A macOS developer who uses Claude Code, Codex and Cursor installs the tool in tw
 | --- | --- |
 | v1 scope | Process hygiene end to end, plus a read-only disk report |
 | Language | Rust, one binary, Tokio only in the MCP subcommand |
-| Interface | One MCP server with `hygiene_doctor`, `hygiene_plan`, `hygiene_apply`, plus a CLI |
+| Interface | One MCP server with `agentdust_doctor`, `agentdust_plan`, `agentdust_apply`, plus a CLI |
 | Agents | Claude Code, Codex and Cursor, delivered one at a time in that order |
 | Provenance | Layered evidence: event-driven process sampling, a journal of paired shell calls per adapter, and an environment tag on Claude Code as additive evidence only |
 | Approval | MCP elicitation with a typed one-time code, fail closed |
 | Plan state | Canonical plan in server memory with an opaque ID. `plan.json` is for inspection. A server restart invalidates plans |
 | Actions in 0.1 | SIGTERM to one exactly revalidated PID. No process-group signals, no SIGKILL |
 | Actionable classes | Owned-ended (one batch code) and suspect (one typed code per item). At most 10 items per apply call in total. Managed and unknown are never actionable. Likely-owned stays report-only until its precision is measured |
-| Install | Homebrew formula that installs the attested prebuilt binary, then `hygiene setup` |
+| Install | Homebrew formula that installs the attested prebuilt binary, then `agentdust setup` |
 | Platform | macOS arm64 first |
 
 ## Open decisions
 
-1. Project name, checked against GitHub, crates.io, Homebrew and npm in M0.
-2. Ledger format (append-only file with locking, or SQLite), decided by the M1 contention benchmark.
-3. Suspect rules: the exact age, idleness and launcher-chain thresholds, set from the M1 fixture corpus.
+1. Ledger format (append-only file with locking, or SQLite), decided by the M1 contention benchmark.
+2. Suspect rules: the exact age, idleness and launcher-chain thresholds, set from the M1 fixture corpus.
 
 ## Milestones
 
@@ -56,7 +55,7 @@ Sizes are rough: S about 3 days, M about 1 week, L about 2 weeks. Validation wor
 - `KERN_PROCARGS2` parser with a fuzz target, reading one named variable from another process.
 - Process start time and process group for a live PID.
 - MCP stdio server running a real typed-code elicitation on Claude Code, Codex and Cursor, with a recorded matrix of client versions and behaviours (empty form, auto-accept, decline, cancel, timeout).
-- Release skeleton on a public-repo macOS arm64 runner: `cargo build --release --locked`, two clean builds compared byte for byte, tarball, checksum, attestation, and a minimal Homebrew formula that installs it and runs `hygiene version`.
+- Release skeleton on a public-repo macOS arm64 runner: `cargo build --release --locked`, two clean builds compared byte for byte, tarball, checksum, attestation, and a minimal Homebrew formula that installs it and runs `agentdust version`.
 - Repository basics: licence, SECURITY.md, squash-only merge settings, dependency policy (`cargo deny`, `cargo audit`, no unpinned git dependencies), toolchain and SDK versions recorded.
 
 Exit: hook p50 under 10 ms on the real binary, the elicitation matrix recorded, and the build, attestation and Homebrew install proven or their blockers written down. No public release.
@@ -75,7 +74,7 @@ Exit: primitives and storage survive unit, property, fuzz and concurrency tests,
 ### M2 Claude Code doctor and provenance (L)
 
 - Process inventory and classifier (owned-ended, likely-owned, suspect, managed, unknown). Listening-port evidence is deferred.
-- Suspect rules: parent is launchd or the launcher chain is dead, same UID, older than the age threshold, idle, not managed by launchd or Homebrew services, and not on a deny list (system processes, the agent that is asking, the hygiene server itself).
+- Suspect rules: parent is launchd or the launcher chain is dead, same UID, older than the age threshold, idle, not managed by launchd or Homebrew services, and not on a deny list (system processes, the agent that is asking, the AgentDust server itself).
 - Claude Code adapter: `SessionStart` environment tag through `CLAUDE_ENV_FILE`, `PreToolUse` and `PostToolUse` with a Bash matcher paired by `tool_use_id`, event-driven process sampling.
 - Acceptance cases: fresh session, resumed session, after `/clear`, subagent Bash, `CLAUDE_ENV_FILE` missing, abrupt termination, normal session end.
 - Sanitised, typed, redacted `doctor` output.
@@ -84,12 +83,12 @@ Exit: controlled Claude fixtures whose session has ended become owned-ended and 
 
 ### M3 Plan, apply and Homebrew: release 0.1 (L)
 
-- `hygiene_plan` and `hygiene_apply` with typed-code elicitation, atomic per-item claim, revalidation after approval, SIGTERM to one PID, survivor report, audit log (0600, bounded size).
+- `agentdust_plan` and `agentdust_apply` with typed-code elicitation, atomic per-item claim, revalidation after approval, SIGTERM to one PID, survivor report, audit log (0600, bounded size).
 - Approval flow: one batch code for owned-ended items, then one code per suspect item with its evidence rendered from a fixed template. A deliberately detached process such as a tunnel can be classified suspect, so the per-item prompt is the control.
 - Fail-closed behaviour on decline, cancel, timeout, unsupported clients and corrupt state.
-- Terminal `hygiene apply` with the same rules, refusing without a foreground terminal or under an agent ancestor.
-- `hygiene setup` for Claude Code: full diff, consent, surgical edits, idempotent, `--check`, `--remove`, ownership manifest, rollback report for partial failure.
-- Homebrew formula, `hygiene support-bundle` (a local file, never uploaded), README, security and privacy documents.
+- Terminal `agentdust apply` with the same rules, refusing without a foreground terminal or under an agent ancestor.
+- `agentdust setup` for Claude Code: full diff, consent, surgical edits, idempotent, `--check`, `--remove`, ownership manifest, rollback report for partial failure.
+- Homebrew formula, `agentdust support-bundle` (a local file, never uploaded), README, security and privacy documents.
 
 Exit: on a clean account, install, setup, a controlled stale process found by a Claude Code session, typed approval, and exactly that process receives SIGTERM.
 

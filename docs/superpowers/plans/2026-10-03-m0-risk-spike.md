@@ -1,29 +1,29 @@
-# agent-hygiene M0 Implementation Plan
+# AgentDust M0 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the M0 risk spike: a Rust workspace that reads process identity and one environment variable on macOS, a Claude Code hook that appends journal events, an MCP approval probe for both protocol generations, CI, a reproducible release dry run that installs through Homebrew, and recorded client experiments.
 
-**Architecture:** One Rust workspace with three product crates (`hygiene-core`, `hygiene-agents`, `hygiene-mcp`), the `hygiene` binary crate, and a test-only `hygiene-testkit` crate. Platform calls live in `hygiene_core::darwin`, so every crate except `hygiene` builds and tests on Linux. The MCP probe changes nothing on the machine; it measures how each client renders and answers a typed-code form.
+**Architecture:** One Rust workspace with three product crates (`agentdust-core`, `agentdust-agents`, `agentdust-mcp`), the `agentdust` binary crate, and a test-only `agentdust-testkit` crate. Platform calls live in `agentdust_core::darwin`, so every crate except `agentdust` builds and tests on Linux. The MCP probe changes nothing on the machine; it measures how each client renders and answers a typed-code form.
 
 **Tech Stack:** Rust 1.99.0 (edition 2024), `libc` 0.2.190, `serde` 1.0.229, `serde_json` 1.0.151, `thiserror` 2.0.21, `rmcp` 3.5.0, `tokio` 1.53.2, `cargo-fuzz` with `libfuzzer-sys` 0.4, the Python 3 standard library for release scripts, GitHub Actions.
 
-**Spec:** [docs/superpowers/specs/2026-10-03-agent-hygiene-design.md](../specs/2026-10-03-agent-hygiene-design.md), milestone M0 in [ROADMAP.md](../../../ROADMAP.md).
+**Spec:** [docs/superpowers/specs/2026-10-03-agentdust-design.md](../specs/2026-10-03-agentdust-design.md), milestone M0 in [ROADMAP.md](../../../ROADMAP.md).
 
 ## Scope
 
 This plan covers roadmap milestone M0 only. M1 to M9 each get their own plan when they start, because M0's results (the client matrix, the Cursor anchor, the journal inputs) change their details.
 
-Every code block in Tasks 1 to 6 was compiled and tested on 2026-10-03 with Rust 1.99.0 on macOS 26.6.2 (Apple silicon) before this plan was written. Expected test counts below are the counts from that run.
+Every code block in Tasks 1 to 6 was compiled and tested on 2026-10-04 with Rust 1.99.0 on macOS 26.6.2 (Apple silicon) before this plan was written. Expected test counts below are the counts from that run.
 
 Not in this plan, by spec section: the session state machine (3.3), classes and the classifier (3.4), keyed digests and the install secret (3.2), Codex and Cursor adapters (4.2), plan and apply (6), single-link safe opens for every file (7.3), `setup` (8.2), release gating and the tap pull request (8.4, S20).
 
 ## Global Constraints
 
 - Rust toolchain `1.99.0` pinned in `rust-toolchain.toml`, edition 2024, workspace resolver 3, `rust-version = "1.99"`.
-- The binary targets macOS on Apple silicon. `hygiene_core::darwin` and the `hygiene` crate are macOS only; every other crate builds and tests on Linux.
+- The binary targets macOS on Apple silicon. `agentdust_core::darwin` and the `agentdust` crate are macOS only; every other crate builds and tests on Linux.
 - On this Mac the default Command Line Tools SDK (27.0) breaks Rust linking. Run `export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk` in the shell before any `cargo` command. An executor that opens a new shell per command prefixes each `cargo` command with that assignment. CI needs nothing.
-- Data directory `~/Library/Application Support/hygiene`, mode 0700. Every file in it is 0600 and opened with `O_NOFOLLOW`. `HYGIENE_DATA_DIR` overrides the location; tests use it.
+- Data directory `~/Library/Application Support/agentdust`, mode 0700. Every file in it is 0600 and opened with `O_NOFOLLOW`. `AGENTDUST_DATA_DIR` overrides the location; tests use it.
 - Hooks always exit 0 and print nothing. Release-binary hook latency: p50 under 10 ms, p95 under 20 ms.
 - The journal never stores raw commands, command output or process environments.
 - A hook identifier (`session_id`, `tool_use_id`, `agent_id`) longer than 256 bytes makes the event invalid.
@@ -51,15 +51,15 @@ Not in this plan, by spec section: the session state machine (3.3), classes and 
 | `Cargo.toml` | Workspace members, shared dependency versions, release profile |
 | `rust-toolchain.toml`, `rustfmt.toml` | Pinned toolchain and formatting width |
 | `deny.toml`, `docs/dependencies.md` | Dependency policy and the allowlist of direct dependencies |
-| `crates/hygiene-core/src/identity.rs` | `KernelIdentity` and `ProcessInfo` types |
-| `crates/hygiene-core/src/darwin.rs` | macOS calls: boot session UUID, process info, executable path, `KERN_PROCARGS2`, one environment variable |
-| `crates/hygiene-core/src/procargs.rs` | Platform-independent `KERN_PROCARGS2` parser |
-| `crates/hygiene-core/src/clock.rs`, `paths.rs` | Wall and monotonic clocks, data directory location |
-| `crates/hygiene-core/src/journal.rs` | Locked, append-only JSON Lines journal |
-| `crates/hygiene-agents/src/claude.rs` | Claude Code hook payload parsing and event mapping |
-| `crates/hygiene-mcp/src/probe.rs` | MCP server with the `hygiene_probe_approval` tool |
-| `crates/hygiene/src/main.rs`, `hook.rs` | Subcommand dispatch and the hook entry point |
-| `crates/hygiene-testkit` | `fixture-sleeper` binary and live platform tests |
+| `crates/agentdust-core/src/identity.rs` | `KernelIdentity` and `ProcessInfo` types |
+| `crates/agentdust-core/src/darwin.rs` | macOS calls: boot session UUID, process info, executable path, `KERN_PROCARGS2`, one environment variable |
+| `crates/agentdust-core/src/procargs.rs` | Platform-independent `KERN_PROCARGS2` parser |
+| `crates/agentdust-core/src/clock.rs`, `paths.rs` | Wall and monotonic clocks, data directory location |
+| `crates/agentdust-core/src/journal.rs` | Locked, append-only JSON Lines journal |
+| `crates/agentdust-agents/src/claude.rs` | Claude Code hook payload parsing and event mapping |
+| `crates/agentdust-mcp/src/probe.rs` | MCP server with the `agentdust_probe_approval` tool |
+| `crates/agentdust/src/main.rs`, `hook.rs` | Subcommand dispatch and the hook entry point |
+| `crates/agentdust-testkit` | `fixture-sleeper` binary and live platform tests |
 | `fuzz/` | `cargo-fuzz` target and seed inputs for the parser |
 | `scripts/*.py` | Release packaging, build comparison, toolchain lock, formula, Homebrew smoke test |
 | `scripts/m0/cursor_probe.py` | Cursor experiment hook (not shipped) |
@@ -72,12 +72,12 @@ Not in this plan, by spec section: the session state machine (3.3), classes and 
 
 **Files:**
 - Create: `Cargo.toml`, `rust-toolchain.toml`, `rustfmt.toml`, `.gitignore`, `LICENSE`, `README.md`, `SECURITY.md`, `deny.toml`, `docs/dependencies.md`
-- Create: `crates/hygiene/Cargo.toml`, `crates/hygiene/src/main.rs`
-- Test: `crates/hygiene/tests/version.rs`
+- Create: `crates/agentdust/Cargo.toml`, `crates/agentdust/src/main.rs`
+- Test: `crates/agentdust/tests/version.rs`
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: the `hygiene` binary. `hygiene version` prints `hygiene <crate version>` and exits 0. Any other argument list prints a line starting with `usage: hygiene` on stderr and exits 2.
+- Produces: the `agentdust` binary. `agentdust version` prints `agentdust <crate version>` and exits 0. Any other argument list prints a line starting with `usage: agentdust` on stderr and exits 2.
 
 - [ ] **Step 1: Start the work branch**
 
@@ -94,7 +94,7 @@ git switch main && git switch -c m0/spike
 ```toml
 [workspace]
 resolver = "3"
-members = ["crates/hygiene"]
+members = ["crates/agentdust"]
 
 [workspace.package]
 version = "0.0.0"
@@ -131,11 +131,11 @@ profile = "minimal"
 max_width = 110
 ```
 
-`crates/hygiene/Cargo.toml`:
+`crates/agentdust/Cargo.toml`:
 
 ```toml
 [package]
-name = "hygiene"
+name = "agentdust"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -150,30 +150,40 @@ use std::process::Command;
 
 #[test]
 fn version_prints_the_crate_version() {
-    let output = Command::new(env!("CARGO_BIN_EXE_hygiene")).arg("version").output().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_agentdust"))
+        .arg("version")
+        .output()
+        .unwrap();
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        format!("hygiene {}\n", env!("CARGO_PKG_VERSION"))
+        format!("agentdust {}\n", env!("CARGO_PKG_VERSION"))
     );
 }
 
 #[test]
 fn an_unknown_command_exits_with_usage() {
-    let output = Command::new(env!("CARGO_BIN_EXE_hygiene")).arg("nope").output().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_agentdust"))
+        .arg("nope")
+        .output()
+        .unwrap();
     assert_eq!(output.status.code(), Some(2));
-    assert!(String::from_utf8(output.stderr).unwrap().starts_with("usage: hygiene"));
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .starts_with("usage: agentdust")
+    );
 }
 ```
 
 - [ ] **Step 4: Run it to verify it fails**
 
-Run: `cargo test -p hygiene --test version`
+Run: `cargo test -p agentdust --test version`
 Expected: FAIL. Cargo reports that the package has no targets, because `src/main.rs` does not exist yet.
 
 - [ ] **Step 5: Write the binary**
 
-`crates/hygiene/src/main.rs`:
+`crates/agentdust/src/main.rs`:
 
 ```rust
 use std::process::ExitCode;
@@ -183,11 +193,11 @@ fn main() -> ExitCode {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
         ["version"] => {
-            println!("hygiene {}", env!("CARGO_PKG_VERSION"));
+            println!("agentdust {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         _ => {
-            eprintln!("usage: hygiene version");
+            eprintln!("usage: agentdust version");
             ExitCode::from(2)
         }
     }
@@ -196,7 +206,7 @@ fn main() -> ExitCode {
 
 - [ ] **Step 6: Run the test to verify it passes**
 
-Run: `cargo test -p hygiene --test version`
+Run: `cargo test -p agentdust --test version`
 Expected: `test result: ok. 2 passed`
 
 - [ ] **Step 7: Add the repository files**
@@ -241,7 +251,7 @@ SOFTWARE.
 `README.md`:
 
 ````markdown
-# agent-hygiene
+# AgentDust
 
 Finds the processes that AI coding agents (Claude Code, Codex, Cursor) leave running after their sessions end, and stops them after you approve each one with a typed code.
 
@@ -253,7 +263,7 @@ Status: in development. Nothing is released yet. The plan is in [ROADMAP.md](ROA
 cargo build --release
 ```
 
-The binary is `target/release/hygiene`. It runs on macOS on Apple silicon.
+The binary is `target/release/agentdust`. It runs on macOS on Apple silicon.
 
 ## Network access
 
@@ -269,7 +279,7 @@ None. The binary contains no network code.
 
 Report it privately through GitHub: open the repository's Security tab and choose "Report a vulnerability". Please do not open a public issue for a security problem.
 
-Include the hygiene version (`hygiene version`), the macOS version, and the steps that reproduce the problem.
+Include the AgentDust version (`agentdust version`), the macOS version, and the steps that reproduce the problem.
 
 ## Supported versions
 
@@ -277,7 +287,7 @@ Nothing is released yet. Reports against the `main` branch are welcome.
 
 ## What counts as a vulnerability
 
-- hygiene signals a process that its rules say it must never signal.
+- AgentDust signals a process that its rules say it must never signal.
 - Approval can be completed without the typed code.
 - Data that the design says is never stored (commands, command output, process environments) reaches disk or a model.
 ```
@@ -317,11 +327,11 @@ Every direct dependency has one line here. A pull request that adds a dependency
 
 | Crate | Used by | Why |
 | --- | --- | --- |
-| `libc` | hygiene-core | `proc_pidinfo`, `proc_pidpath`, `sysctl`, `flock` and `clock_gettime` |
+| `libc` | agentdust-core | `proc_pidinfo`, `proc_pidpath`, `sysctl`, `flock` and `clock_gettime` |
 | `serde`, `serde_json` | all crates | hook payloads, journal records, MCP results |
-| `thiserror` | hygiene-core, hygiene-agents | error types |
-| `rmcp` | hygiene-mcp | official MCP SDK (Tier 1), elicitation for both protocol generations |
-| `tokio` | hygiene-mcp, hygiene | runtime for the `mcp` subcommand only |
+| `thiserror` | agentdust-core, agentdust-agents | error types |
+| `rmcp` | agentdust-mcp | official MCP SDK (Tier 1), elicitation for both protocol generations |
+| `tokio` | agentdust-mcp, agentdust | runtime for the `mcp` subcommand only |
 | `libfuzzer-sys` | fuzz (not shipped) | fuzz targets |
 ```
 
@@ -336,8 +346,8 @@ Expected: `advisories ok, bans ok, licenses ok, sources ok`
 - [ ] **Step 9: Commit**
 
 ```bash
-git add Cargo.toml Cargo.lock rust-toolchain.toml rustfmt.toml .gitignore LICENSE README.md SECURITY.md deny.toml docs/dependencies.md crates/hygiene
-git commit -m "build: add the Rust workspace and the hygiene binary" -m "Every later task adds a crate to this workspace, so the toolchain pin, the dependency policy and the release profile have to exist first."
+git add Cargo.toml Cargo.lock rust-toolchain.toml rustfmt.toml .gitignore LICENSE README.md SECURITY.md deny.toml docs/dependencies.md crates/agentdust
+git commit -m "build: add the Rust workspace and the agentdust binary" -m "Every later task adds a crate to this workspace, so the toolchain pin, the dependency policy and the release profile have to exist first."
 ```
 
 ---
@@ -346,18 +356,18 @@ git commit -m "build: add the Rust workspace and the hygiene binary" -m "Every l
 
 **Files:**
 - Modify: `Cargo.toml` (members and one path dependency)
-- Create: `crates/hygiene-core/Cargo.toml`, `crates/hygiene-core/src/lib.rs`, `crates/hygiene-core/src/identity.rs`, `crates/hygiene-core/src/darwin.rs`
-- Create: `crates/hygiene-testkit/Cargo.toml`, `crates/hygiene-testkit/src/lib.rs`, `crates/hygiene-testkit/src/bin/fixture-sleeper.rs`
-- Test: `crates/hygiene-testkit/tests/platform.rs`
+- Create: `crates/agentdust-core/Cargo.toml`, `crates/agentdust-core/src/lib.rs`, `crates/agentdust-core/src/identity.rs`, `crates/agentdust-core/src/darwin.rs`
+- Create: `crates/agentdust-testkit/Cargo.toml`, `crates/agentdust-testkit/src/lib.rs`, `crates/agentdust-testkit/src/bin/fixture-sleeper.rs`
+- Test: `crates/agentdust-testkit/tests/platform.rs`
 
 **Interfaces:**
 - Consumes: the workspace from Task 1.
 - Produces:
-  - `hygiene_core::identity::KernelIdentity { boot_session_uuid: String, pid: i32, start_time_us: u64, uid: u32 }` (derives `Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize`)
-  - `hygiene_core::identity::ProcessInfo { identity: KernelIdentity, ppid: i32, pgid: i32 }`
-  - `hygiene_core::darwin::boot_session_uuid() -> io::Result<String>`
-  - `hygiene_core::darwin::process_info(pid: i32, boot_session_uuid: &str) -> io::Result<Option<ProcessInfo>>` (`Ok(None)` when the PID does not exist)
-  - `hygiene_core::darwin::exe_path(pid: i32) -> io::Result<Option<PathBuf>>`
+  - `agentdust_core::identity::KernelIdentity { boot_session_uuid: String, pid: i32, start_time_us: u64, uid: u32 }` (derives `Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize`)
+  - `agentdust_core::identity::ProcessInfo { identity: KernelIdentity, ppid: i32, pgid: i32 }`
+  - `agentdust_core::darwin::boot_session_uuid() -> io::Result<String>`
+  - `agentdust_core::darwin::process_info(pid: i32, boot_session_uuid: &str) -> io::Result<Option<ProcessInfo>>` (`Ok(None)` when the PID does not exist)
+  - `agentdust_core::darwin::exe_path(pid: i32) -> io::Result<Option<PathBuf>>`
   - Test binary `fixture-sleeper [seconds]`, default 30 seconds.
 
 - [ ] **Step 1: Register the new crates in the workspace**
@@ -365,22 +375,22 @@ git commit -m "build: add the Rust workspace and the hygiene binary" -m "Every l
 In `Cargo.toml`, replace the `members` line:
 
 ```toml
-members = ["crates/hygiene-core", "crates/hygiene", "crates/hygiene-testkit"]
+members = ["crates/agentdust-core", "crates/agentdust", "crates/agentdust-testkit"]
 ```
 
 and add this as the first line under `[workspace.dependencies]`:
 
 ```toml
-hygiene-core = { path = "crates/hygiene-core" }
+agentdust-core = { path = "crates/agentdust-core" }
 ```
 
 - [ ] **Step 2: Create the test kit crate**
 
-`crates/hygiene-testkit/Cargo.toml`:
+`crates/agentdust-testkit/Cargo.toml`:
 
 ```toml
 [package]
-name = "hygiene-testkit"
+name = "agentdust-testkit"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -393,13 +403,13 @@ path = "src/bin/fixture-sleeper.rs"
 test = false
 
 [dev-dependencies]
-hygiene-core.workspace = true
+agentdust-core.workspace = true
 libc.workspace = true
 ```
 
-`crates/hygiene-testkit/src/lib.rs` is an empty file.
+`crates/agentdust-testkit/src/lib.rs` is an empty file.
 
-`crates/hygiene-testkit/src/bin/fixture-sleeper.rs`:
+`crates/agentdust-testkit/src/bin/fixture-sleeper.rs`:
 
 ```rust
 use std::time::Duration;
@@ -412,7 +422,7 @@ fn main() {
 
 - [ ] **Step 3: Write the failing test**
 
-`crates/hygiene-testkit/tests/platform.rs`:
+`crates/agentdust-testkit/tests/platform.rs`:
 
 ```rust
 #![cfg(target_os = "macos")]
@@ -422,7 +432,7 @@ use std::process::{Child, Command};
 use std::thread;
 use std::time::Duration;
 
-use hygiene_core::darwin;
+use agentdust_core::darwin;
 
 const SLEEPER: &str = env!("CARGO_BIN_EXE_fixture-sleeper");
 
@@ -495,16 +505,16 @@ fn a_child_reports_its_executable_path() {
 
 - [ ] **Step 4: Run it to verify it fails**
 
-Run: `cargo test -p hygiene-testkit --test platform`
-Expected: FAIL to resolve `hygiene_core`, because the crate does not exist yet.
+Run: `cargo test -p agentdust-testkit --test platform`
+Expected: FAIL to resolve `agentdust_core`, because the crate does not exist yet.
 
 - [ ] **Step 5: Write the core crate**
 
-`crates/hygiene-core/Cargo.toml`:
+`crates/agentdust-core/Cargo.toml`:
 
 ```toml
 [package]
-name = "hygiene-core"
+name = "agentdust-core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -518,7 +528,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 ```
 
-`crates/hygiene-core/src/lib.rs`:
+`crates/agentdust-core/src/lib.rs`:
 
 ```rust
 pub mod identity;
@@ -527,7 +537,7 @@ pub mod identity;
 pub mod darwin;
 ```
 
-`crates/hygiene-core/src/identity.rs`:
+`crates/agentdust-core/src/identity.rs`:
 
 ```rust
 use serde::{Deserialize, Serialize};
@@ -548,7 +558,7 @@ pub struct ProcessInfo {
 }
 ```
 
-`crates/hygiene-core/src/darwin.rs`:
+`crates/agentdust-core/src/darwin.rs`:
 
 ```rust
 use std::ffi::{CStr, OsString};
@@ -635,7 +645,7 @@ fn missing_or<T>(err: io::Error) -> io::Result<Option<T>> {
 
 - [ ] **Step 6: Run the test to verify it passes**
 
-Run: `cargo test -p hygiene-testkit --test platform`
+Run: `cargo test -p agentdust-testkit --test platform`
 Expected: `test result: ok. 5 passed`
 
 - [ ] **Step 7: Lint**
@@ -646,7 +656,7 @@ Expected: no output, exit 0.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add Cargo.toml Cargo.lock crates/hygiene-core crates/hygiene-testkit
+git add Cargo.toml Cargo.lock crates/agentdust-core crates/agentdust-testkit
 git commit -m "feat(core): read process identity on macOS" -m "Every later revalidation compares boot session, PID, start time and UID, so these reads come first and are tested against live child processes."
 ```
 
@@ -655,26 +665,26 @@ git commit -m "feat(core): read process identity on macOS" -m "Every later reval
 ### Task 3: KERN_PROCARGS2 parser, environment reader and fuzz target
 
 **Files:**
-- Modify: `Cargo.toml` (exclude `fuzz`), `crates/hygiene-core/src/lib.rs`, `crates/hygiene-core/src/darwin.rs`, `crates/hygiene-testkit/tests/platform.rs`
-- Create: `crates/hygiene-core/src/procargs.rs`, `fuzz/Cargo.toml`, `fuzz/fuzz_targets/procargs.rs`, `fuzz/seeds/procargs/*`
-- Test: `crates/hygiene-core/tests/procargs.rs`, `crates/hygiene-core/tests/procargs_corpus.rs`
+- Modify: `Cargo.toml` (exclude `fuzz`), `crates/agentdust-core/src/lib.rs`, `crates/agentdust-core/src/darwin.rs`, `crates/agentdust-testkit/tests/platform.rs`
+- Create: `crates/agentdust-core/src/procargs.rs`, `fuzz/Cargo.toml`, `fuzz/fuzz_targets/procargs.rs`, `fuzz/seeds/procargs/*`
+- Test: `crates/agentdust-core/tests/procargs.rs`, `crates/agentdust-core/tests/procargs_corpus.rs`
 
 **Interfaces:**
-- Consumes: `hygiene_core::darwin` from Task 2.
+- Consumes: `agentdust_core::darwin` from Task 2.
 - Produces:
-  - `hygiene_core::procargs::ProcArgs<'a> { exec_path: &'a [u8], args: Vec<&'a [u8]>, env: Vec<&'a [u8]> }`
-  - `hygiene_core::procargs::ParseError { TooShort, NegativeArgc, Truncated }`
-  - `hygiene_core::procargs::parse(buf: &[u8]) -> Result<ProcArgs<'_>, ParseError>`
-  - `hygiene_core::procargs::env_value<'a>(parsed: &ProcArgs<'a>, name: &str) -> Option<&'a [u8]>`
-  - `hygiene_core::darwin::procargs2(pid: i32) -> io::Result<Option<Vec<u8>>>`
-  - `hygiene_core::darwin::env_var(pid: i32, name: &str) -> io::Result<Option<Vec<u8>>>`
+  - `agentdust_core::procargs::ProcArgs<'a> { exec_path: &'a [u8], args: Vec<&'a [u8]>, env: Vec<&'a [u8]> }`
+  - `agentdust_core::procargs::ParseError { TooShort, NegativeArgc, Truncated }`
+  - `agentdust_core::procargs::parse(buf: &[u8]) -> Result<ProcArgs<'_>, ParseError>`
+  - `agentdust_core::procargs::env_value<'a>(parsed: &ProcArgs<'a>, name: &str) -> Option<&'a [u8]>`
+  - `agentdust_core::darwin::procargs2(pid: i32) -> io::Result<Option<Vec<u8>>>`
+  - `agentdust_core::darwin::env_var(pid: i32, name: &str) -> io::Result<Option<Vec<u8>>>`
 
 - [ ] **Step 1: Write the failing parser test**
 
-`crates/hygiene-core/tests/procargs.rs`:
+`crates/agentdust-core/tests/procargs.rs`:
 
 ```rust
-use hygiene_core::procargs::{ParseError, env_value, parse};
+use agentdust_core::procargs::{ParseError, env_value, parse};
 
 fn buffer(argc: i32, exec_path: &[u8], padding: usize, strings: &[&[u8]]) -> Vec<u8> {
     let mut buf = argc.to_ne_bytes().to_vec();
@@ -694,14 +704,14 @@ fn parses_exec_path_args_and_env_after_padding() {
         2,
         b"/usr/bin/node",
         3,
-        &[b"node", b"server.js", b"HOME=/Users/a", b"HYGIENE_SESSION=abc"],
+        &[b"node", b"server.js", b"HOME=/Users/a", b"AGENTDUST_SESSION=abc"],
     );
     let parsed = parse(&buf).unwrap();
     assert_eq!(parsed.exec_path, b"/usr/bin/node");
     assert_eq!(parsed.args, vec![&b"node"[..], &b"server.js"[..]]);
     assert_eq!(
         parsed.env,
-        vec![&b"HOME=/Users/a"[..], &b"HYGIENE_SESSION=abc"[..]]
+        vec![&b"HOME=/Users/a"[..], &b"AGENTDUST_SESSION=abc"[..]]
     );
 }
 
@@ -711,11 +721,11 @@ fn env_value_matches_the_exact_name_only() {
         0,
         b"/bin/x",
         0,
-        &[b"HYGIENE_SESSION_OLD=no", b"HYGIENE_SESSION=yes"],
+        &[b"AGENTDUST_SESSION_OLD=no", b"AGENTDUST_SESSION=yes"],
     );
     let parsed = parse(&buf).unwrap();
-    assert_eq!(env_value(&parsed, "HYGIENE_SESSION"), Some(&b"yes"[..]));
-    assert_eq!(env_value(&parsed, "HYGIENE"), None);
+    assert_eq!(env_value(&parsed, "AGENTDUST_SESSION"), Some(&b"yes"[..]));
+    assert_eq!(env_value(&parsed, "AGENTDUST"), None);
 }
 
 #[test]
@@ -767,12 +777,12 @@ fn huge_argc_does_not_allocate_unbounded_memory() {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `cargo test -p hygiene-core --test procargs`
-Expected: FAIL with `unresolved import hygiene_core::procargs`.
+Run: `cargo test -p agentdust-core --test procargs`
+Expected: FAIL with `unresolved import agentdust_core::procargs`.
 
 - [ ] **Step 3: Write the parser**
 
-`crates/hygiene-core/src/procargs.rs`:
+`crates/agentdust-core/src/procargs.rs`:
 
 ```rust
 use thiserror::Error;
@@ -834,7 +844,7 @@ fn take_cstr<'a>(rest: &mut &'a [u8]) -> Option<&'a [u8]> {
 }
 ```
 
-`crates/hygiene-core/src/lib.rs`:
+`crates/agentdust-core/src/lib.rs`:
 
 ```rust
 pub mod identity;
@@ -846,7 +856,7 @@ pub mod darwin;
 
 - [ ] **Step 4: Run the parser test to verify it passes**
 
-Run: `cargo test -p hygiene-core --test procargs`
+Run: `cargo test -p agentdust-core --test procargs`
 Expected: `test result: ok. 9 passed`
 
 - [ ] **Step 5: Add the seed inputs and the seed regression test**
@@ -869,7 +879,7 @@ def buf(argc, *parts, pad=0):
 
 
 seeds = {
-    "basic": buf(2, b"/usr/local/bin/node", b"node", b"server.js", b"HOME=/Users/a", b"HYGIENE_SESSION=abc", pad=3),
+    "basic": buf(2, b"/usr/local/bin/node", b"node", b"server.js", b"HOME=/Users/a", b"AGENTDUST_SESSION=abc", pad=3),
     "no-env": buf(1, b"/bin/x", b"x"),
     "negative-argc": buf(-1, b"/bin/x"),
     "truncated": buf(9, b"/bin/x", b"only-one"),
@@ -880,13 +890,13 @@ for name, data in seeds.items():
 EOF
 ```
 
-`crates/hygiene-core/tests/procargs_corpus.rs`:
+`crates/agentdust-core/tests/procargs_corpus.rs`:
 
 ```rust
 use std::fs;
 use std::path::Path;
 
-use hygiene_core::procargs;
+use agentdust_core::procargs;
 
 #[test]
 fn every_corpus_entry_parses_without_panicking() {
@@ -895,7 +905,7 @@ fn every_corpus_entry_parses_without_panicking() {
     for entry in fs::read_dir(&dir).unwrap() {
         let data = fs::read(entry.unwrap().path()).unwrap();
         if let Ok(parsed) = procargs::parse(&data) {
-            let _ = procargs::env_value(&parsed, "HYGIENE_SESSION");
+            let _ = procargs::env_value(&parsed, "AGENTDUST_SESSION");
         }
         seen += 1;
     }
@@ -903,21 +913,21 @@ fn every_corpus_entry_parses_without_panicking() {
 }
 ```
 
-Run: `cargo test -p hygiene-core --test procargs_corpus`
+Run: `cargo test -p agentdust-core --test procargs_corpus`
 Expected: `test result: ok. 1 passed`
 
 - [ ] **Step 6: Write the failing live environment tests**
 
-Append to `crates/hygiene-testkit/tests/platform.rs`, and change its `use std::time::Duration;` line to `use std::time::{Duration, Instant};`:
+Append to `crates/agentdust-testkit/tests/platform.rs`, and change its `use std::time::Duration;` line to `use std::time::{Duration, Instant};`:
 
 ```rust
 #[test]
 fn a_named_environment_variable_is_read_from_another_process() {
-    let child = spawn_sleeper(&[("HYGIENE_SESSION", "tag-123")]);
-    let value = darwin::env_var(child.0.id() as i32, "HYGIENE_SESSION").unwrap();
+    let child = spawn_sleeper(&[("AGENTDUST_SESSION", "tag-123")]);
+    let value = darwin::env_var(child.0.id() as i32, "AGENTDUST_SESSION").unwrap();
     assert_eq!(value.as_deref(), Some(&b"tag-123"[..]));
     assert_eq!(
-        darwin::env_var(child.0.id() as i32, "HYGIENE_ABSENT").unwrap(),
+        darwin::env_var(child.0.id() as i32, "AGENTDUST_ABSENT").unwrap(),
         None
     );
 }
@@ -927,7 +937,7 @@ fn the_tag_survives_reparenting_to_launchd() {
     let output = Command::new("/bin/sh")
         .arg("-c")
         .arg(format!(
-            "HYGIENE_SESSION=orphan-9 '{SLEEPER}' 30 </dev/null >/dev/null 2>&1 & echo $!"
+            "AGENTDUST_SESSION=orphan-9 '{SLEEPER}' 30 </dev/null >/dev/null 2>&1 & echo $!"
         ))
         .output()
         .unwrap();
@@ -944,7 +954,7 @@ fn the_tag_survives_reparenting_to_launchd() {
         }
         thread::sleep(Duration::from_millis(20));
     }
-    let value = darwin::env_var(pid, "HYGIENE_SESSION").unwrap();
+    let value = darwin::env_var(pid, "AGENTDUST_SESSION").unwrap();
     unsafe { libc::kill(pid, libc::SIGTERM) };
     assert_eq!(ppid, 1);
     assert_eq!(value.as_deref(), Some(&b"orphan-9"[..]));
@@ -958,12 +968,12 @@ fn launchd_arguments_are_not_readable() {
 
 - [ ] **Step 7: Run them to verify they fail**
 
-Run: `cargo test -p hygiene-testkit --test platform`
+Run: `cargo test -p agentdust-testkit --test platform`
 Expected: FAIL to compile with `cannot find function env_var in module darwin`.
 
 - [ ] **Step 8: Add the environment reader**
 
-Replace `crates/hygiene-core/src/darwin.rs` with:
+Replace `crates/agentdust-core/src/darwin.rs` with:
 
 ```rust
 use std::ffi::{CStr, OsString};
@@ -1086,7 +1096,7 @@ fn missing_or<T>(err: io::Error) -> io::Result<Option<T>> {
 
 - [ ] **Step 9: Run the live tests to verify they pass**
 
-Run: `cargo test -p hygiene-testkit --test platform`
+Run: `cargo test -p agentdust-testkit --test platform`
 Expected: `test result: ok. 8 passed`. The reparenting test waits until the child has both PPID 1 and the sleeper as its executable, because until `exec` completes the child is still the Apple-protected `/bin/sh`, whose environment the kernel hides.
 
 - [ ] **Step 10: Add the fuzz target**
@@ -1101,7 +1111,7 @@ exclude = ["fuzz"]
 
 ```toml
 [package]
-name = "hygiene-fuzz"
+name = "agentdust-fuzz"
 version = "0.0.0"
 edition = "2024"
 publish = false
@@ -1111,7 +1121,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-hygiene-core = { path = "../crates/hygiene-core" }
+agentdust-core = { path = "../crates/agentdust-core" }
 
 [[bin]]
 name = "procargs"
@@ -1132,8 +1142,8 @@ members = ["."]
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    if let Ok(parsed) = hygiene_core::procargs::parse(data) {
-        let _ = hygiene_core::procargs::env_value(&parsed, "HYGIENE_SESSION");
+    if let Ok(parsed) = agentdust_core::procargs::parse(data) {
+        let _ = agentdust_core::procargs::env_value(&parsed, "AGENTDUST_SESSION");
     }
 });
 ```
@@ -1152,7 +1162,7 @@ Run: `cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all -
 Expected: no output, exit 0.
 
 ```bash
-git add Cargo.toml crates/hygiene-core crates/hygiene-testkit fuzz/Cargo.toml fuzz/Cargo.lock fuzz/fuzz_targets fuzz/seeds
+git add Cargo.toml crates/agentdust-core crates/agentdust-testkit fuzz/Cargo.toml fuzz/Cargo.lock fuzz/fuzz_targets fuzz/seeds
 git commit -m "feat(core): read one environment variable from another process" -m "The Claude Code session tag survives reparenting to launchd only inside the process environment, so the parser for KERN_PROCARGS2 is the provenance primitive. It parses untrusted kernel output, so it ships with a fuzz target and seed inputs."
 ```
 
@@ -1161,29 +1171,29 @@ git commit -m "feat(core): read one environment variable from another process" -
 ### Task 4: Journal
 
 **Files:**
-- Modify: `crates/hygiene-core/src/lib.rs`
-- Create: `crates/hygiene-core/src/clock.rs`, `crates/hygiene-core/src/paths.rs`, `crates/hygiene-core/src/journal.rs`
-- Test: `crates/hygiene-core/tests/clock.rs`, `crates/hygiene-core/tests/journal.rs`
+- Modify: `crates/agentdust-core/src/lib.rs`
+- Create: `crates/agentdust-core/src/clock.rs`, `crates/agentdust-core/src/paths.rs`, `crates/agentdust-core/src/journal.rs`
+- Test: `crates/agentdust-core/tests/clock.rs`, `crates/agentdust-core/tests/journal.rs`
 
 **Interfaces:**
 - Consumes: the core crate from Tasks 2 and 3.
 - Produces:
-  - `hygiene_core::clock::{wall_ms() -> u64, monotonic_ns() -> u64}`
-  - `hygiene_core::paths::{DATA_DIR_ENV: &str = "HYGIENE_DATA_DIR", data_dir() -> io::Result<PathBuf>}`
-  - `hygiene_core::journal::{SCHEMA_VERSION: u32 = 1, LOCK_BUDGET: Duration = 20 ms}`
-  - `hygiene_core::journal::Kind { SessionStart, SessionEnd, ShellStart, ShellEnd, Sample, ServerStart }` and `Agent { Claude, Codex, Cursor }`, serialized in snake case
-  - `hygiene_core::journal::Record { v: u32, kind: Kind, agent: Agent, session_id: String, subagent_id: Option<String>, tool_use_id: Option<String>, wall_ts_ms: u64, mono_ns: u64, boot: String }`
-  - `hygiene_core::journal::JournalError { LockBusy, Io(io::Error), Encode(serde_json::Error) }`
-  - `hygiene_core::journal::ReadReport { records: Vec<Record>, skipped_lines: usize }`
-  - `hygiene_core::journal::append(dir: &Path, record: &Record) -> Result<(), JournalError>`
-  - `hygiene_core::journal::read(dir: &Path) -> io::Result<ReadReport>`
+  - `agentdust_core::clock::{wall_ms() -> u64, monotonic_ns() -> u64}`
+  - `agentdust_core::paths::{DATA_DIR_ENV: &str = "AGENTDUST_DATA_DIR", data_dir() -> io::Result<PathBuf>}`
+  - `agentdust_core::journal::{SCHEMA_VERSION: u32 = 1, LOCK_BUDGET: Duration = 20 ms}`
+  - `agentdust_core::journal::Kind { SessionStart, SessionEnd, ShellStart, ShellEnd, Sample, ServerStart }` and `Agent { Claude, Codex, Cursor }`, serialized in snake case
+  - `agentdust_core::journal::Record { v: u32, kind: Kind, agent: Agent, session_id: String, subagent_id: Option<String>, tool_use_id: Option<String>, wall_ts_ms: u64, mono_ns: u64, boot: String }`
+  - `agentdust_core::journal::JournalError { LockBusy, Io(io::Error), Encode(serde_json::Error) }`
+  - `agentdust_core::journal::ReadReport { records: Vec<Record>, skipped_lines: usize }`
+  - `agentdust_core::journal::append(dir: &Path, record: &Record) -> Result<(), JournalError>`
+  - `agentdust_core::journal::read(dir: &Path) -> io::Result<ReadReport>`
 
 - [ ] **Step 1: Write the failing tests**
 
-`crates/hygiene-core/tests/clock.rs`:
+`crates/agentdust-core/tests/clock.rs`:
 
 ```rust
-use hygiene_core::clock::{monotonic_ns, wall_ms};
+use agentdust_core::clock::{monotonic_ns, wall_ms};
 
 #[test]
 fn monotonic_clock_never_goes_backwards() {
@@ -1199,7 +1209,7 @@ fn wall_clock_is_after_2026() {
 }
 ```
 
-`crates/hygiene-core/tests/journal.rs`:
+`crates/agentdust-core/tests/journal.rs`:
 
 ```rust
 use std::fs::{self, OpenOptions};
@@ -1209,12 +1219,12 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-use hygiene_core::journal::{self, Agent, JournalError, Kind, Record, SCHEMA_VERSION};
+use agentdust_core::journal::{self, Agent, JournalError, Kind, Record, SCHEMA_VERSION};
 
 fn scratch_dir(name: &str) -> PathBuf {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
     let dir = std::env::temp_dir().join(format!(
-        "hygiene-test-{name}-{}-{}",
+        "agentdust-test-{name}-{}-{}",
         std::process::id(),
         COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
@@ -1308,12 +1318,12 @@ fn a_symlinked_journal_is_refused() {
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `cargo test -p hygiene-core --test clock --test journal`
-Expected: FAIL with `unresolved import hygiene_core::clock` and `unresolved import hygiene_core::journal`.
+Run: `cargo test -p agentdust-core --test clock --test journal`
+Expected: FAIL with `unresolved import agentdust_core::clock` and `unresolved import agentdust_core::journal`.
 
 - [ ] **Step 3: Write the implementation**
 
-`crates/hygiene-core/src/clock.rs`:
+`crates/agentdust-core/src/clock.rs`:
 
 ```rust
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -1339,13 +1349,13 @@ pub fn monotonic_ns() -> u64 {
 }
 ```
 
-`crates/hygiene-core/src/paths.rs`:
+`crates/agentdust-core/src/paths.rs`:
 
 ```rust
 use std::io;
 use std::path::PathBuf;
 
-pub const DATA_DIR_ENV: &str = "HYGIENE_DATA_DIR";
+pub const DATA_DIR_ENV: &str = "AGENTDUST_DATA_DIR";
 
 pub fn data_dir() -> io::Result<PathBuf> {
     if let Some(dir) = std::env::var_os(DATA_DIR_ENV) {
@@ -1353,11 +1363,11 @@ pub fn data_dir() -> io::Result<PathBuf> {
     }
     let home =
         std::env::var_os("HOME").ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME is not set"))?;
-    Ok(PathBuf::from(home).join("Library/Application Support/hygiene"))
+    Ok(PathBuf::from(home).join("Library/Application Support/agentdust"))
 }
 ```
 
-`crates/hygiene-core/src/journal.rs`:
+`crates/agentdust-core/src/journal.rs`:
 
 ```rust
 use std::fs::{DirBuilder, File, OpenOptions};
@@ -1486,7 +1496,7 @@ fn lock_within(file: &File, budget: Duration) -> Result<(), JournalError> {
 }
 ```
 
-`crates/hygiene-core/src/lib.rs`:
+`crates/agentdust-core/src/lib.rs`:
 
 ```rust
 pub mod clock;
@@ -1501,7 +1511,7 @@ pub mod darwin;
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cargo test -p hygiene-core --test clock --test journal`
+Run: `cargo test -p agentdust-core --test clock --test journal`
 Expected: `test result: ok. 2 passed` and `test result: ok. 5 passed`
 
 - [ ] **Step 5: Lint and commit**
@@ -1510,7 +1520,7 @@ Run: `cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all -
 Expected: no output, exit 0.
 
 ```bash
-git add crates/hygiene-core
+git add crates/agentdust-core
 git commit -m "feat(core): append journal records under a bounded lock" -m "Three agents can run hooks at the same moment, so writes go through flock on a separate lock file with a 20 ms budget, and a symlinked journal is refused instead of followed."
 ```
 
@@ -1519,39 +1529,39 @@ git commit -m "feat(core): append journal records under a bounded lock" -m "Thre
 ### Task 5: Claude Code hook
 
 **Files:**
-- Modify: `Cargo.toml` (members and one path dependency), `crates/hygiene/Cargo.toml`, `crates/hygiene/src/main.rs`
-- Create: `crates/hygiene-agents/Cargo.toml`, `crates/hygiene-agents/src/lib.rs`, `crates/hygiene-agents/src/claude.rs`, `crates/hygiene/src/hook.rs`
-- Test: `crates/hygiene-agents/tests/claude.rs`, `crates/hygiene/tests/common/mod.rs`, `crates/hygiene/tests/hook.rs`, `crates/hygiene/tests/hook_latency.rs`
+- Modify: `Cargo.toml` (members and one path dependency), `crates/agentdust/Cargo.toml`, `crates/agentdust/src/main.rs`
+- Create: `crates/agentdust-agents/Cargo.toml`, `crates/agentdust-agents/src/lib.rs`, `crates/agentdust-agents/src/claude.rs`, `crates/agentdust/src/hook.rs`
+- Test: `crates/agentdust-agents/tests/claude.rs`, `crates/agentdust/tests/common/mod.rs`, `crates/agentdust/tests/hook.rs`, `crates/agentdust/tests/hook_latency.rs`
 
 **Interfaces:**
-- Consumes: `hygiene_core::journal`, `clock`, `paths` (Task 4) and `darwin::boot_session_uuid` (Task 2).
+- Consumes: `agentdust_core::journal`, `clock`, `paths` (Task 4) and `darwin::boot_session_uuid` (Task 2).
 - Produces:
-  - `hygiene_agents::claude::MAX_ID_LEN: usize = 256`
-  - `hygiene_agents::claude::HookEvent { session_id: String, hook_event_name: String, tool_use_id: Option<String>, agent_id: Option<String> }`
-  - `hygiene_agents::claude::EventError { Json(serde_json::Error), FieldTooLong }`
-  - `hygiene_agents::claude::parse_event(reader: impl Read) -> Result<HookEvent, EventError>`
-  - `hygiene_agents::claude::journal_kind(event: &HookEvent) -> Option<Kind>`
-  - Subcommand `hygiene hook claude`: reads one event from stdin, reads stdin to the end, appends at most one record, prints nothing, exits 0.
+  - `agentdust_agents::claude::MAX_ID_LEN: usize = 256`
+  - `agentdust_agents::claude::HookEvent { session_id: String, hook_event_name: String, tool_use_id: Option<String>, agent_id: Option<String> }`
+  - `agentdust_agents::claude::EventError { Json(serde_json::Error), FieldTooLong }`
+  - `agentdust_agents::claude::parse_event(reader: impl Read) -> Result<HookEvent, EventError>`
+  - `agentdust_agents::claude::journal_kind(event: &HookEvent) -> Option<Kind>`
+  - Subcommand `agentdust hook claude`: reads one event from stdin, reads stdin to the end, appends at most one record, prints nothing, exits 0.
 
 - [ ] **Step 1: Register the agents crate**
 
 In `Cargo.toml`, replace the `members` line:
 
 ```toml
-members = ["crates/hygiene-core", "crates/hygiene-agents", "crates/hygiene", "crates/hygiene-testkit"]
+members = ["crates/agentdust-core", "crates/agentdust-agents", "crates/agentdust", "crates/agentdust-testkit"]
 ```
 
-and add under `hygiene-core = ...` in `[workspace.dependencies]`:
+and add under `agentdust-core = ...` in `[workspace.dependencies]`:
 
 ```toml
-hygiene-agents = { path = "crates/hygiene-agents" }
+agentdust-agents = { path = "crates/agentdust-agents" }
 ```
 
-`crates/hygiene-agents/Cargo.toml`:
+`crates/agentdust-agents/Cargo.toml`:
 
 ```toml
 [package]
-name = "hygiene-agents"
+name = "agentdust-agents"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -1559,13 +1569,13 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-hygiene-core.workspace = true
+agentdust-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 ```
 
-`crates/hygiene-agents/src/lib.rs`:
+`crates/agentdust-agents/src/lib.rs`:
 
 ```rust
 pub mod claude;
@@ -1573,11 +1583,11 @@ pub mod claude;
 
 - [ ] **Step 2: Write the failing parser test**
 
-`crates/hygiene-agents/tests/claude.rs`:
+`crates/agentdust-agents/tests/claude.rs`:
 
 ```rust
-use hygiene_agents::claude::{EventError, HookEvent, MAX_ID_LEN, journal_kind, parse_event};
-use hygiene_core::journal::Kind;
+use agentdust_agents::claude::{EventError, HookEvent, MAX_ID_LEN, journal_kind, parse_event};
+use agentdust_core::journal::Kind;
 
 #[test]
 fn reads_only_the_fields_it_needs() {
@@ -1628,17 +1638,17 @@ fn rejects_an_event_without_session_id() {
 
 - [ ] **Step 3: Run it to verify it fails**
 
-Run: `cargo test -p hygiene-agents --test claude`
+Run: `cargo test -p agentdust-agents --test claude`
 Expected: FAIL to compile, because `src/claude.rs` does not exist.
 
 - [ ] **Step 4: Write the parser**
 
-`crates/hygiene-agents/src/claude.rs`:
+`crates/agentdust-agents/src/claude.rs`:
 
 ```rust
 use std::io::Read;
 
-use hygiene_core::journal::Kind;
+use agentdust_core::journal::Kind;
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -1686,12 +1696,12 @@ pub fn journal_kind(event: &HookEvent) -> Option<Kind> {
 }
 ```
 
-Run: `cargo test -p hygiene-agents --test claude`
+Run: `cargo test -p agentdust-agents --test claude`
 Expected: `test result: ok. 4 passed`
 
 - [ ] **Step 5: Write the failing hook tests**
 
-`crates/hygiene/tests/common/mod.rs`:
+`crates/agentdust/tests/common/mod.rs`:
 
 ```rust
 use std::fs;
@@ -1703,7 +1713,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 pub fn scratch_dir(name: &str) -> PathBuf {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
     let dir = std::env::temp_dir().join(format!(
-        "hygiene-bin-{name}-{}-{}",
+        "agentdust-bin-{name}-{}-{}",
         std::process::id(),
         COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
@@ -1712,9 +1722,9 @@ pub fn scratch_dir(name: &str) -> PathBuf {
 }
 
 pub fn run_hook(data_dir: &Path, input: &[u8]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_hygiene"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_agentdust"))
         .args(["hook", "claude"])
-        .env("HYGIENE_DATA_DIR", data_dir)
+        .env("AGENTDUST_DATA_DIR", data_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1732,7 +1742,7 @@ pub fn pre_tool_use(session: &str, tool_use_id: &str) -> Vec<u8> {
 }
 ```
 
-`crates/hygiene/tests/hook.rs`:
+`crates/agentdust/tests/hook.rs`:
 
 ```rust
 mod common;
@@ -1740,8 +1750,8 @@ mod common;
 use std::fs;
 use std::thread;
 
+use agentdust_core::journal::{self, Agent, Kind};
 use common::{pre_tool_use, run_hook, scratch_dir};
-use hygiene_core::journal::{self, Agent, Kind};
 
 #[test]
 fn pre_tool_use_appends_one_shell_start_record() {
@@ -1845,7 +1855,7 @@ fn concurrent_hooks_append_complete_records() {
 }
 ```
 
-`crates/hygiene/tests/hook_latency.rs`:
+`crates/agentdust/tests/hook_latency.rs`:
 
 ```rust
 mod common;
@@ -1856,7 +1866,7 @@ use std::time::Instant;
 use common::{pre_tool_use, run_hook, scratch_dir};
 
 #[test]
-#[ignore = "measures the real binary: cargo test --release -p hygiene --test hook_latency -- --ignored"]
+#[ignore = "measures the real binary: cargo test --release -p agentdust --test hook_latency -- --ignored"]
 fn hook_latency_is_within_budget() {
     let dir = scratch_dir("latency");
     let input = pre_tool_use("latency", "toolu_latency");
@@ -1880,11 +1890,11 @@ fn hook_latency_is_within_budget() {
 }
 ```
 
-`crates/hygiene/Cargo.toml`:
+`crates/agentdust/Cargo.toml`:
 
 ```toml
 [package]
-name = "hygiene"
+name = "agentdust"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -1892,26 +1902,26 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-hygiene-core.workspace = true
-hygiene-agents.workspace = true
+agentdust-core.workspace = true
+agentdust-agents.workspace = true
 ```
 
 - [ ] **Step 6: Run them to verify they fail**
 
-Run: `cargo test -p hygiene --test hook`
+Run: `cargo test -p agentdust --test hook`
 Expected: FAIL. `pre_tool_use_appends_one_shell_start_record` panics on `output.status.success()`, because `hook claude` is still an unknown command that exits 2.
 
 - [ ] **Step 7: Write the hook**
 
-`crates/hygiene/src/hook.rs`:
+`crates/agentdust/src/hook.rs`:
 
 ```rust
 use std::error::Error;
 use std::io::{self, BufReader};
 
-use hygiene_agents::claude::{self, HookEvent};
-use hygiene_core::journal::{self, Agent, Record, SCHEMA_VERSION};
-use hygiene_core::{clock, darwin, paths};
+use agentdust_agents::claude::{self, HookEvent};
+use agentdust_core::journal::{self, Agent, Record, SCHEMA_VERSION};
+use agentdust_core::{clock, darwin, paths};
 
 pub fn run_claude() {
     let mut input = BufReader::new(io::stdin().lock());
@@ -1942,7 +1952,7 @@ fn record(event: &HookEvent) -> Result<(), Box<dyn Error>> {
 }
 ```
 
-`crates/hygiene/src/main.rs`:
+`crates/agentdust/src/main.rs`:
 
 ```rust
 mod hook;
@@ -1958,11 +1968,11 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         ["version"] => {
-            println!("hygiene {}", env!("CARGO_PKG_VERSION"));
+            println!("agentdust {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         _ => {
-            eprintln!("usage: hygiene hook claude | hygiene version");
+            eprintln!("usage: agentdust hook claude | agentdust version");
             ExitCode::from(2)
         }
     }
@@ -1971,13 +1981,13 @@ fn main() -> ExitCode {
 
 - [ ] **Step 8: Run the hook tests to verify they pass**
 
-Run: `cargo test -p hygiene --test hook --test version`
+Run: `cargo test -p agentdust --test hook --test version`
 Expected: `test result: ok. 8 passed` and `test result: ok. 2 passed`
 
 - [ ] **Step 9: Measure the release binary**
 
-Run: `cargo test --release -p hygiene --test hook_latency -- --ignored --nocapture`
-Expected: a line `hook latency p50 <x> ms, p95 <y> ms` with p50 under 10 and p95 under 20, then `test result: ok. 1 passed`. The 2026-10-03 run measured p50 2.71 ms and p95 3.13 ms.
+Run: `cargo test --release -p agentdust --test hook_latency -- --ignored --nocapture`
+Expected: a line `hook latency p50 <x> ms, p95 <y> ms` with p50 under 10 and p95 under 20, then `test result: ok. 1 passed`. The 2026-10-04 run measured p50 2.56 ms and p95 3.15 ms.
 
 - [ ] **Step 10: Lint and commit**
 
@@ -1985,7 +1995,7 @@ Run: `cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all -
 Expected: no output, exit 0.
 
 ```bash
-git add Cargo.toml Cargo.lock crates/hygiene-agents crates/hygiene
+git add Cargo.toml Cargo.lock crates/agentdust-agents crates/agentdust
 git commit -m "feat(hook): record Claude Code shell events in the journal" -m "Hooks run on every Bash call, so the hook skips output fields without storing them, drains stdin so the host never sees a closed pipe, and always exits 0 even when the journal cannot be written."
 ```
 
@@ -1994,20 +2004,20 @@ git commit -m "feat(hook): record Claude Code shell events in the journal" -m "H
 ### Task 6: MCP approval probe
 
 **Files:**
-- Modify: `Cargo.toml` (members and one path dependency), `crates/hygiene/Cargo.toml`, `crates/hygiene/src/main.rs`
-- Create: `crates/hygiene-mcp/Cargo.toml`, `crates/hygiene-mcp/src/lib.rs`, `crates/hygiene-mcp/src/probe.rs`
-- Test: `crates/hygiene-mcp/tests/codes.rs`, `crates/hygiene-mcp/tests/probe.rs`
+- Modify: `Cargo.toml` (members and one path dependency), `crates/agentdust/Cargo.toml`, `crates/agentdust/src/main.rs`
+- Create: `crates/agentdust-mcp/Cargo.toml`, `crates/agentdust-mcp/src/lib.rs`, `crates/agentdust-mcp/src/probe.rs`
+- Test: `crates/agentdust-mcp/tests/codes.rs`, `crates/agentdust-mcp/tests/probe.rs`
 
 **Interfaces:**
 - Consumes: nothing from earlier crates.
 - Produces:
-  - `hygiene_mcp::serve_stdio() -> impl Future<Output = Result<(), Box<dyn Error + Send + Sync>>>`
-  - `hygiene_mcp::ProbeServer` (implements `rmcp::ServerHandler`, `Default`, `Clone`)
-  - `hygiene_mcp::probe::{TOOL_NAME = "hygiene_probe_approval", INPUT_KEY = "approval", CODE_ALPHABET: &[u8; 25], CODE_LEN = 4}`
-  - `hygiene_mcp::probe::Outcome { Approved, WrongCode, Empty, Declined, Cancelled, Expired, Unsupported, Failed }`, serialized in snake case
-  - `hygiene_mcp::probe::ProbeReport { outcome: Outcome, protocol: String, path: String }`, where `path` is `retry`, `legacy` or `none`
-  - `hygiene_mcp::probe::{approval_message(code: &str) -> String, check_code(answer: Option<&str>, expected: &str) -> Outcome, new_code() -> io::Result<String>}`
-  - Subcommand `hygiene mcp`: a stdio MCP server that exits when stdin closes.
+  - `agentdust_mcp::serve_stdio() -> impl Future<Output = Result<(), Box<dyn Error + Send + Sync>>>`
+  - `agentdust_mcp::ProbeServer` (implements `rmcp::ServerHandler`, `Default`, `Clone`)
+  - `agentdust_mcp::probe::{TOOL_NAME = "agentdust_probe_approval", INPUT_KEY = "approval", CODE_ALPHABET: &[u8; 25], CODE_LEN = 4}`
+  - `agentdust_mcp::probe::Outcome { Approved, WrongCode, Empty, Declined, Cancelled, Expired, Unsupported, Failed }`, serialized in snake case
+  - `agentdust_mcp::probe::ProbeReport { outcome: Outcome, protocol: String, path: String }`, where `path` is `retry`, `legacy` or `none`
+  - `agentdust_mcp::probe::{approval_message(code: &str) -> String, check_code(answer: Option<&str>, expected: &str) -> Outcome, new_code() -> io::Result<String>}`
+  - Subcommand `agentdust mcp`: a stdio MCP server that exits when stdin closes.
 
 Clients on protocol 2026-07-28 get an `InputRequiredResult` and retry with the answer. Older clients get a server-initiated elicitation through `peer.elicit_with_timeout`. A client connects on 2026-07-28 only through `ClientLifecycleMode::Discover`; plain `serve()` uses the `initialize` handshake, which tops out at 2025-11-25.
 
@@ -2016,20 +2026,20 @@ Clients on protocol 2026-07-28 get an `InputRequiredResult` and retry with the a
 In `Cargo.toml`, replace the `members` line:
 
 ```toml
-members = ["crates/hygiene-core", "crates/hygiene-agents", "crates/hygiene-mcp", "crates/hygiene", "crates/hygiene-testkit"]
+members = ["crates/agentdust-core", "crates/agentdust-agents", "crates/agentdust-mcp", "crates/agentdust", "crates/agentdust-testkit"]
 ```
 
-and add under `hygiene-agents = ...` in `[workspace.dependencies]`:
+and add under `agentdust-agents = ...` in `[workspace.dependencies]`:
 
 ```toml
-hygiene-mcp = { path = "crates/hygiene-mcp" }
+agentdust-mcp = { path = "crates/agentdust-mcp" }
 ```
 
-`crates/hygiene-mcp/Cargo.toml`:
+`crates/agentdust-mcp/Cargo.toml`:
 
 ```toml
 [package]
-name = "hygiene-mcp"
+name = "agentdust-mcp"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -2049,10 +2059,10 @@ tokio = { workspace = true, features = ["rt-multi-thread"] }
 
 - [ ] **Step 2: Write the failing tests**
 
-`crates/hygiene-mcp/tests/codes.rs`:
+`crates/agentdust-mcp/tests/codes.rs`:
 
 ```rust
-use hygiene_mcp::probe::{CODE_ALPHABET, CODE_LEN, Outcome, check_code, new_code};
+use agentdust_mcp::probe::{CODE_ALPHABET, CODE_LEN, Outcome, check_code, new_code};
 
 #[test]
 fn codes_use_the_unambiguous_alphabet() {
@@ -2073,11 +2083,11 @@ fn only_an_exact_code_approves() {
 }
 ```
 
-`crates/hygiene-mcp/tests/probe.rs`:
+`crates/agentdust-mcp/tests/probe.rs`:
 
 ```rust
-use hygiene_mcp::ProbeServer;
-use hygiene_mcp::probe::{INPUT_KEY, Outcome, ProbeReport, TOOL_NAME};
+use agentdust_mcp::ProbeServer;
+use agentdust_mcp::probe::{INPUT_KEY, Outcome, ProbeReport, TOOL_NAME};
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ClientCapabilities, ClientConfig,
     ElicitRequestParams, ElicitResult, ElicitationAction, Implementation, InputRequest, InputResponses,
@@ -2291,7 +2301,7 @@ async fn an_unknown_tool_is_an_error() {
     let client = connect(ScriptedClient::new(RETRY, Reply::EchoCode)).await;
     assert!(
         client
-            .call_tool_once(CallToolRequestParams::new("hygiene_apply"))
+            .call_tool_once(CallToolRequestParams::new("agentdust_apply"))
             .await
             .is_err()
     );
@@ -2324,12 +2334,12 @@ async fn a_retry_without_the_approval_response_is_rejected() {
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `cargo test -p hygiene-mcp`
+Run: `cargo test -p agentdust-mcp`
 Expected: FAIL to compile, because `src/lib.rs` does not exist.
 
 - [ ] **Step 4: Write the probe server**
 
-`crates/hygiene-mcp/src/lib.rs`:
+`crates/agentdust-mcp/src/lib.rs`:
 
 ```rust
 pub mod probe;
@@ -2345,7 +2355,7 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error + Send + Sync
 }
 ```
 
-`crates/hygiene-mcp/src/probe.rs`:
+`crates/agentdust-mcp/src/probe.rs`:
 
 ```rust
 use std::collections::HashMap;
@@ -2365,7 +2375,7 @@ use rmcp::service::{ElicitationError, RequestContext, RoleServer, ServiceError};
 use rmcp::{ErrorData, ServerHandler, elicit_safe};
 use serde::{Deserialize, Serialize};
 
-pub const TOOL_NAME: &str = "hygiene_probe_approval";
+pub const TOOL_NAME: &str = "agentdust_probe_approval";
 pub const INPUT_KEY: &str = "approval";
 pub const CODE_ALPHABET: &[u8; 25] = b"ACDEFGHJKMNPQRTUVWXY34679";
 pub const CODE_LEN: usize = 4;
@@ -2413,7 +2423,7 @@ pub struct ProbeServer {
 impl ServerHandler for ProbeServer {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new("hygiene", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new("agentdust", env!("CARGO_PKG_VERSION")))
     }
 
     async fn list_tools(
@@ -2541,7 +2551,7 @@ impl ProbeServer {
 }
 
 pub fn approval_message(code: &str) -> String {
-    format!("Type {code} to approve this hygiene probe. Nothing will be changed.")
+    format!("Type {code} to approve this agentdust probe. Nothing will be changed.")
 }
 
 pub fn check_code(answer: Option<&str>, expected: &str) -> Outcome {
@@ -2604,16 +2614,16 @@ fn internal(err: impl std::fmt::Display) -> ErrorData {
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `cargo test -p hygiene-mcp`
+Run: `cargo test -p agentdust-mcp`
 Expected: `test result: ok. 2 passed` and `test result: ok. 11 passed`
 
 - [ ] **Step 6: Wire the subcommand**
 
-`crates/hygiene/Cargo.toml`:
+`crates/agentdust/Cargo.toml`:
 
 ```toml
 [package]
-name = "hygiene"
+name = "agentdust"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -2621,13 +2631,13 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-hygiene-core.workspace = true
-hygiene-agents.workspace = true
-hygiene-mcp.workspace = true
+agentdust-core.workspace = true
+agentdust-agents.workspace = true
+agentdust-mcp.workspace = true
 tokio.workspace = true
 ```
 
-`crates/hygiene/src/main.rs`:
+`crates/agentdust/src/main.rs`:
 
 ```rust
 mod hook;
@@ -2644,11 +2654,11 @@ fn main() -> ExitCode {
         }
         ["mcp"] => mcp(),
         ["version"] => {
-            println!("hygiene {}", env!("CARGO_PKG_VERSION"));
+            println!("agentdust {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         _ => {
-            eprintln!("usage: hygiene hook claude | hygiene mcp | hygiene version");
+            eprintln!("usage: agentdust hook claude | agentdust mcp | agentdust version");
             ExitCode::from(2)
         }
     }
@@ -2658,27 +2668,27 @@ fn mcp() -> ExitCode {
     let runtime = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
         Ok(runtime) => runtime,
         Err(err) => {
-            eprintln!("hygiene mcp: {err}");
+            eprintln!("agentdust mcp: {err}");
             return ExitCode::FAILURE;
         }
     };
-    match runtime.block_on(hygiene_mcp::serve_stdio()) {
+    match runtime.block_on(agentdust_mcp::serve_stdio()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            eprintln!("hygiene mcp: {err}");
+            eprintln!("agentdust mcp: {err}");
             ExitCode::FAILURE
         }
     }
 }
 ```
 
-Run: `cargo test -p hygiene --test version --test hook`
+Run: `cargo test -p agentdust --test version --test hook`
 Expected: `test result: ok. 2 passed` and `test result: ok. 8 passed`
 
 Run:
 
 ```bash
-cargo build -p hygiene && printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | target/debug/hygiene mcp | grep -c hygiene_probe_approval
+cargo build -p agentdust && printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | target/debug/agentdust mcp | grep -c agentdust_probe_approval
 ```
 
 Expected: `1`, and the command returns because the server exits when stdin closes.
@@ -2689,7 +2699,7 @@ Run: `cargo test --workspace && cargo clippy --workspace --all-targets -- -D war
 Expected: every `test result` line reports `ok`, clippy and fmt print nothing, and cargo deny prints `advisories ok, bans ok, licenses ok, sources ok`.
 
 ```bash
-git add Cargo.toml Cargo.lock crates/hygiene-mcp crates/hygiene
+git add Cargo.toml Cargo.lock crates/agentdust-mcp crates/agentdust
 git commit -m "feat(mcp): add a typed-code approval probe" -m "Approval for apply depends on how each client renders and answers a form, and the 2026-07-28 protocol replaced server requests with a retry round trip. The probe changes nothing and records which path each client takes, with a single-use nonce for the retry path."
 ```
 
@@ -2702,17 +2712,17 @@ git commit -m "feat(mcp): add a typed-code approval probe" -m "Approval for appl
 
 **Interfaces:**
 - Consumes: the workspace from Tasks 1 to 6.
-- Produces: the public repository `hamzahamidi/agent-hygiene`, CI checks named `linux` and `macos`, and a protected `main`.
+- Produces: the public repository `hamzahamidi/agentdust`, CI checks named `linux` and `macos`, and a protected `main`.
 
 - [ ] **Step 1: Recheck the name**
 
 Run:
 
 ```bash
-for n in agent-hygiene hygiene; do printf "crates.io %s: " "$n"; curl -s -o /dev/null -w '%{http_code}\n' -A agent-hygiene-name-check "https://crates.io/api/v1/crates/$n"; done; brew info --formula hygiene 2>&1 | head -1; gh repo view hamzahamidi/agent-hygiene --json name 2>&1 | head -1
+printf "crates.io agentdust: "; curl -s -o /dev/null -w '%{http_code}\n' -A agentdust-name-check https://crates.io/api/v1/crates/agentdust; brew info --formula agentdust 2>&1 | head -1; gh repo view hamzahamidi/agentdust --json name 2>&1 | head -1
 ```
 
-Expected: `404` for both crate names, `No available formula with the name "hygiene"`, and `Could not resolve to a Repository`. If any of them is taken, stop and ask the user for a name before going further.
+Expected: `404` for the crate name, `No available formula with the name "agentdust"`, and `Could not resolve to a Repository`. If any of them is taken, stop and ask the user for a name before going further.
 
 - [ ] **Step 2: Check the commit identity**
 
@@ -2750,8 +2760,8 @@ jobs:
           persist-credentials: false
       - run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal -c clippy -c rustfmt
       - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --exclude hygiene --all-targets --locked -- -D warnings
-      - run: cargo test --workspace --exclude hygiene --locked
+      - run: cargo clippy --workspace --exclude agentdust --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --exclude agentdust --locked
       - uses: taiki-e/install-action@861a07ce7084f55488e375df125cdc99bba60eb7 # v2.87.23
         with:
           tool: cargo-deny,cargo-audit,cargo-fuzz
@@ -2769,7 +2779,7 @@ jobs:
       - run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal -c clippy
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
-      - run: cargo test --release -p hygiene --test hook_latency --locked -- --ignored --nocapture
+      - run: cargo test --release -p agentdust --test hook_latency --locked -- --ignored --nocapture
 ```
 
 Run: `ruby -ryaml -e 'YAML.load_file(".github/workflows/ci.yml"); puts "ok"'`
@@ -2782,13 +2792,13 @@ git commit -m "ci: run lint, tests, dependency policy and the hook budget" -m "L
 
 - [ ] **Step 4: Create the repository (ask the user first)**
 
-Ask: "Create the public repository hamzahamidi/agent-hygiene and push main?" Continue only on yes.
+Ask: "Create the public repository hamzahamidi/agentdust and push main?" Continue only on yes.
 
 ```bash
-gh repo create hamzahamidi/agent-hygiene --public --description "Finds and cleans processes that AI coding agents leave behind" --source . --remote origin
-gh api -X PATCH repos/hamzahamidi/agent-hygiene -F delete_branch_on_merge=true -F allow_squash_merge=true -F allow_merge_commit=false -F allow_rebase_merge=false -f squash_merge_commit_title=PR_TITLE -f squash_merge_commit_message=PR_BODY
-gh api -X PUT repos/hamzahamidi/agent-hygiene/vulnerability-alerts
-gh api -X PUT repos/hamzahamidi/agent-hygiene/private-vulnerability-reporting
+gh repo create hamzahamidi/agentdust --public --description "Finds and cleans processes that AI coding agents leave behind" --source . --remote origin
+gh api -X PATCH repos/hamzahamidi/agentdust -F delete_branch_on_merge=true -F allow_squash_merge=true -F allow_merge_commit=false -F allow_rebase_merge=false -f squash_merge_commit_title=PR_TITLE -f squash_merge_commit_message=PR_BODY
+gh api -X PUT repos/hamzahamidi/agentdust/vulnerability-alerts
+gh api -X PUT repos/hamzahamidi/agentdust/private-vulnerability-reporting
 ```
 
 Expected: the repository URL, then three calls without error output.
@@ -2818,7 +2828,7 @@ Expected: the CI latency line. Copy it into the M0 report in Task 10.
 - [ ] **Step 7: Protect main**
 
 ```bash
-gh api -X PUT repos/hamzahamidi/agent-hygiene/branches/main/protection --input - <<'EOF'
+gh api -X PUT repos/hamzahamidi/agentdust/branches/main/protection --input - <<'EOF'
 {"required_status_checks":{"strict":true,"contexts":["linux","macos"]},"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null}
 EOF
 ```
@@ -2877,7 +2887,7 @@ def add_file(tar: tarfile.TarFile, path: Path, arcname: str, mode: int, mtime: i
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Create a reproducible hygiene release tarball.")
+    parser = argparse.ArgumentParser(description="Create a reproducible agentdust release tarball.")
     parser.add_argument("--binary", required=True, type=Path)
     parser.add_argument("--version", required=True)
     parser.add_argument("--target", default="darwin-arm64")
@@ -2885,9 +2895,9 @@ def main() -> None:
     args = parser.parse_args()
 
     mtime = int(os.environ.get("SOURCE_DATE_EPOCH", "0"))
-    name = f"hygiene-{args.version}-{args.target}"
+    name = f"agentdust-{args.version}-{args.target}"
     files = [
-        (args.binary, f"{name}/hygiene", 0o755),
+        (args.binary, f"{name}/agentdust", 0o755),
         (Path("LICENSE"), f"{name}/LICENSE", 0o644),
         (Path("README.md"), f"{name}/README.md", 0o644),
     ]
@@ -2928,7 +2938,7 @@ def main() -> None:
     parser.add_argument("second", type=Path)
     args = parser.parse_args()
 
-    binaries = [args.first / "target/release/hygiene", args.second / "target/release/hygiene"]
+    binaries = [args.first / "target/release/agentdust", args.second / "target/release/agentdust"]
     toolchains = [json.loads((d / "toolchain.json").read_text()) for d in (args.first, args.second)]
     hashes = [digest(b) for b in binaries]
     for path, value in zip(binaries, hashes):
@@ -3011,9 +3021,9 @@ import argparse
 import hashlib
 from pathlib import Path
 
-TEMPLATE = """class Hygiene < Formula
+TEMPLATE = """class Agentdust < Formula
   desc "Finds and cleans processes that AI coding agents leave behind"
-  homepage "https://github.com/hamzahamidi/agent-hygiene"
+  homepage "https://github.com/hamzahamidi/agentdust"
   url "{url}"
   version "{version}"
   sha256 "{sha256}"
@@ -3022,18 +3032,18 @@ TEMPLATE = """class Hygiene < Formula
   depends_on :macos
 
   def install
-    bin.install "hygiene"
+    bin.install "agentdust"
   end
 
   test do
-    assert_match "hygiene #{{version}}", shell_output("#{{bin}}/hygiene version")
+    assert_match "agentdust #{{version}}", shell_output("#{{bin}}/agentdust version")
   end
 end
 """
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Write the Homebrew formula for one hygiene tarball.")
+    parser = argparse.ArgumentParser(description="Write the Homebrew formula for one agentdust tarball.")
     parser.add_argument("--tarball", required=True, type=Path)
     parser.add_argument("--version", required=True)
     parser.add_argument("--url", required=True)
@@ -3060,7 +3070,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-TAP = "hygiene-local/m0"
+TAP = "agentdust-local/m0"
 
 
 def run(*command: str) -> str:
@@ -3069,27 +3079,27 @@ def run(*command: str) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Install a hygiene formula from a local tap and run it.")
+    parser = argparse.ArgumentParser(description="Install a agentdust formula from a local tap and run it.")
     parser.add_argument("formula", type=Path)
     parser.add_argument("version")
     args = parser.parse_args()
 
     os.environ["HOMEBREW_NO_AUTO_UPDATE"] = "1"
     os.environ["HOMEBREW_NO_INSTALL_CLEANUP"] = "1"
-    tap_dir = Path(run("brew", "--repository")) / "Library/Taps/hygiene-local/homebrew-m0/Formula"
+    tap_dir = Path(run("brew", "--repository")) / "Library/Taps/agentdust-local/homebrew-m0/Formula"
     try:
         run("brew", "tap-new", "--no-git", TAP)
         tap_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy(args.formula, tap_dir / "hygiene.rb")
-        run("brew", "trust", "--formula", f"{TAP}/hygiene")
-        run("brew", "install", f"{TAP}/hygiene")
-        reported = run(str(Path(run("brew", "--prefix")) / "bin/hygiene"), "version")
-        expected = f"hygiene {args.version}"
+        shutil.copy(args.formula, tap_dir / "agentdust.rb")
+        run("brew", "trust", "--formula", f"{TAP}/agentdust")
+        run("brew", "install", f"{TAP}/agentdust")
+        reported = run(str(Path(run("brew", "--prefix")) / "bin/agentdust"), "version")
+        expected = f"agentdust {args.version}"
         print(reported)
         if reported != expected:
             sys.exit(f"expected {expected!r}, got {reported!r}")
     finally:
-        subprocess.run(["brew", "uninstall", "--formula", "hygiene"], capture_output=True)
+        subprocess.run(["brew", "uninstall", "--formula", "agentdust"], capture_output=True)
         subprocess.run(["brew", "untap", TAP], capture_output=True)
 
 
@@ -3102,13 +3112,13 @@ if __name__ == "__main__":
 Run:
 
 ```bash
-cargo build --release -p hygiene && export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) && python3 scripts/package.py --binary target/release/hygiene --version 0.0.0 --out-dir dist/a && python3 scripts/package.py --binary target/release/hygiene --version 0.0.0 --out-dir dist/b
+cargo build --release -p agentdust && export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) && python3 scripts/package.py --binary target/release/agentdust --version 0.0.0 --out-dir dist/a && python3 scripts/package.py --binary target/release/agentdust --version 0.0.0 --out-dir dist/b
 ```
 
-Expected: two identical lines `<sha256>  hygiene-0.0.0-darwin-arm64.tar.gz`.
+Expected: two identical lines `<sha256>  agentdust-0.0.0-darwin-arm64.tar.gz`.
 
-Run: `python3 scripts/formula.py --tarball dist/a/hygiene-0.0.0-darwin-arm64.tar.gz --version 0.0.0 --url "file://$PWD/dist/a/hygiene-0.0.0-darwin-arm64.tar.gz" --out dist/hygiene.rb && ruby -c dist/hygiene.rb`
-Expected: `dist/hygiene.rb` then `Syntax OK`.
+Run: `python3 scripts/formula.py --tarball dist/a/agentdust-0.0.0-darwin-arm64.tar.gz --version 0.0.0 --url "file://$PWD/dist/a/agentdust-0.0.0-darwin-arm64.tar.gz" --out dist/agentdust.rb && ruby -c dist/agentdust.rb`
+Expected: `dist/agentdust.rb` then `Syntax OK`.
 
 Run: `python3 scripts/toolchain.py check --allow-missing`
 Expected: `no expected toolchain at release/toolchain.json; nothing to compare`
@@ -3143,12 +3153,12 @@ jobs:
       - run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
       - run: python3 scripts/toolchain.py check --allow-missing
       - run: python3 scripts/toolchain.py record > toolchain.json
-      - run: cargo build --release --locked -p hygiene
+      - run: cargo build --release --locked -p agentdust
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: build-${{ matrix.copy }}
           path: |
-            target/release/hygiene
+            target/release/agentdust
             toolchain.json
           retention-days: 3
 
@@ -3167,15 +3177,15 @@ jobs:
         with:
           path: builds
       - run: python3 scripts/compare_builds.py builds/build-a builds/build-b
-      - run: SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" python3 scripts/package.py --binary builds/build-a/target/release/hygiene --version "$VERSION" --out-dir dist
+      - run: SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" python3 scripts/package.py --binary builds/build-a/target/release/agentdust --version "$VERSION" --out-dir dist
       - run: shasum -a 256 dist/*.tar.gz > dist/SHA256SUMS
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
-            builds/build-a/target/release/hygiene
+            builds/build-a/target/release/agentdust
             dist/*.tar.gz
-      - run: python3 scripts/formula.py --tarball "dist/hygiene-$VERSION-darwin-arm64.tar.gz" --version "$VERSION" --url "file://$PWD/dist/hygiene-$VERSION-darwin-arm64.tar.gz" --out dist/hygiene.rb
-      - run: python3 scripts/brew_smoke.py dist/hygiene.rb "$VERSION"
+      - run: python3 scripts/formula.py --tarball "dist/agentdust-$VERSION-darwin-arm64.tar.gz" --version "$VERSION" --url "file://$PWD/dist/agentdust-$VERSION-darwin-arm64.tar.gz" --out dist/agentdust.rb
+      - run: python3 scripts/brew_smoke.py dist/agentdust.rb "$VERSION"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-dry-run
@@ -3206,14 +3216,14 @@ Run: `gh workflow run release-dry-run.yml --ref main`
 
 Run: `gh run list --workflow release-dry-run.yml --limit 1` and repeat until the run started by the previous command is listed, then `gh run watch` with its ID.
 
-Expected: `build (a)`, `build (b)` and `package` succeed. The `compare_builds.py` step prints the same SHA-256 twice, and `brew_smoke.py` prints `hygiene 0.0.0`. If a step fails, keep its log output for the Blockers section of the M0 report; M0 accepts a written blocker.
+Expected: `build (a)`, `build (b)` and `package` succeed. The `compare_builds.py` step prints the same SHA-256 twice, and `brew_smoke.py` prints `agentdust 0.0.0`. If a step fails, keep its log output for the Blockers section of the M0 report; M0 accepts a written blocker.
 
 - [ ] **Step 7: Lock the toolchain**
 
 ```bash
 git switch main && git pull --ff-only && git switch -c m0/toolchain-lock
-gh run download "$(gh run list --workflow release-dry-run.yml --limit 1 --json databaseId --jq '.[0].databaseId')" -n release-dry-run -D /tmp/hygiene-dry-run
-mkdir -p release && cp /tmp/hygiene-dry-run/builds/build-a/toolchain.json release/toolchain.json
+gh run download "$(gh run list --workflow release-dry-run.yml --limit 1 --json databaseId --jq '.[0].databaseId')" -n release-dry-run -D /tmp/agentdust-dry-run
+mkdir -p release && cp /tmp/agentdust-dry-run/builds/build-a/toolchain.json release/toolchain.json
 git add release/toolchain.json
 git commit -m "build: lock the release toolchain recorded by the first dry run" -m "Later releases must fail when the runner image, Xcode, SDK or Rust version drifts, and that check needs a recorded baseline."
 ```
@@ -3230,7 +3240,7 @@ These steps need a person at the keyboard: the probe asks for a typed code in ea
 - Create: `docs/m0/client-matrix.md`, `docs/m0/cursor-experiments.md`, `scripts/m0/cursor_probe.py`
 
 **Interfaces:**
-- Consumes: `target/release/hygiene` built from `main` (`cargo build --release -p hygiene`).
+- Consumes: `target/release/agentdust` built from `main` (`cargo build --release -p agentdust`).
 - Produces: the recorded matrix and Cursor answers that M3 and M5 depend on.
 
 - [ ] **Step 1: Add the templates and the probe hook**
@@ -3240,9 +3250,9 @@ These steps need a person at the keyboard: the probe asks for a typed code in ea
 ```markdown
 # M0 client matrix
 
-How each MCP client renders and answers the typed-code approval form of `hygiene_probe_approval`. One row per client and scenario. The tool result is the JSON the probe returns.
+How each MCP client renders and answers the typed-code approval form of `agentdust_probe_approval`. One row per client and scenario. The tool result is the JSON the probe returns.
 
-Probe build: `hygiene version` output and commit SHA:
+Probe build: `agentdust version` output and commit SHA:
 
 | Client | Version | Scenario | Prompt shown | Tool result (`outcome`, `protocol`, `path`) | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -3280,7 +3290,7 @@ Probe build: `hygiene version` output and commit SHA:
 ```markdown
 # M0 Cursor experiments
 
-Two questions from section 10 of the design spec, answered with `scripts/m0/cursor_probe.py`. Raw entries are in `~/Library/Application Support/hygiene-m0/cursor-probe.jsonl`.
+Two questions from section 10 of the design spec, answered with `scripts/m0/cursor_probe.py`. Raw entries are in `~/Library/Application Support/agentdust-m0/cursor-probe.jsonl`.
 
 Cursor version:
 
@@ -3288,7 +3298,7 @@ Cursor version:
 
 | Check | Result |
 | --- | --- |
-| `HYGIENE_M0_TAG` printed by `env` in an agent shell command | |
+| `AGENTDUST_M0_TAG` printed by `env` in an agent shell command | |
 | `tag_in_hook_env` in the `afterShellExecution` entry | |
 
 Answer:
@@ -3320,8 +3330,8 @@ import sys
 import time
 from pathlib import Path
 
-LOG = Path.home() / "Library/Application Support/hygiene-m0/cursor-probe.jsonl"
-TAG = "HYGIENE_M0_TAG"
+LOG = Path.home() / "Library/Application Support/agentdust-m0/cursor-probe.jsonl"
+TAG = "AGENTDUST_M0_TAG"
 
 
 def ancestry(pid: int) -> list[dict]:
@@ -3365,25 +3375,25 @@ Ask: "Register the probe as an MCP server in Claude Code, Codex and Cursor, and 
 - [ ] **Step 3: Claude Code**
 
 ```bash
-claude mcp add --scope user hygiene-probe -- "$PWD/target/release/hygiene" mcp
+claude mcp add --scope user agentdust-probe -- "$PWD/target/release/agentdust" mcp
 ```
 
-In a new Claude Code session, ask: "Call the hygiene_probe_approval tool and show its result." Repeat once per scenario row: type the shown code, type a wrong code, submit an empty answer, decline, cancel, and leave the prompt for more than 2 minutes. Copy each tool result into the table.
+In a new Claude Code session, ask: "Call the agentdust_probe_approval tool and show its result." Repeat once per scenario row: type the shown code, type a wrong code, submit an empty answer, decline, cancel, and leave the prompt for more than 2 minutes. Copy each tool result into the table.
 
 ```bash
-claude mcp remove --scope user hygiene-probe
+claude mcp remove --scope user agentdust-probe
 ```
 
 - [ ] **Step 4: Codex CLI**
 
 ```bash
-codex mcp add hygiene-probe -- "$PWD/target/release/hygiene" mcp
+codex mcp add agentdust-probe -- "$PWD/target/release/agentdust" mcp
 ```
 
 Run the same scenarios in a new `codex` session, plus one run with "always allow" set for the tool. Copy each result into the table.
 
 ```bash
-codex mcp remove hygiene-probe
+codex mcp remove agentdust-probe
 ```
 
 - [ ] **Step 5: Cursor MCP**
@@ -3391,14 +3401,14 @@ codex mcp remove hygiene-probe
 Check first: `ls ~/.cursor/mcp.json ~/.cursor/hooks.json`. On 2026-10-03 neither file existed. If one exists, copy it to `/tmp` and restore it in Step 7.
 
 ```bash
-python3 - "$PWD/target/release/hygiene" <<'EOF'
+python3 - "$PWD/target/release/agentdust" <<'EOF'
 import json
 import pathlib
 import sys
 
 path = pathlib.Path.home() / ".cursor/mcp.json"
 config = json.loads(path.read_text()) if path.exists() else {}
-config.setdefault("mcpServers", {})["hygiene-probe"] = {"command": sys.argv[1], "args": ["mcp"]}
+config.setdefault("mcpServers", {})["agentdust-probe"] = {"command": sys.argv[1], "args": ["mcp"]}
 path.write_text(json.dumps(config, indent=2) + "\n")
 EOF
 ```
@@ -3422,7 +3432,7 @@ path.write_text(json.dumps(config, indent=2) + "\n")
 EOF
 ```
 
-Restart Cursor, open a new agent chat, and ask it to run `env | grep HYGIENE_M0_TAG` and then `sleep 600 &`. Close the chat. Then run `ps -o pid,ppid,command -p "$(pgrep -f 'sleep 600')"` and read `~/Library/Application Support/hygiene-m0/cursor-probe.jsonl`. Fill in both sections of `docs/m0/cursor-experiments.md`, and stop the sleeper with `pkill -f 'sleep 600'`.
+Restart Cursor, open a new agent chat, and ask it to run `env | grep AGENTDUST_M0_TAG` and then `sleep 600 &`. Close the chat. Then run `ps -o pid,ppid,command -p "$(pgrep -f 'sleep 600')"` and read `~/Library/Application Support/agentdust-m0/cursor-probe.jsonl`. Fill in both sections of `docs/m0/cursor-experiments.md`, and stop the sleeper with `pkill -f 'sleep 600'`.
 
 - [ ] **Step 7: Remove every change**
 
@@ -3435,7 +3445,7 @@ home = pathlib.Path.home()
 mcp = home / ".cursor/mcp.json"
 if mcp.exists():
     config = json.loads(mcp.read_text())
-    config.get("mcpServers", {}).pop("hygiene-probe", None)
+    config.get("mcpServers", {}).pop("agentdust-probe", None)
     mcp.unlink() if config == {"mcpServers": {}} else mcp.write_text(json.dumps(config, indent=2) + "\n")
 hooks = home / ".cursor/hooks.json"
 if hooks.exists():
@@ -3448,7 +3458,7 @@ if hooks.exists():
             config.get("hooks", {}).pop(event, None)
     hooks.unlink() if config == {"version": 1, "hooks": {}} else hooks.write_text(json.dumps(config, indent=2) + "\n")
 EOF
-claude mcp list | grep -c hygiene-probe; codex mcp list | grep -c hygiene-probe; ls ~/.cursor/mcp.json ~/.cursor/hooks.json 2>&1
+claude mcp list | grep -c agentdust-probe; codex mcp list | grep -c agentdust-probe; ls ~/.cursor/mcp.json ~/.cursor/hooks.json 2>&1
 ```
 
 Expected: `0`, `0`, and `No such file or directory` for both Cursor files (or the restored originals).
@@ -3488,7 +3498,7 @@ Results of the M0 risk spike against the exit criteria in [ROADMAP.md](../../ROA
 | Elicitation matrix recorded for Claude Code, Codex and Cursor | | [client-matrix.md](client-matrix.md) |
 | Two clean builds produce a byte-identical binary | | |
 | Tarball, checksum and attestation produced | | |
-| Homebrew formula installs the tarball and `hygiene version` runs | | |
+| Homebrew formula installs the tarball and `agentdust version` runs | | |
 | Cursor questions answered | | [cursor-experiments.md](cursor-experiments.md) |
 
 ## Blockers

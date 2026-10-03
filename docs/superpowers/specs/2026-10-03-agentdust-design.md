@@ -1,6 +1,6 @@
-# agent-hygiene design
+# AgentDust design
 
-Date: 2026-10-03. Working name: agent-hygiene, binary `hygiene`. Companion to [ROADMAP.md](../../../ROADMAP.md), which holds milestones and success criteria.
+Date: 2026-10-03. Binary `agentdust`. Companion to [ROADMAP.md](../../../ROADMAP.md), which holds milestones and success criteria.
 
 ## 1. Context
 
@@ -14,7 +14,7 @@ Agent data directories also grow without bound (session transcripts, worktrees, 
 
 ### Goal
 
-A developer installs the tool with `brew install` and `hygiene setup`. Any connected agent can then analyse leftover processes and disk growth, show findings, and terminate stale processes after the developer approves each action with a typed code.
+A developer installs the tool with `brew install` and `agentdust setup`. Any connected agent can then analyse leftover processes and disk growth, show findings, and terminate stale processes after the developer approves each action with a typed code.
 
 ### v1 scope
 
@@ -32,20 +32,20 @@ Disk deletion or quarantine, Linux and Windows, daemons or scheduled cleanup, se
 One Rust binary built from a three-crate workspace. The split keeps Tokio and `rmcp` out of the core crate so the core can be audited without them. Tokio starts only in the `mcp` subcommand.
 
 ```
-hygiene (bin)
- ├─ hygiene-core    std + serde: platform, journal, evidence, classify, plan, apply, sanitize
- ├─ hygiene-mcp     tokio + rmcp: hygiene_doctor, hygiene_plan, hygiene_apply
- └─ hygiene-agents  claude, codex, cursor: hook payload parsers and setup patchers
-data dir: ~/Library/Application Support/hygiene (0700)
+agentdust (bin)
+ ├─ agentdust-core    std + serde: platform, journal, evidence, classify, plan, apply, sanitize
+ ├─ agentdust-mcp     tokio + rmcp: agentdust_doctor, agentdust_plan, agentdust_apply
+ └─ agentdust-agents  claude, codex, cursor: hook payload parsers and setup patchers
+data dir: ~/Library/Application Support/agentdust (0700)
 ```
 
 | Subcommand | Behaviour |
 | --- | --- |
-| `hygiene hook <agent>` | Synchronous. Reads one hook event, appends journal records, prints nothing, exits 0 |
-| `hygiene mcp` | Stdio MCP server. Holds plans and approval state in memory |
-| `hygiene doctor`, `hygiene status` | Read-only report, including provenance health and running versions |
-| `hygiene apply` | Human-only terminal path over the same core (section 6.6) |
-| `hygiene setup`, `hygiene support-bundle`, `hygiene version` | Local only |
+| `agentdust hook <agent>` | Synchronous. Reads one hook event, appends journal records, prints nothing, exits 0 |
+| `agentdust mcp` | Stdio MCP server. Holds plans and approval state in memory |
+| `agentdust doctor`, `agentdust status` | Read-only report, including provenance health and running versions |
+| `agentdust apply` | Human-only terminal path over the same core (section 6.6) |
+| `agentdust setup`, `agentdust support-bundle`, `agentdust version` | Local only |
 
 Two apply front ends share one core: the MCP server, approved through elicitation, and the terminal command. Sampling of process trees is event driven (hook calls, MCP server start, each MCP tool call). There are no timers, so an idle server does no work.
 
@@ -68,8 +68,8 @@ Append-only records, one JSON object per line, schema version 1.
 ```
 { v: 1, kind, agent, session_id, subagent_id?, agent_identity?, tool_use_id?,
   wall_ts, mono_ts, boot,
-  session_tag_key?: HMAC(secret, "HYG-SESSION-v1\0" || tag),
-  cwd_key?:         HMAC(secret, "HYG-CWD-v1\0" || canonical cwd),
+  session_tag_key?: HMAC(secret, "AGENTDUST-SESSION-v1\0" || tag),
+  cwd_key?:         HMAC(secret, "AGENTDUST-CWD-v1\0" || canonical cwd),
   exe_base?:        "node",
   procs?:           [{ pid, start_time_us, ppid, exe_base }] }
 kind: session_start | session_end | shell_start | shell_end | sample | server_start
@@ -107,7 +107,7 @@ Checked from top to bottom. The first match wins.
 | suspect | parent is launchd or the launcher chain is dead, same UID, older than the age threshold, idle, not managed, not on the deny list | one code per item |
 | unknown | everything else | never |
 
-The deny list contains PID 1, processes owned by UID 0 or another user, the hygiene server itself, live agent processes, Apple system paths and helpers of running apps. Thresholds for age and idleness are set from the M1 fixture corpus.
+The deny list contains PID 1, processes owned by UID 0 or another user, the AgentDust server itself, live agent processes, Apple system paths and helpers of running apps. Thresholds for age and idleness are set from the M1 fixture corpus.
 
 ### 3.5 Representations
 
@@ -123,7 +123,7 @@ Privacy for the model is structural: it never receives command text or paths, so
 
 ### 4.1 Agent identity
 
-Each adapter accepts only its own host. `hygiene hook claude` walks its ancestry to the first process that matches a known Claude Code executable, and records that `AgentIdentity`. A Codex or Cursor process found on the way is ignored. If no valid anchor exists, the record carries no agent identity and can never support an owned class.
+Each adapter accepts only its own host. `agentdust hook claude` walks its ancestry to the first process that matches a known Claude Code executable, and records that `AgentIdentity`. A Codex or Cursor process found on the way is ignored. If no valid anchor exists, the record carries no agent identity and can never support an owned class.
 
 Known executables start from setup and are refreshed by every genuine adapter invocation, because an agent update replaces its binary. Cursor gets no "agent ended" upgrade until M0 shows which process lifetime covers a Cursor conversation.
 
@@ -131,7 +131,7 @@ Known executables start from setup and are refreshed by every genuine adapter in
 
 | Agent | Events | Tag |
 | --- | --- | --- |
-| Claude Code | `SessionStart`, `PreToolUse` and `PostToolUse` with a Bash matcher, `SessionEnd` | `HYGIENE_SESSION` written to `CLAUDE_ENV_FILE` when it is present |
+| Claude Code | `SessionStart`, `PreToolUse` and `PostToolUse` with a Bash matcher, `SessionEnd` | `AGENTDUST_SESSION` written to `CLAUDE_ENV_FILE` when it is present |
 | Codex | `SessionStart`, `PreToolUse` and `PostToolUse` with a Bash matcher, `SessionEnd` | none |
 | Cursor | `sessionStart`, `afterShellExecution`, `sessionEnd` | none unless the M0 experiment shows that `sessionStart` env reaches shell processes |
 
@@ -161,9 +161,9 @@ A hook always exits 0 and prints nothing. Each agent has a health record (last s
 
 | Tool | Annotations | Result |
 | --- | --- | --- |
-| `hygiene_doctor` | `readOnlyHint` | `ModelFinding` list, class counts, provenance health |
-| `hygiene_plan` | not read-only, not destructive | opaque plan ID and actionable items only |
-| `hygiene_apply` | `destructiveHint` | per-item results |
+| `agentdust_doctor` | `readOnlyHint` | `ModelFinding` list, class counts, provenance health |
+| `agentdust_plan` | not read-only, not destructive | opaque plan ID and actionable items only |
+| `agentdust_apply` | `destructiveHint` | per-item results |
 
 Annotations are hints for the client. The server enforces every rule itself.
 
@@ -171,7 +171,7 @@ Annotations are hints for the client. The server enforces every rule itself.
 
 ### 6.1 Plan
 
-`hygiene_plan` takes a fresh inventory and keeps only owned-ended and suspect items. The plan lives in server memory under a random 128-bit ID and expires after 10 minutes or when the server exits. An inspection report (0600) is written for the user to read. It holds sanitised display data and no approval state, cannot be passed back to `apply`, is deleted at expiry, and stale copies are removed at startup.
+`agentdust_plan` takes a fresh inventory and keeps only owned-ended and suspect items. The plan lives in server memory under a random 128-bit ID and expires after 10 minutes or when the server exits. An inspection report (0600) is written for the user to read. It holds sanitised display data and no approval state, cannot be passed back to `apply`, is deleted at expiry, and stale copies are removed at startup.
 
 ### 6.2 Apply limits
 
@@ -205,7 +205,7 @@ Items succeed or fail independently and nothing is rolled back. A failure on one
 
 | Situation | Result |
 | --- | --- |
-| Client has no elicitation | `apply_not_supported`, with a hint to run `hygiene apply` in a terminal |
+| Client has no elicitation | `apply_not_supported`, with a hint to run `agentdust apply` in a terminal |
 | Server restarts during approval | Plan and nonce are gone, nothing is signalled, the agent must plan again |
 | Corrupt or unknown-version state | `doctor` reports what it can, owned classes are unavailable, `apply` refuses owned-ended items |
 | Lost install secret | HMAC evidence is unverifiable and owned classes downgrade |
@@ -213,7 +213,7 @@ Items succeed or fail independently and nothing is rolled back. A failure on one
 
 ### 6.6 Terminal apply
 
-`hygiene apply` runs doctor, plan and approval in one process with the same rules and codes. It refuses unless stdin, stdout and `/dev/tty` are terminals, a controlling terminal exists, the process is in the terminal's foreground process group, and no ancestor is a known agent. Agent recognition combines executables observed by adapters, executables recorded by setup and a built-in list of agent executable and bundle identifiers, and refuses when in doubt. No flag, environment variable or pipe supplies a code. This guards against automation by accident and is documented as such, not as proof of a human.
+`agentdust apply` runs doctor, plan and approval in one process with the same rules and codes. It refuses unless stdin, stdout and `/dev/tty` are terminals, a controlling terminal exists, the process is in the terminal's foreground process group, and no ancestor is a known agent. Agent recognition combines executables observed by adapters, executables recorded by setup and a built-in list of agent executable and bundle identifiers, and refuses when in doubt. No flag, environment variable or pipe supplies a code. This guards against automation by accident and is documented as such, not as proof of a human.
 
 ## 7. Security and privacy
 
@@ -224,7 +224,7 @@ Items succeed or fail independently and nothing is rolled back. A failure on one
 | A model, injected or not, calls `apply` | Typed code through elicitation. Tool arguments cannot carry approval |
 | The host auto-accepts elicitation | Required random code. Empty or default content is rejected. The host stays in the trusted computing base |
 | Malicious process metadata | The model never receives text values. `HumanDisplay` escaping. Raw values never appear in approval prose |
-| Secrets in commands, paths or environments | Structural: no command text or path in model output, nothing raw persisted, only `HYGIENE_SESSION` read from an environment and hashed at once, shell output never captured. Argument redaction in terminal output is defence in depth |
+| Secrets in commands, paths or environments | Structural: no command text or path in model output, nothing raw persisted, only `AGENTDUST_SESSION` read from an environment and hashed at once, shell output never captured. Argument redaction in terminal output is defence in depth |
 | PID reuse | Section 6.4 |
 | Concurrent apply | Per-identity `flock` |
 | Wrong target | SIGTERM only, one exact PID, actionable classes only, deny list |
@@ -254,7 +254,7 @@ Every command that reads trusted state first checks the data directory: it must 
 
 Every file the tool writes (secret, journal, lock files, health, audit log, inspection reports, manifest, config) is opened with no-follow semantics and must be a regular file with a single link. New files are created exclusively. A symlink, hard link or non-regular file in their place makes the command refuse.
 
-`hygiene setup --remove --purge-data` removes the agent integrations first and verifies the removal. Only then does it delete the data directory. If removal fails, the manifest and secret stay so the user can retry.
+`agentdust setup --remove --purge-data` removes the agent integrations first and verifies the removal. Only then does it delete the data directory. If removal fails, the manifest and secret stay so the user can retry.
 
 ### 7.4 Out of scope
 
@@ -272,14 +272,14 @@ An agent with free shell access (it can signal processes without this tool), a m
 
 Because shell aliases or direnv can set these only when an agent starts, `setup` accepts `--claude-config-dir` and `--codex-home`, and the consent screen prints every resolved destination.
 
-### 8.2 `hygiene setup`
+### 8.2 `agentdust setup`
 
 Each resource has one mutation owner:
 
 | Resource | Changed by |
 | --- | --- |
-| Claude Code MCP server | `claude mcp add --scope user hygiene -- <prefix>/bin/hygiene mcp` and `claude mcp remove` |
-| Codex MCP server | `codex mcp add hygiene -- <prefix>/bin/hygiene mcp` and `codex mcp remove` |
+| Claude Code MCP server | `claude mcp add --scope user agentdust -- <prefix>/bin/agentdust mcp` and `claude mcp remove` |
+| Codex MCP server | `codex mcp add agentdust -- <prefix>/bin/agentdust mcp` and `codex mcp remove` |
 | Cursor MCP server | direct patch of `mcp.json` |
 | Hooks for all three agents | direct patch of `settings.json`, `hooks.json` and `hooks.json` |
 
@@ -296,13 +296,13 @@ Rules for file patches:
 - Re-read the file and abort if it changed since the diff. Write a temp file, sync it, rename, sync the directory, keep the mode. This protects against application and OS crashes, not every power loss.
 - Insert only the tool's own entries beside existing ones.
 
-Rules for native commands: snapshot the current state, refuse if a `hygiene` server exists that the manifest does not own, run the command, then list the configuration again and compare command and arguments exactly. An exit code of 0 alone is never success. Rollback uses the native remove command.
+Rules for native commands: snapshot the current state, refuse if a `agentdust` server exists that the manifest does not own, run the command, then list the configuration again and compare command and arguments exactly. An exit code of 0 alone is never success. Rollback uses the native remove command.
 
 Ownership: the manifest (versioned) records each inserted node and a hash of the value installed. An equivalent entry that existed before setup is recorded as pre-existing and never removed. `--remove` deletes an entry only if the manifest created it and its current value still matches. An edited entry is reported as drift. An unknown manifest version makes `--remove` refuse. `--check` reports drift, conflicts and partial installs. Every path uses the stable Homebrew prefix, never the Cellar.
 
 ### 8.3 Upgrades and mixed versions
 
-After `brew upgrade`, an old MCP server can keep running while new hooks run the new binary. Every persistent format is versioned. A process that meets a newer version only lowers confidence or refuses, and never interprets records it does not know. `hygiene status` lists running hygiene processes with their versions.
+After `brew upgrade`, an old MCP server can keep running while new hooks run the new binary. Every persistent format is versioned. A process that meets a newer version only lowers confidence or refuses, and never interprets records it does not know. `agentdust status` lists running AgentDust processes with their versions.
 
 ### 8.4 Release
 
@@ -361,13 +361,12 @@ CI on every pull request runs one Linux job (fmt, clippy, unit and property test
 
 ### 9.3 Support bundle
 
-`hygiene support-bundle` writes a versioned, local, redacted JSON file (version, macOS version, detected agents, configuration health, class counts, hook latency statistics, error codes) and prints its path. `--stdout` shows the same content without writing a file. Nothing is uploaded.
+`agentdust support-bundle` writes a versioned, local, redacted JSON file (version, macOS version, detected agents, configuration health, class counts, hook latency statistics, error codes) and prints its path. `--stdout` shows the same content without writing a file. Nothing is uploaded.
 
 ## 10. Questions answered by M0 and M1
 
 | Question | Answered by |
 | --- | --- |
-| Project name | M0 availability check on GitHub, crates.io, Homebrew and npm |
 | How each client renders and answers the typed-code form | M0 client matrix |
 | Which process anchors a Cursor conversation | M0 experiment |
 | Whether Cursor `sessionStart` env reaches shell processes | M0 experiment |
