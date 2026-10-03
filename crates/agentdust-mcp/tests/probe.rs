@@ -1,7 +1,7 @@
 use agentdust_mcp::ProbeServer;
 use agentdust_mcp::probe::{INPUT_KEY, Outcome, ProbeReport, TOOL_NAME};
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ClientCapabilities, ClientConfig,
+    CacheScope, CallToolRequestParams, CallToolResponse, CallToolResult, ClientCapabilities, ClientConfig,
     ElicitRequestParams, ElicitResult, ElicitationAction, Implementation, InputRequest, InputResponses,
     ProtocolVersion,
 };
@@ -241,4 +241,14 @@ async fn a_retry_without_the_approval_response_is_rejected() {
         .with_input_responses(wrong_key);
     assert!(client.call_tool_once(retry).await.is_err());
     client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tools_list_carries_the_cache_fields_that_2026_07_28_requires() {
+    let client = connect(ScriptedClient::new(RETRY, Reply::EchoCode)).await;
+    let listed = client.list_tools(None).await.unwrap();
+    client.cancel().await.unwrap();
+    assert_eq!(listed.tools.len(), 1);
+    assert_eq!(listed.ttl_ms, Some(0));
+    assert_eq!(listed.cache_scope, Some(CacheScope::Private));
 }
