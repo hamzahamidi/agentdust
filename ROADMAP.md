@@ -1,6 +1,6 @@
 # AgentDust roadmap
 
-The binary is `agentdust`. Status: planning, no code yet. Design: [the design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
+The binary is `agentdust`. Status: M0 complete with blockers listed in docs/m0/report.md. Design: [the design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
 
 ## Goal
 
