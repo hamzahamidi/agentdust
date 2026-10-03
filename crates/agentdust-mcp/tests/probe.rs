@@ -1,7 +1,9 @@
+use std::sync::{Arc, Mutex};
+
 use agentdust_mcp::ProbeServer;
 use agentdust_mcp::probe::{INPUT_KEY, Outcome, ProbeReport, TOOL_NAME};
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ClientCapabilities, ClientConfig,
+    CacheScope, CallToolRequestParams, CallToolResponse, CallToolResult, ClientCapabilities, ClientConfig,
     ElicitRequestParams, ElicitResult, ElicitationAction, Implementation, InputRequest, InputResponses,
     ProtocolVersion,
 };
@@ -22,6 +24,7 @@ struct ScriptedClient {
     reply: Reply,
     protocol: ProtocolVersion,
     elicitation: bool,
+    seen_schema: Arc<Mutex<Option<serde_json::Value>>>,
 }
 
 impl ScriptedClient {
@@ -30,6 +33,7 @@ impl ScriptedClient {
             reply,
             protocol,
             elicitation: true,
+            seen_schema: Arc::default(),
         }
     }
 }
@@ -54,9 +58,15 @@ impl ClientHandler for ScriptedClient {
         request: ElicitRequestParams,
         _context: RequestContext<RoleClient>,
     ) -> Result<ElicitResult, ErrorData> {
-        let ElicitRequestParams::FormElicitationParams { message, .. } = &request else {
+        let ElicitRequestParams::FormElicitationParams {
+            message,
+            requested_schema,
+            ..
+        } = &request
+        else {
             return Ok(ElicitResult::new(ElicitationAction::Decline));
         };
+        *self.seen_schema.lock().unwrap() = Some(serde_json::to_value(requested_schema).unwrap());
         Ok(match &self.reply {
             Reply::EchoCode => {
                 ElicitResult::new(ElicitationAction::Accept).with_content(json!({ "code": code_in(message) }))
@@ -241,4 +251,49 @@ async fn a_retry_without_the_approval_response_is_rejected() {
         .with_input_responses(wrong_key);
     assert!(client.call_tool_once(retry).await.is_err());
     client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tools_list_carries_the_cache_fields_that_2026_07_28_requires() {
+    let client = connect(ScriptedClient::new(RETRY, Reply::EchoCode)).await;
+    let listed = client.list_tools(None).await.unwrap();
+    client.cancel().await.unwrap();
+    assert_eq!(listed.tools.len(), 1);
+    assert_eq!(listed.ttl_ms, Some(0));
+    assert_eq!(listed.cache_scope, Some(CacheScope::Private));
+}
+
+const SPEC_SCHEMA_KEYS: [&str; 4] = ["$schema", "type", "properties", "required"];
+
+fn assert_only_spec_schema_keys(schema: &serde_json::Value) {
+    let keys: Vec<&str> = schema.as_object().unwrap().keys().map(String::as_str).collect();
+    assert!(keys.iter().all(|key| SPEC_SCHEMA_KEYS.contains(key)), "{keys:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_legacy_form_schema_has_only_the_keys_the_spec_allows() {
+    let client = ScriptedClient::new(LEGACY, Reply::EchoCode);
+    let seen = client.seen_schema.clone();
+    assert_eq!(probe(client).await.outcome, Outcome::Approved);
+    assert_only_spec_schema_keys(seen.lock().unwrap().as_ref().unwrap());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_retry_form_schema_has_only_the_keys_the_spec_allows() {
+    let client = connect(ScriptedClient::new(RETRY, Reply::EchoCode)).await;
+    let CallToolResponse::InputRequired(required) = client
+        .call_tool_once(CallToolRequestParams::new(TOOL_NAME))
+        .await
+        .unwrap()
+    else {
+        panic!("expected an input request");
+    };
+    let Some(InputRequest::Elicitation(elicit)) = required.input_requests.unwrap().remove(INPUT_KEY) else {
+        panic!("expected an elicitation");
+    };
+    let ElicitRequestParams::FormElicitationParams { requested_schema, .. } = elicit.params else {
+        panic!("expected a form elicitation");
+    };
+    client.cancel().await.unwrap();
+    assert_only_spec_schema_keys(&serde_json::to_value(requested_schema).unwrap());
 }

@@ -5,14 +5,14 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ElicitRequest,
+    CacheScope, CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ElicitRequest,
     ElicitRequestParams, ElicitResult, ElicitationAction, ElicitationSchema, Implementation, InputRequest,
     InputRequests, InputRequiredResult, JsonObject, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
     ServerCapabilities, ServerConfig, Tool, ToolAnnotations,
 };
 use rmcp::schemars::JsonSchema;
-use rmcp::service::{ElicitationError, RequestContext, RoleServer, ServiceError};
-use rmcp::{ErrorData, ServerHandler, elicit_safe};
+use rmcp::service::{RequestContext, RoleServer, ServiceError};
+use rmcp::{ErrorData, ServerHandler};
 use serde::{Deserialize, Serialize};
 
 pub const TOOL_NAME: &str = "agentdust_probe_approval";
@@ -27,8 +27,6 @@ pub struct ApprovalCode {
     #[schemars(description = "The code shown in the message")]
     pub code: String,
 }
-
-elicit_safe!(ApprovalCode);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -71,7 +69,9 @@ impl ServerHandler for ProbeServer {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        Ok(ListToolsResult::with_all_items(vec![probe_tool()]))
+        Ok(ListToolsResult::with_all_items(vec![probe_tool()])
+            .with_ttl_ms(0)
+            .with_cache_scope(CacheScope::Private))
     }
 
     async fn call_tool(
@@ -121,7 +121,7 @@ impl ProbeServer {
                     expires: Instant::now() + CODE_TTL,
                 },
             );
-            let schema = ElicitationSchema::from_type::<ApprovalCode>().map_err(internal)?;
+            let schema = approval_schema().map_err(internal)?;
             let mut requests = InputRequests::new();
             requests.insert(
                 INPUT_KEY.to_owned(),
@@ -149,20 +149,7 @@ impl ProbeServer {
             .ok_or_else(|| ErrorData::invalid_params("missing approval response", None))?;
         let response = ElicitResult::deserialize(response)
             .map_err(|_| ErrorData::invalid_params("invalid approval response", None))?;
-        let outcome = match response.action {
-            ElicitationAction::Accept => check_code(
-                response
-                    .content
-                    .as_ref()
-                    .and_then(|c| c.get("code"))
-                    .and_then(|v| v.as_str()),
-                &pending.code,
-            ),
-            ElicitationAction::Decline => Outcome::Declined,
-            ElicitationAction::Cancel => Outcome::Cancelled,
-            _ => Outcome::Failed,
-        };
-        Ok(report(outcome, protocol, "retry"))
+        Ok(report(outcome_of(&response, &pending.code), protocol, "retry"))
     }
 
     async fn call_legacy(
@@ -170,20 +157,21 @@ impl ProbeServer {
         context: &RequestContext<RoleServer>,
         protocol: Option<&ProtocolVersion>,
     ) -> CallToolResponse {
-        let Ok(code) = new_code() else {
+        let (Ok(code), Ok(schema)) = (new_code(), approval_schema()) else {
             return report(Outcome::Failed, protocol, "legacy");
         };
-        let answer = context
+        let request = ElicitRequestParams::FormElicitationParams {
+            meta: None,
+            message: approval_message(&code),
+            requested_schema: schema,
+        };
+        let outcome = match context
             .peer
-            .elicit_with_timeout::<ApprovalCode>(approval_message(&code), Some(CODE_TTL))
-            .await;
-        let outcome = match answer {
-            Ok(Some(answer)) => check_code(Some(&answer.code), &code),
-            Ok(None) | Err(ElicitationError::NoContent) => Outcome::Empty,
-            Err(ElicitationError::UserDeclined) => Outcome::Declined,
-            Err(ElicitationError::UserCancelled) => Outcome::Cancelled,
-            Err(ElicitationError::CapabilityNotSupported) => Outcome::Unsupported,
-            Err(ElicitationError::Service(ServiceError::Timeout { .. })) => Outcome::Expired,
+            .create_elicitation_with_timeout(request, Some(CODE_TTL))
+            .await
+        {
+            Ok(response) => outcome_of(&response, &code),
+            Err(ServiceError::Timeout { .. }) => Outcome::Expired,
             Err(_) => Outcome::Failed,
         };
         report(outcome, protocol, "legacy")
@@ -192,6 +180,29 @@ impl ProbeServer {
 
 pub fn approval_message(code: &str) -> String {
     format!("Type {code} to approve this agentdust probe. Nothing will be changed.")
+}
+
+fn approval_schema() -> Result<ElicitationSchema, serde_json::Error> {
+    let mut schema = ElicitationSchema::from_type::<ApprovalCode>()?;
+    schema.title = None;
+    schema.description = None;
+    Ok(schema)
+}
+
+fn outcome_of(response: &ElicitResult, expected: &str) -> Outcome {
+    match response.action {
+        ElicitationAction::Accept => check_code(
+            response
+                .content
+                .as_ref()
+                .and_then(|content| content.get("code"))
+                .and_then(|code| code.as_str()),
+            expected,
+        ),
+        ElicitationAction::Decline => Outcome::Declined,
+        ElicitationAction::Cancel => Outcome::Cancelled,
+        _ => Outcome::Failed,
+    }
 }
 
 pub fn check_code(answer: Option<&str>, expected: &str) -> Outcome {
