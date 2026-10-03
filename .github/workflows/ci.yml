@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: "1.99.0"
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal -c clippy -c rustfmt
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --exclude agentdust --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --exclude agentdust --locked
+      - uses: taiki-e/install-action@861a07ce7084f55488e375df125cdc99bba60eb7 # v2.87.23
+        with:
+          tool: cargo-deny,cargo-audit,cargo-fuzz
+      - run: cargo deny check
+      - run: cargo audit
+      - run: rustup toolchain install nightly --profile minimal
+      - run: cargo +nightly fuzz build procargs --target x86_64-unknown-linux-gnu
+
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal -c clippy
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - run: cargo test --release -p agentdust --test hook_latency --locked -- --ignored --nocapture

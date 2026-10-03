@@ -1,0 +1,16 @@
+[package]
+name = "agentdust-testkit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "fixture-sleeper"
+path = "src/bin/fixture-sleeper.rs"
+test = false
+
+[dev-dependencies]
+agentdust-core.workspace = true
+libc.workspace = true
