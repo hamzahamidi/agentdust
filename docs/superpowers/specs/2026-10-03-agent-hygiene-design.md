@@ -115,9 +115,9 @@ The deny list contains PID 1, processes owned by UID 0 or another user, the hygi
 | --- | --- | --- |
 | `RawIdentity` | operating system calls only | full paths, identities, command lines |
 | `ModelFinding` | MCP tool results, so the model | item ID, class, `exe_base`, PID, age, evidence kinds, `cwd_relation` (`same_repo`, `other_repo`, `home`, `temp`, `other`). No command text and no path |
-| `HumanDisplay` | elicitation prompts and the terminal | fixed templates. Elicitation adds the cwd basename (at most 40 characters). The terminal adds the redacted command (120 characters) and cwd (80 characters). Every value has C0, C1, escape and bidi controls escaped |
+| `HumanDisplay` | elicitation prompts and the terminal | fixed templates. Elicitation prompts show only `ModelFinding` fields. The terminal adds the redacted command (120 characters) and cwd (80 characters). Every value has C0, C1, escape and bidi controls escaped |
 
-Privacy for the model is structural: it never receives command text or paths, so redaction rules are defence in depth and not the guarantee. Elicitation prompts pass through the host application and can appear in its transcripts, which the documentation states. Live data such as cwd is read from the process at display time and never taken from the journal.
+Privacy for the model is structural: it never receives command text or paths, so redaction rules are defence in depth and not the guarantee. Elicitation prompts pass through the host application and can appear in its transcripts, so they carry no path-derived text either. Live data such as cwd is read from the process at display time and never taken from the journal.
 
 ## 4. Provenance and adapters
 
@@ -151,7 +151,7 @@ Timing has three separate limits:
 
 - Service level for normal input: p50 under 10 ms and p95 under 20 ms.
 - Host timeout: the hook configuration written by `setup` sets a 10 second timeout, the hard bound on how long an agent can wait.
-- Journal write budget: the lock is taken without blocking, with retries for at most 20 ms. On failure the record is dropped and hook health is updated.
+- Journal write budget: the lock is taken without blocking, with retries for at most 20 ms. On failure the record is dropped and hook health is updated. The health update follows the same budget and is best effort.
 
 Benchmarks with 1, 10 and 100 MB payloads assert latency and that each host handles the hook normally.
 
@@ -209,7 +209,7 @@ Items succeed or fail independently and nothing is rolled back. A failure on one
 | Server restarts during approval | Plan and nonce are gone, nothing is signalled, the agent must plan again |
 | Corrupt or unknown-version state | `doctor` reports what it can, owned classes are unavailable, `apply` refuses owned-ended items |
 | Lost install secret | HMAC evidence is unverifiable and owned classes downgrade |
-| `apply` disabled in `config.toml` | `apply` refuses everything, `doctor` still works |
+| `apply = false` in `config.toml`, or a config file that exists but cannot be read or parsed | MCP and terminal apply both refuse everything, `doctor` still works. A missing setting means enabled |
 
 ### 6.6 Terminal apply
 
@@ -250,7 +250,9 @@ A test plants fake API keys, user names and repository names in commands, paths,
 
 ### 7.3 Startup validation
 
-Every command that reads trusted state first checks the data directory: it must be a real directory owned by the current UID, `install.secret`, the journal and the manifest must be regular files that are not symlinks, and the secret must have no group or world access. A wrong mode on the directory is corrected. Anything else makes the command refuse with a specific message.
+Every command that reads trusted state first checks the data directory: it must be a real directory owned by the current UID, and the secret must have no group or world access. A wrong mode on the directory is corrected. Anything else makes the command refuse with a specific message.
+
+Every file the tool writes (secret, journal, lock files, health, audit log, inspection reports, manifest, config) is opened with no-follow semantics and must be a regular file with a single link. New files are created exclusively. A symlink, hard link or non-regular file in their place makes the command refuse.
 
 `hygiene setup --remove --purge-data` removes the agent integrations first and verifies the removal. Only then does it delete the data directory. If removal fails, the manifest and secret stay so the user can retry.
 
@@ -304,7 +306,7 @@ After `brew upgrade`, an old MCP server can keep running while new hooks run the
 
 ### 8.4 Release
 
-- Builds run on the pinned `macos-26` arm64 image with the toolchain pinned in `rust-toolchain.toml`. Each build records the runner image, `rustc -Vv`, the Cargo version, `xcodebuild -version`, the SDK version, `SDKROOT`, the `Cargo.lock` hash and the build flags.
+- Builds run on an explicitly named macOS arm64 runner image, never `macos-latest`. `DEVELOPER_DIR` and `SDKROOT` select an exact Xcode and SDK, and the toolchain is pinned in `rust-toolchain.toml`. Each build records the runner image, `rustc -Vv`, the Cargo version, `xcodebuild -version`, the SDK version, the `Cargo.lock` hash and the build flags, and the release fails if any of them differs from the expected values.
 - Two separate jobs run `cargo build --release --locked`. The raw binaries are compared first, then the deterministic tarballs (sorted entries, fixed mtime, `gzip -n`).
 - A release only proceeds when the tag commit is reachable from protected `main`, the tag matches the crate version, and CI passed for that commit. Every action is pinned to a full commit SHA, and workflow permissions are least privilege.
 - Both the raw binary and the tarball get a GitHub artifact attestation. `SHA256SUMS` lists the tarball, and the Homebrew formula pins the same digest. `cargo audit` runs again in the release job.
@@ -332,12 +334,13 @@ After `brew upgrade`, an old MCP server can keep running while new hooks run the
 | S12 | Terminal apply refuses without terminals, controlling terminal or foreground group, or under an agent ancestor | PTY tests for each condition and one success case |
 | S13 | Hooks exit 0, print nothing and stay within section 4.4 limits | performance: normal and 1, 10, 100 MB payloads in each host |
 | S14 | Raw tags, commands, output and environments are never persisted | privacy invariant test |
-| S15 | `ModelFinding` holds no command text and no path | privacy invariant test on tool output |
-| S16 | Startup validation refuses unsafe data directory state | symlinked secret, foreign owner, loose modes |
+| S15 | `ModelFinding` and elicitation prompts hold no command text and no path | privacy invariant test on tool output and prompt snapshots |
+| S16 | Startup validation and safe opens refuse unsafe state for every persistent file | symlinked and hard-linked state files, foreign owner, loose modes |
 | S17 | Setup never edits a symlinked or non-regular file, never removes what it did not create, and verifies native command results | setup fixtures for each case, including a stubbed CLI that exits 0 without changing anything |
 | S18 | Unknown schema or manifest versions fail closed | journal and manifest from a future version |
 | S19 | Provenance failures only lower confidence | hook failures injected, classifier output compared |
-| S20 | A release only comes from protected `main` with passing CI, pinned actions and attested artifacts | release workflow dry run on a fork |
+| S20 | A release only comes from protected `main` with passing CI, pinned actions, the expected Xcode and SDK, and attested artifacts | release workflow dry run on a fork, including a toolchain drift case |
+| S21 | `apply = false` or an unreadable config disables both MCP and terminal apply | contract and PTY tests with the switch set and with a malformed config |
 
 Every normative "never", "must" or "refuse" in this document maps to a row above. A new rule adds a row before it is implemented.
 
