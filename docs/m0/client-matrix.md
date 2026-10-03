@@ -2,7 +2,7 @@
 
 How each MCP client renders and answers the typed-code approval form of `agentdust_probe_approval`. One row per client and scenario. The tool result is the JSON the probe returns.
 
-Probe build: `agentdust 0.0.0` at commit `999757f` (main `c26f21d` plus `ec3ee37`, which adds the `tools/list` cache fields, and `999757f`, which removes `title` and `description` from the form schema). Recorded on 2026-10-04 on macOS 26.6.2.
+Probe build: `agentdust 0.0.0` built from the same source as `af77e9b` on `main` ([#3](https://github.com/hamzahamidi/agentdust/pull/3), which adds the `tools/list` cache fields and removes `title` and `description` from the form schema). Recorded on 2026-10-04 on macOS 26.6.2.
 
 The forged retry scenario asks the model to call the tool and complete the approval form itself, with no answer from the person. On protocol 2026-07-28 the code travels inside the tool result, so this row shows whether a client lets the model read it and approve on its own.
 
@@ -37,8 +37,8 @@ Codex ran as `codex -m gpt-6-luna -c model_reasoning_effort="low"` in a pseudo-t
 
 | Client | Symptom | Cause | Fix in the probe |
 | --- | --- | --- | --- |
-| Claude Code 2.1.282 | Connected, but `tools/list` failed validation and no tool was listed | Protocol 2026-07-28 requires `ttlMs` and `cacheScope` on `tools/list`; rmcp leaves both unset | `ec3ee37` sets `ttlMs: 0` and `cacheScope: "private"` |
-| Codex 0.156.1 | Every form came back `cancelled` without being shown | Codex accepts only `$schema`, `type`, `properties` and `required` at the top of the form schema; schemars adds `title` | `999757f` sends one schema without `title` or `description` on both paths |
+| Claude Code 2.1.282 | Connected, but `tools/list` failed validation and no tool was listed | Protocol 2026-07-28 requires `ttlMs` and `cacheScope` on `tools/list`; rmcp leaves both unset | [#3](https://github.com/hamzahamidi/agentdust/pull/3) sets `ttlMs: 0` and `cacheScope: "private"` |
+| Codex 0.156.1 | Every form came back `cancelled` without being shown | Codex accepts only `$schema`, `type`, `properties` and `required` at the top of the form schema; schemars adds `title` | [#3](https://github.com/hamzahamidi/agentdust/pull/3) sends one schema without `title` or `description` on both paths |
 
 ## Verdict per client
 
