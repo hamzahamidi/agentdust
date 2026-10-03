@@ -39,17 +39,17 @@ pub fn boot_session_uuid() -> io::Result<String> {
 pub fn process_info(pid: i32, boot_session_uuid: &str) -> io::Result<Option<ProcessInfo>> {
     let mut info = MaybeUninit::<libc::proc_bsdinfo>::zeroed();
     let size = size_of::<libc::proc_bsdinfo>() as libc::c_int;
-    // SAFETY: `info` points to `size` writable bytes for a proc_bsdinfo.
-    let written =
-        unsafe { libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, info.as_mut_ptr().cast(), size) };
+    // SAFETY: `info` is `size` writable bytes, and an all-zero proc_bsdinfo is a valid value.
+    let (written, info) = unsafe {
+        let written = libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, info.as_mut_ptr().cast(), size);
+        (written, info.assume_init())
+    };
     if written <= 0 {
         return missing_or(io::Error::last_os_error());
     }
     if written != size {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "short proc_bsdinfo"));
     }
-    // SAFETY: the kernel filled all `size` bytes, checked above.
-    let info = unsafe { info.assume_init() };
     Ok(Some(ProcessInfo {
         identity: KernelIdentity {
             boot_session_uuid: boot_session_uuid.to_owned(),
