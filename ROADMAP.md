@@ -64,7 +64,7 @@ Exit: hook p50 under 10 ms on the real binary, the elicitation matrix recorded, 
 ### M1 Safety foundation and test harness (L)
 
 - Process identity (PID, start time, UID, executable), with property tests.
-- Journal: minimal fields only (session ID, timestamp, working directory identity, tool-call ID, fingerprinted command), file permissions 0600, retention and rotation, schema version that fails closed on unknown versions, corrupt-state recovery.
+- Journal: minimal fields only (session ID, wall and monotonic timestamps, keyed working directory digest, tool-call ID, executable basename), file permissions 0600, retention and rotation, schema version that fails closed on unknown versions, corrupt-state recovery.
 - Locking and the three-writer benchmark that picks the ledger format.
 - Written threat model covering a malicious model, malicious process metadata, a buggy MCP client, same-user tampering, PID reuse, concurrent apply, stale plans and a compromised release artifact.
 - Live process-tree test harness that spawns real fixture processes (cooperative and SIGTERM-ignoring children, detached sessions, children that exit during approval) and only signals PIDs it created.
@@ -87,6 +87,7 @@ Exit: controlled Claude fixtures whose session has ended become owned-ended and 
 - `hygiene_plan` and `hygiene_apply` with typed-code elicitation, atomic per-item claim, revalidation after approval, SIGTERM to one PID, survivor report, audit log (0600, bounded size).
 - Approval flow: one batch code for owned-ended items, then one code per suspect item with its evidence rendered from a fixed template. A deliberately detached process such as a tunnel can be classified suspect, so the per-item prompt is the control.
 - Fail-closed behaviour on decline, cancel, timeout, unsupported clients and corrupt state.
+- Terminal `hygiene apply` with the same rules, refusing without a foreground terminal or under an agent ancestor.
 - `hygiene setup` for Claude Code: full diff, consent, surgical edits, idempotent, `--check`, `--remove`, ownership manifest, rollback report for partial failure.
 - Homebrew formula, `hygiene support-bundle` (a local file, never uploaded), README, security and privacy documents.
 
