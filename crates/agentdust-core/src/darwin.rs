@@ -258,7 +258,7 @@ pub fn cwd_path(pid: i32) -> io::Result<Option<PathBuf>> {
     Ok(Some(PathBuf::from(OsString::from_vec(bytes[..end].to_vec()))))
 }
 
-fn current_uid() -> u32 {
+pub fn current_uid() -> u32 {
     // SAFETY: geteuid takes no arguments and cannot fail.
     unsafe { libc::geteuid() }
 }

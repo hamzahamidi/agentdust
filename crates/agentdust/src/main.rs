@@ -1,3 +1,4 @@
+mod doctor;
 mod hook;
 
 use std::process::ExitCode;
@@ -11,12 +12,16 @@ fn main() -> ExitCode {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
         ["mcp"] => mcp(),
+        ["doctor"] => doctor::run(false),
+        ["doctor", "--json"] => doctor::run(true),
         ["version"] => {
             println!("agentdust {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         _ => {
-            eprintln!("usage: agentdust hook claude | agentdust mcp | agentdust version");
+            eprintln!(
+                "usage: agentdust hook claude | agentdust mcp | agentdust doctor [--json] | agentdust version"
+            );
             ExitCode::from(2)
         }
     }
