@@ -16,7 +16,7 @@ This page records the M1 benchmark behind [ADR-1](adr-journal-format.md) (ROADMA
 | C2 | `journal.jsonl`, `journal.maint` | As C, then `fstat` of the descriptor against `lstat` of the path. When the path names another inode or none, the frame is written again, at most 3 attempts in all | No lock | As C |
 | D | `journal.jsonl`, `journal.lock`, `journal.maint` | Shared `flock` on `journal.lock`, non-blocking and retried for 20 ms, held from before the open to after the write, then as C | Shared `flock` on `journal.lock` while the files are listed and opened | As C, plus an exclusive `flock` on `journal.lock` for each rename or unlink that changes the set of generations |
 
-Every file is created with mode 0600 under a 0700 directory and opened with `O_NOFOLLOW`, so no candidate pays for a safeguard another skips. All four candidates share one reader (open the active file, list the generations, open each, skip one that vanished, collapse exact duplicates, order by boot and `mono_ns`), one rotation (rename of `journal.jsonl` to `journal.<stamp>.jsonl`) and one retention algorithm (ADR-1, section Retention). They differ in the append and in which locks the reader and the maintenance take. A refuses a frame of more than 65,536 bytes like the others, which the M0 code did not.
+Every file is created with mode 0600 under a 0700 directory and opened with `O_NOFOLLOW`, so no candidate pays for a safeguard another skips. All four candidates share one reader (open the active file, list the generations, open each, skip one that vanished, collapse exact duplicates, order by boot and `mono_ts`), one rotation (rename of `journal.jsonl` to `journal.<stamp>.jsonl`) and one retention algorithm (ADR-1, section Retention). They differ in the append and in which locks the reader and the maintenance take. A refuses a frame of more than 65,536 bytes like the others, which the M0 code did not.
 
 SQLite was not measured. The ADR gives the reasons.
 
@@ -64,7 +64,7 @@ Column definitions:
 - **Out of order:** one writer's sequence number goes backwards in read order.
 - **Duplicates:** records the reader or a writer repeated. The final cycle's retention removes the copies a re-append leaves, so this column is 0 after the run.
 - **Unacknowledged but present:** a record that is in the journal although its append returned an error.
-- **Timestamp inversions:** adjacent records in read order where `mono_ns` goes backwards. Every candidate reads through the same sort, so the column is 0 by construction and only checks the sort.
+- **Timestamp inversions:** adjacent records in read order where `mono_ts` goes backwards. Every candidate reads through the same sort, so the column is 0 by construction and only checks the sort.
 - **Re-appended records:** appends that needed a second attempt (C2).
 - **Rotations skipped, compactions skipped:** the rotator could not take a lock within its 50 ms budget.
 - **Rotation wait:** the time of the rotation call, from the first lock attempt to the return. It includes the rename and, with syncs on, the directory sync.
@@ -274,7 +274,7 @@ No NFS, SMB or other network volume was available, so none was measured. The pol
 
 ## Measurements carried over
 
-B (one segment file per writer handle, merged on read by boot and `mono_ns`) is not in this tree, and its numbers are not repeated here. Adding rotation and retention to a design with one file per hook record was not cheap, and the measurement that decided against it does not depend on rotation. Its numbers come from the benchmark that preceded this one (branch `m1-proto`, commit `5e95b28`, 5 repeats, no rotator, one reader, the same hardware and writers, load averages 6.8 to 10.3). They were not run again here.
+B (one segment file per writer handle, merged on read by boot and `mono_ts`) is not in this tree, and its numbers are not repeated here. Adding rotation and retention to a design with one file per hook record was not cheap, and the measurement that decided against it does not depend on rotation. Its numbers come from the benchmark that preceded this one (branch `m1-proto`, commit `5e95b28`, 5 repeats, no rotator, one reader, the same hardware and writers, load averages 6.8 to 10.3). They were not run again here.
 
 | Measure | A (flock) | B (segment files) | C (O_APPEND) |
 | --- | ---: | ---: | ---: |

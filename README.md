@@ -44,7 +44,7 @@ True of the code today:
 
 - The release binary imports no socket calls, and the dependency tree has no networking crates.
 - The journal holds event kinds, session and tool identifiers, timestamps and the boot session. A test sends a 9 MB tool response through the hook and checks that neither the output nor the command reaches the journal.
-- The hook exits 0 and prints nothing, including on malformed input, an unwritable data directory and a busy journal lock.
+- The hook exits 0 and prints nothing, including on malformed input, an unwritable data directory and a data directory on a volume that is not local APFS, where it records nothing.
 
 Design for 0.1, not implemented yet:
 
