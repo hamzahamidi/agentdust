@@ -16,9 +16,9 @@ fn an_encoded_record_has_exactly_the_requested_size() {
 
 #[test]
 fn the_size_holds_when_the_monotonic_stamp_changes_width() {
-    for mono_ns in [7, 1_234_567, 98_765_432_101_234_567] {
-        let record = record_with(3, 4, 4000, 1_800_000_000_000, mono_ns);
-        assert_eq!(line_len(&record), 4000, "mono {mono_ns}");
+    for mono_ts in [7, 1_234_567, 98_765_432_101_234_567] {
+        let record = record_with(3, 4, 4000, 1_800_000_000_000, mono_ts);
+        assert_eq!(line_len(&record), 4000, "mono {mono_ts}");
     }
 }
 

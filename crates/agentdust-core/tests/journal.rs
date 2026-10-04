@@ -26,9 +26,11 @@ fn record(session: &str) -> Record {
         session_id: session.to_owned(),
         subagent_id: None,
         tool_use_id: Some("toolu_1".to_owned()),
-        wall_ts_ms: 1,
-        mono_ns: 2,
+        wall_ts: 1,
+        mono_ts: 2,
         boot: "boot".to_owned(),
+        cwd_key: None,
+        exe_base: None,
     }
 }
 
