@@ -18,6 +18,7 @@ libc = "0.2.190"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 thiserror = "2.0.21"
+toml = { version = "1.1.2", default-features = false, features = ["std", "serde", "parse"] }
 hmac = "0.13.0"
 sha2 = { version = "0.11.0", default-features = false }
 proptest = { version = "1.11.0", default-features = false, features = ["std"] }
