@@ -1,11 +1,13 @@
+use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use agentdust_core::darwin::{self, DarwinProvider};
+use agentdust_core::identity::KernelIdentity;
 use agentdust_core::provider::{ProcessProvider, ProcessRead};
 use agentdust_core::revalidate::{Field, Revalidation, revalidate};
 
-use super::{Entry, Error, Harness, Launched, Signal};
+use super::{Entry, Error, Harness, Launched, ProcHandle, Signal};
 use crate::report::Report;
 use crate::wait_until;
 
@@ -157,4 +159,141 @@ fn a_fixture_that_does_not_report_in_time_is_an_error_and_is_killed_with_its_lau
     assert!(harness.entries.is_empty());
     drop(launched);
     assert!(!alive(pid));
+}
+
+struct Family {
+    parent_pid: i32,
+    sleeper: i32,
+    tail: i32,
+    members: Vec<KernelIdentity>,
+}
+
+impl Drop for Family {
+    fn drop(&mut self) {
+        let Ok(boot) = darwin::boot_session_uuid() else {
+            return;
+        };
+        for identity in &self.members {
+            let unchanged = matches!(
+                darwin::process_info(identity.pid, &boot),
+                Ok(Some(info)) if info.identity == *identity
+            );
+            if unchanged {
+                // SAFETY: the kernel identity was just confirmed to be a process this test started.
+                unsafe { libc::kill(identity.pid, libc::SIGKILL) };
+            }
+        }
+    }
+}
+
+fn register_family(harness: &mut Harness) -> Family {
+    let mut parent = Command::new("/bin/sh")
+        .arg("-c")
+        .arg("sleep 120 & echo $!; tail -f /dev/null & echo $!; wait")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut lines = BufReader::new(parent.stdout.take().unwrap()).lines();
+    let mut next = || lines.next().unwrap().unwrap().trim().parse::<i32>().unwrap();
+    let (sleeper, tail) = (next(), next());
+    let boot = darwin::boot_session_uuid().unwrap();
+    let mut members = Vec::new();
+    for (pid, exe) in [(sleeper, "/bin/sleep"), (tail, "/usr/bin/tail")] {
+        let started = wait_until(
+            || darwin::exe_path(pid).unwrap().as_deref() == Some(std::path::Path::new(exe)),
+            HANG_GUARD,
+        );
+        assert!(started, "{exe} did not start");
+        members.push(darwin::process_info(pid, &boot).unwrap().unwrap().identity);
+    }
+    let parent_pid = register(harness, parent);
+    Family {
+        parent_pid,
+        sleeper,
+        tail,
+        members,
+    }
+}
+
+fn claim(pid: i32, ppid: i32) -> Report {
+    Report {
+        pid,
+        ppid,
+        sid: 1,
+        env: None,
+    }
+}
+
+fn assert_refused(harness: &Harness, result: Result<ProcHandle, Error>, pid: i32) {
+    assert!(
+        matches!(result, Err(Error::UnexpectedChild { child, .. }) if child == pid),
+        "{result:?}"
+    );
+    assert_eq!(harness.entries.len(), 1);
+}
+
+#[test]
+fn a_real_child_of_a_registered_parent_is_adopted_and_can_be_signalled() {
+    let mut harness = harness();
+    let family = register_family(&mut harness);
+    let handle = harness
+        .adopt(0, claim(family.sleeper, family.parent_pid))
+        .unwrap();
+    assert_eq!(harness.pid(handle), family.sleeper);
+    assert_eq!(harness.entries[handle.index].parent, Some(0));
+    assert!(harness.entries[handle.index].child.is_none());
+    assert_eq!(harness.revalidate(handle), Revalidation::Match);
+    harness.signal(handle, Signal::Term).unwrap();
+    assert!(wait_until(
+        || harness.revalidate(handle) == Revalidation::Gone,
+        HANG_GUARD
+    ));
+}
+
+#[test]
+fn a_report_that_names_another_parent_is_refused_and_the_process_is_left_alone() {
+    let mut harness = harness();
+    let family = register_family(&mut harness);
+    let result = harness.adopt(0, claim(family.sleeper, 1));
+    assert_refused(&harness, result, family.sleeper);
+    drop(harness);
+    assert!(alive(family.sleeper));
+}
+
+#[test]
+fn a_child_that_is_not_running_the_fixture_binary_is_refused_and_left_alone() {
+    let mut harness = harness();
+    let family = register_family(&mut harness);
+    let result = harness.adopt(0, claim(family.tail, family.parent_pid));
+    assert_refused(&harness, result, family.tail);
+    assert!(alive(family.tail));
+    assert!(harness.signal_log().is_empty());
+}
+
+#[test]
+fn a_process_that_is_not_a_child_of_the_registered_parent_is_refused_and_left_alone() {
+    let mut harness = harness();
+    let family = register_family(&mut harness);
+    let mut stranger = sleeper();
+    let pid = stranger.id() as i32;
+    let result = harness.adopt(0, claim(pid, family.parent_pid));
+    assert_refused(&harness, result, pid);
+    drop(harness);
+    assert!(stranger.try_wait().unwrap().is_none());
+    stranger.kill().unwrap();
+    stranger.wait().unwrap();
+}
+
+#[test]
+fn a_pid_that_does_not_exist_is_refused() {
+    let mut harness = harness();
+    let family = register_family(&mut harness);
+    let result = harness.adopt(0, claim(i32::MAX, family.parent_pid));
+    assert!(
+        matches!(result, Err(Error::Unidentified { pid, .. }) if pid == i32::MAX),
+        "{result:?}"
+    );
+    assert_eq!(harness.entries.len(), 1);
 }
