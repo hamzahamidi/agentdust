@@ -50,6 +50,7 @@ fn open(candidate: Candidate, scratch: &Scratch) -> Box<dyn Journal> {
         scratch.path(),
         Options {
             maintenance_budget: Duration::ZERO,
+            ..Options::default()
         },
     )
 }

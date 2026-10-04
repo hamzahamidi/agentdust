@@ -50,6 +50,7 @@ fn report() -> RunReport {
         load_before: "5.59 5.98 6.83".to_owned(),
         load_after: "6.10 6.00 6.80".to_owned(),
         filesystem: "apfs, local, supported".to_owned(),
+        maintenance_sync: true,
         repeats: 3,
         elapsed_secs: 41.5,
         cells: vec![CellRuns {
@@ -160,10 +161,10 @@ fn the_live_reader_table_shows_reads_and_the_largest_torn_tail() {
 }
 
 #[test]
-fn the_header_lists_the_load_averages_the_file_system_and_the_run_time_one_per_line() {
+fn the_header_lists_the_load_averages_file_system_sync_mode_and_run_time_one_per_line() {
     let text = render_markdown(&report());
     assert!(text.starts_with(
-        "- Load averages before the run: 5.59 5.98 6.83\n- Load averages after the run: 6.10 6.00 6.80\n- Data directory file system: apfs, local, supported\n- Run time: 41.5 s. Repeats per cell: 3.\n\n"
+        "- Load averages before the run: 5.59 5.98 6.83\n- Load averages after the run: 6.10 6.00 6.80\n- Data directory file system: apfs, local, supported\n- Maintenance sync: on\n- Run time: 41.5 s. Repeats per cell: 3.\n\n"
     ));
 }
 
@@ -238,4 +239,12 @@ fn the_load_is_read_from_macos_and_linux_uptime_output() {
         "0.52, 0.58, 0.59"
     );
     assert_eq!(parse_load("no such command"), "unavailable");
+}
+
+#[test]
+fn a_run_without_maintenance_sync_says_so_in_the_header() {
+    let mut data = report();
+    data.maintenance_sync = false;
+    let text = render_markdown(&data);
+    assert!(text.contains("- Maintenance sync: off\n"), "{text}");
 }

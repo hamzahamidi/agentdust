@@ -279,6 +279,18 @@ fn a_list_flag_with_a_bad_item_is_a_usage_error() {
         &["run", "--candidates", "B"][..],
         &["run", "--candidates", ""][..],
         &["run", "--rotator", "maybe"][..],
+        &["run", "--sync", "maybe"][..],
+        &[
+            "rotator",
+            "--candidate",
+            "C",
+            "--dir",
+            "d",
+            "--stop-file",
+            "s",
+            "--sync",
+            "maybe",
+        ][..],
     ] {
         let output = Command::new(EXE).args(args).output().unwrap();
         assert_eq!(output.status.code(), Some(2), "{args:?}");
@@ -301,4 +313,33 @@ fn the_fs_subcommand_prints_the_file_system_facts_of_a_path() {
         .unwrap();
     assert_eq!(missing.status.code(), Some(1));
     assert!(missing.stdout.is_empty());
+}
+
+#[test]
+fn the_maintenance_syncs_are_on_by_default_and_can_be_switched_off() {
+    let scratch = Scratch::new("cli-sync");
+    fs::create_dir_all(scratch.path()).unwrap();
+    let json = scratch.path().join("result.json");
+    let narrow = [
+        "--records",
+        "12",
+        "--reader-records",
+        "0",
+        "--sizes",
+        "150",
+        "--writers",
+        "3",
+        "--candidates",
+        "C2",
+    ];
+    let default = run_with(&scratch, &json, &narrow);
+    succeeded(&default);
+    assert!(load(&json).maintenance_sync);
+    assert!(String::from_utf8_lossy(&default.stdout).contains("- Maintenance sync: on\n"));
+    let mut off_args = narrow.to_vec();
+    off_args.extend(["--sync", "off", "--rotate-period-ms", "1"]);
+    let off = run_with(&scratch, &json, &off_args);
+    succeeded(&off);
+    assert!(!load(&json).maintenance_sync);
+    assert!(String::from_utf8_lossy(&off.stdout).contains("- Maintenance sync: off\n"));
 }
