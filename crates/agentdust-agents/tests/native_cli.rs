@@ -355,7 +355,7 @@ fn a_runner_kills_a_program_that_does_not_finish() {
         "cli",
         &format!("echo $$ > '{}'; exec sleep 30", pid_file.display()),
     );
-    let result = SystemRunner::new(program, None, Duration::from_millis(500)).run(&[]);
+    let result = SystemRunner::new(program, None, Duration::from_secs(4)).run(&[]);
     assert!(matches!(result, Err(CliError::TimedOut(_))), "{result:?}");
     let pid = fs::read_to_string(&pid_file).unwrap();
     let alive = Command::new("kill")
