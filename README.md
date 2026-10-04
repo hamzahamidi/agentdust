@@ -19,6 +19,7 @@ Release 0.1 adds the analysis and the approved cleanup for Claude Code. The Code
 | --- | --- |
 | Process identity, one environment variable read from another process, `KERN_PROCARGS2` parser (fuzzed) | Built |
 | Claude Code hook that records session and shell events in a local journal | Built |
+| Journal rotation and retention, as library functions that nothing runs yet | Built |
 | MCP approval probe: a typed-code form that changes nothing | Built |
 | Reproducible release pipeline | Proven in a dry run: two identical binaries, a deterministic tarball, a verified attestation ([report](docs/m0/report.md)) |
 | Homebrew distribution | Proven with a local tap in the dry run. No public tap or release yet |
