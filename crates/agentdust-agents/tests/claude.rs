@@ -131,3 +131,26 @@ fn malformed_events_are_errors() {
         );
     }
 }
+
+#[test]
+fn bytes_after_the_event_are_an_error() {
+    let junk: [&[u8]; 3] = [
+        br#"{"session_id":"s","hook_event_name":"Stop"}garbage"#,
+        br#"{"session_id":"s","hook_event_name":"Stop"} {"session_id":"t"}"#,
+        br#"{"session_id":"s","hook_event_name":"Stop"}]"#,
+    ];
+    for input in junk {
+        let result = parse_event(input);
+        assert!(
+            matches!(result, Err(EventError::Json(_))),
+            "{}: {result:?}",
+            String::from_utf8_lossy(input)
+        );
+    }
+}
+
+#[test]
+fn whitespace_after_the_event_is_accepted() {
+    let input: &[u8] = b"{\"session_id\":\"s\",\"hook_event_name\":\"Stop\"} \r\n\t\n";
+    assert!(parse_event(input).is_ok());
+}
