@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "name": "subagent_leftover_after_session_end",
+  "description": "A process started by a subagent shell call that outlived the session. Subagent events carry the subagent id and share the parent's session scope, so it is owned-ended.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      }
+    },
+    {
+      "role": "subagent_server",
+      "parent_role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_owned_ended",
+        "class": "owned-ended",
+        "must_never_signal": false
+      }
+    }
+  ],
+  "journal": [
+    {
+      "kind": "session_start",
+      "session_id": "s1"
+    },
+    {
+      "kind": "shell_start",
+      "session_id": "s1",
+      "subagent_id": "sub1",
+      "tool_use_id": "t1",
+      "exe_base": "node"
+    },
+    {
+      "kind": "sample",
+      "session_id": "s1",
+      "subagent_id": "sub1",
+      "roles": [
+        "subagent_server"
+      ]
+    },
+    {
+      "kind": "session_end",
+      "session_id": "s1"
+    }
+  ],
+  "session_ended": true
+}

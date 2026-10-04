@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "name": "system_process_pid_one",
+  "description": "A system process with PID 1, owned by root. The deny list covers PID 1 and every process of UID 0, so it is managed. A test cannot start it, so it is record only.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "launchd",
+      "flags": [],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      },
+      "record_only": true
+    }
+  ],
+  "journal": [],
+  "session_ended": false
+}

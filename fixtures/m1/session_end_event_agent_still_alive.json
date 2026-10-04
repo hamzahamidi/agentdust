@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "name": "session_end_event_agent_still_alive",
+  "description": "The journal holds a session_end for the first session (the clear command) but the agent process is still running. A session_end alone never makes a process actionable, so the server stays owned-live.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      }
+    },
+    {
+      "role": "dev_server",
+      "parent_role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_live_owned",
+        "class": "owned-live",
+        "must_never_signal": true
+      }
+    }
+  ],
+  "journal": [
+    {
+      "kind": "session_start",
+      "session_id": "s1"
+    },
+    {
+      "kind": "shell_start",
+      "session_id": "s1",
+      "tool_use_id": "t1",
+      "exe_base": "node"
+    },
+    {
+      "kind": "sample",
+      "session_id": "s1",
+      "roles": [
+        "dev_server"
+      ]
+    },
+    {
+      "kind": "session_end",
+      "session_id": "s1"
+    },
+    {
+      "kind": "session_start",
+      "session_id": "s2"
+    }
+  ],
+  "session_ended": false
+}

@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "name": "owned_ended_batch_of_three",
+  "description": "Three sampled leftovers of one ended session. They are the case for one batch code that has to list every item.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      }
+    },
+    {
+      "role": "worker_a",
+      "parent_role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_owned_ended",
+        "class": "owned-ended",
+        "must_never_signal": false
+      }
+    },
+    {
+      "role": "worker_b",
+      "parent_role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_owned_ended",
+        "class": "owned-ended",
+        "must_never_signal": false
+      }
+    },
+    {
+      "role": "worker_c",
+      "parent_role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_owned_ended",
+        "class": "owned-ended",
+        "must_never_signal": false
+      }
+    }
+  ],
+  "journal": [
+    {
+      "kind": "session_start",
+      "session_id": "s1"
+    },
+    {
+      "kind": "shell_start",
+      "session_id": "s1",
+      "tool_use_id": "t1",
+      "exe_base": "node"
+    },
+    {
+      "kind": "shell_start",
+      "session_id": "s1",
+      "tool_use_id": "t2",
+      "exe_base": "node"
+    },
+    {
+      "kind": "shell_start",
+      "session_id": "s1",
+      "tool_use_id": "t3",
+      "exe_base": "node"
+    },
+    {
+      "kind": "sample",
+      "session_id": "s1",
+      "roles": [
+        "worker_a",
+        "worker_b",
+        "worker_c"
+      ]
+    },
+    {
+      "kind": "session_end",
+      "session_id": "s1"
+    }
+  ],
+  "session_ended": true
+}

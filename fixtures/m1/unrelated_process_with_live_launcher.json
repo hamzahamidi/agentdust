@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "name": "unrelated_process_with_live_launcher",
+  "description": "A shell the user started and a server it launched, unrelated to any agent session. The launcher chain is alive and its parent is not launchd, so both are unknown whatever their age.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "launcher",
+      "flags": [],
+      "expected": {
+        "label": "true_unknown",
+        "class": "unknown",
+        "must_never_signal": true
+      }
+    },
+    {
+      "role": "server",
+      "parent_role": "launcher",
+      "flags": [],
+      "expected": {
+        "label": "true_unknown",
+        "class": "unknown",
+        "must_never_signal": true
+      }
+    }
+  ],
+  "journal": [],
+  "session_ended": false
+}

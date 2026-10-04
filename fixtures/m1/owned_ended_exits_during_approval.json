@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "name": "owned_ended_exits_during_approval",
+  "description": "A sampled leftover that exits by itself 5 seconds after it starts. It is owned-ended while it runs and gone before an approval could finish, so revalidation has to read it as gone.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "agent",
+      "flags": [
+        "--exit-after-ms",
+        "5000"
+      ],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      }
+    },
+    {
+      "role": "short_lived",
+      "parent_role": "agent",
+      "flags": [
+        "--exit-after-ms",
+        "5000"
+      ],
+      "expected": {
+        "label": "true_owned_ended",
+        "class": "owned-ended",
+        "must_never_signal": false
+      }
+    }
+  ],
+  "journal": [
+    {
+      "kind": "session_start",
+      "session_id": "s1"
+    },
+    {
+      "kind": "shell_start",
+      "session_id": "s1",
+      "tool_use_id": "t1",
+      "exe_base": "node"
+    },
+    {
+      "kind": "sample",
+      "session_id": "s1",
+      "roles": [
+        "short_lived"
+      ]
+    },
+    {
+      "kind": "session_end",
+      "session_id": "s1"
+    }
+  ],
+  "session_ended": true
+}
