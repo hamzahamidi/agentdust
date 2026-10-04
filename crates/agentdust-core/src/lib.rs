@@ -1,4 +1,5 @@
 pub mod clock;
+pub mod digest;
 pub mod identity;
 pub mod journal;
 pub mod paths;
