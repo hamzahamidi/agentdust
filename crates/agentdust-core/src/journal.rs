@@ -17,7 +17,10 @@ mod store;
 pub mod volume;
 
 pub use append::{Appended, FrameWriter, MAX_ATTEMPTS, SystemWriter};
-pub use fields::{CwdKey, ExeBase, FieldError, MAX_CWD_KEY_LEN, MAX_EXE_BASE_LEN};
+pub use fields::{
+    AgentIdentity, CwdKey, ExeBase, FieldError, MAX_AGENT_IDENTITY_LEN, MAX_CWD_KEY_LEN, MAX_EXE_BASE_LEN,
+    SESSION_TAG_KEY_LEN, SessionTagKey,
+};
 pub use frame::{Class, MAX_FRAME_LEN, RS, decode, encode, scan};
 pub use generations::{Generation, generation_path, generation_stamp, list_generations};
 pub use maintenance::{
@@ -29,19 +32,22 @@ pub use volume::{FixedVolume, FsFacts, SystemVolume, VolumeProbe};
 
 pub const SCHEMA_VERSION: u32 = 1;
 pub const ACTIVE_FILE: &str = "journal.jsonl";
-pub const RECORD_KEYS: [&str; 11] = [
+pub const RECORD_KEYS: [&str; 13] = [
     "v",
     "kind",
     "agent",
     "session_id",
     "subagent_id",
+    "agent_identity",
     "tool_use_id",
     "wall_ts",
     "mono_ts",
     "boot",
+    "session_tag_key",
     "cwd_key",
     "exe_base",
 ];
+pub const AGENT_IDENTITY_KEYS: [&str; 4] = ["pid", "start_time_us", "uid", "exe_base"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -71,10 +77,14 @@ pub struct Record {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subagent_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_identity: Option<AgentIdentity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_use_id: Option<String>,
     pub wall_ts: u64,
     pub mono_ts: u64,
     pub boot: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_tag_key: Option<SessionTagKey>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd_key: Option<CwdKey>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

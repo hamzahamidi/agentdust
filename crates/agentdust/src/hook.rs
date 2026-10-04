@@ -45,6 +45,8 @@ fn record(event: &HookEvent) -> Result<(), Box<dyn Error>> {
         mono_ts: clock::monotonic_ns(),
         boot: darwin::boot_session_uuid()?,
         cwd_key: event.cwd.as_deref().and_then(|cwd| cwd_key(&dir, cwd)),
+        agent_identity: None,
+        session_tag_key: None,
         exe_base: None,
     };
     journal::append(&dir, &record)?;

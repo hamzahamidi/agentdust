@@ -54,6 +54,8 @@ fn record(id: &str, boot: &str) -> Record {
         mono_ts: clock::monotonic_ns(),
         boot: boot.to_owned(),
         cwd_key: None,
+        agent_identity: None,
+        session_tag_key: None,
         exe_base: None,
     }
 }

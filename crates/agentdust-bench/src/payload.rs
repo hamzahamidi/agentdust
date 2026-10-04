@@ -25,6 +25,8 @@ fn base(session_id: String, kind: Kind, wall_ms: u64, mono_ts: u64) -> Record {
         mono_ts,
         boot: BOOT.to_owned(),
         cwd_key: None,
+        agent_identity: None,
+        session_tag_key: None,
         exe_base: None,
     }
 }
