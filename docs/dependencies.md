@@ -4,7 +4,7 @@ Every direct dependency has one line here. A pull request that adds a dependency
 
 | Crate | Used by | Why |
 | --- | --- | --- |
-| `libc` | agentdust-core, agentdust-bench and agentdust-testkit (not shipped) | `proc_pidinfo`, `proc_pidpath`, `sysctl`, `clock_gettime`, `statfs`, `geteuid`, `getentropy` for the install secret, `renamex_np` and `renameat2` for its exclusive install, and the `O_NOFOLLOW` and `O_NONBLOCK` flags. The testkit fixture uses `signal`, `setsid` and `getsid`, and its tests use `kill` |
+| `libc` | agentdust-core, agentdust-bench and agentdust-testkit (not shipped), and the tests of agentdust-agents (`geteuid`, to skip permission tests when run as root) | `proc_pidinfo`, `proc_pidpath`, `sysctl`, `clock_gettime`, `statfs`, `geteuid`, `getentropy` for the install secret, `renamex_np` and `renameat2` for its exclusive install, and the `O_NOFOLLOW` and `O_NONBLOCK` flags. The testkit fixture uses `signal`, `setsid` and `getsid`, and its tests use `kill` |
 | `serde`, `serde_json` | all crates (the fuzz crate uses `serde_json` only) | hook payloads, journal records, MCP results, the round trip check in the payload fuzz target |
 | `thiserror` | agentdust-core, agentdust-agents, agentdust-bench and agentdust-testkit (not shipped) | error types |
 | `hmac`, `sha2` | agentdust-core | HMAC-SHA256 for the keyed working directory and session digests (spec 3.2). RustCrypto crates, MIT or Apache-2.0. `sha2` has default features off, so the OID support crate is not built |

@@ -463,12 +463,19 @@ fn a_hard_linked_or_non_regular_settings_file_is_refused_too() {
     let fake = FakeClaude::new(Mode::Honest);
     let report = applied(install(&world.env(Some(&fake)), &mut approve).unwrap());
     assert!(!report.succeeded());
+    assert!(report.render().contains("hard links"), "{}", report.render());
     assert_eq!(fs::read_to_string(world.settings()).unwrap(), SETTINGS);
     fs::remove_file(world.dir.join("elsewhere.json")).unwrap();
     fs::remove_file(world.settings()).unwrap();
     fs::create_dir(world.settings()).unwrap();
-    let report = applied(install(&world.env(Some(&fake)), &mut approve).unwrap());
+    let fresh = FakeClaude::new(Mode::Honest);
+    let report = applied(install(&world.env(Some(&fresh)), &mut approve).unwrap());
     assert!(!report.succeeded());
+    assert!(
+        report.render().contains("not a regular file"),
+        "{}",
+        report.render()
+    );
     assert!(world.settings().is_dir());
 }
 

@@ -18,6 +18,7 @@ name = "agentdust-agents"
 version = "0.0.0"
 dependencies = [
  "agentdust-core",
+ "libc",
  "proptest",
  "serde",
  "serde_json",

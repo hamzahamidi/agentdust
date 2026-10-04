@@ -265,7 +265,7 @@ fn run_owned(runner: &dyn CliRunner, args: &[String]) -> Result<CliOutput, CliEr
     runner.run(&borrowed)
 }
 
-fn describe(server: &McpServer) -> String {
+pub fn describe_server(server: &McpServer) -> String {
     format!(
         "command {} with arguments \"{}\" in {}",
         server.command.as_deref().unwrap_or("(none)"),
@@ -283,7 +283,7 @@ pub fn register(runner: &dyn CliRunner, exe: &str) -> Result<(), McpError> {
         McpLookup::Found(server) if matches_desired(&server, exe, SERVER_ARGS) => Ok(()),
         McpLookup::Found(server) => Err(McpError::Unverified(format!(
             "the claude CLI reported success, but `claude mcp get {SERVER_NAME}` shows {}, not {exe} {SERVER_ARGS} in the user scope",
-            describe(&server)
+            describe_server(&server)
         ))),
         McpLookup::NotFound => Err(McpError::Unverified(format!(
             "the claude CLI reported success, but `claude mcp get {SERVER_NAME}` finds no such server"
@@ -303,7 +303,7 @@ pub fn unregister_if_ours(runner: &dyn CliRunner, exe: &str) -> Result<(), McpEr
         McpLookup::Found(server) if !matches_desired(&server, exe, SERVER_ARGS) => {
             Err(McpError::RemoveFailed(format!(
                 "the registration is not the one setup created ({})",
-                describe(&server)
+                describe_server(&server)
             )))
         }
         McpLookup::Found(_) => {
