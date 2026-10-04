@@ -827,3 +827,26 @@ fn apply_false_set_during_a_batch_stops_the_items_after_it_and_the_units_after_t
     );
     assert_eq!(rig.world.signals(), [10]);
 }
+
+#[test]
+fn the_inspection_report_cannot_be_passed_back_to_apply() {
+    let rig = ServerRig::new(owned(&[10]));
+    let created = plan(&rig);
+    let path = rig.dir.join("inspection").join(&created.report);
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(!text.contains(&created.plan_id));
+    let item_ids = vec![created.items[0].item_id.clone()];
+    for plan_id in [
+        created.report.clone(),
+        path.to_string_lossy().into_owned(),
+        text,
+        format!("{}.txt", created.plan_id),
+    ] {
+        let attempt = Call {
+            plan_id,
+            item_ids: item_ids.clone(),
+        };
+        assert_eq!(rig.server.begin(&attempt), Err(ApplyError::UnknownPlan));
+    }
+    assert!(rig.world.signals().is_empty());
+}
