@@ -4,6 +4,10 @@ use agentdust_core::class::Class;
 use agentdust_core::journal::{Agent, ExeBase, Kind};
 use serde::{Deserialize, Serialize};
 
+mod load;
+
+pub use load::{Loaded, Problem, ProblemKind, load, load_dir, parse_str};
+
 pub const SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
