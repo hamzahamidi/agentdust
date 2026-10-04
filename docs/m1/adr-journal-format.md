@@ -116,23 +116,45 @@ Rotation and retention do sync, because they run off the hook path and a replace
 
 ## Retention
 
-One algorithm, stated here once. [maintenance.rs](../../crates/agentdust-bench/src/maintenance.rs) implements it for the benchmark, and the retention task ports it into `agentdust-core`.
+One algorithm, stated here once and implemented once, in [retain.rs](../../crates/agentdust-core/src/journal/retain.rs). The benchmark keeps a frozen copy of its own ([maintenance.rs](../../crates/agentdust-bench/src/maintenance.rs)), so a later change to the shipped code cannot change what was measured. [journal_retain_adr.rs](../../crates/agentdust-core/tests/journal_retain_adr.rs) runs every row of the table below against the code, so a change to one without the other fails a test.
 
-Retention takes the exclusive lock on `journal.maint`, which only rotation and retention take. Then, for each closed generation `journal.<stamp>.jsonl`, oldest stamp first, and never for the active file:
+A run takes the exclusive lock on `journal.maint` without blocking and reports `Busy` when another run holds it. Only rotation and retention take that lock. Then it:
 
-1. Decode it. When any line is of a newer schema version, leave the generation as it is.
-2. Go through its lines in file order. A record the retention rules drop is dropped. A record whose bytes equal those of a record kept earlier in this run is dropped as a duplicate. A line of an unknown kind is kept as it is. A line that is torn or does not parse is dropped, and by itself never causes a rewrite.
-3. When nothing was dropped, leave the generation as it is.
-4. When nothing is kept, delete the generation.
-5. Otherwise write the kept lines, in their original order and with their original bytes, to `journal.compact.tmp` (created exclusively, mode 0600), sync it, rename it over the generation and sync the directory.
+1. Opens the active file and every generation with the safe open rules. When any of them is refused, the run changes nothing.
+2. Removes a stale `journal.compact.tmp`.
+3. Reads every file into memory and decodes it. The records of all files are judged together by the rules of spec 3.2, which say for each record whether it is kept. A record that cannot be dropped, because it sits in the active file or in a generation that holds a newer schema version, still counts toward the size limit.
+4. Visits each closed generation `journal.<stamp>.jsonl`, oldest stamp first. It never visits the active file. The table gives the outcome.
 
-The retention rules themselves stay in spec 3.2: earlier boots first, ended sessions after 14 days or past 20 MB, active sessions pinned. The algorithm only fixes how a rule is carried out. A pinned record is simply a kept record. It stays in its generation, in its place.
+| Id | The generation holds | Outcome | Copied aside first |
+| --- | --- | --- | --- |
+| G1 | a line of a newer schema version, one over 65,536 bytes included, and any other lines | left as it is | no |
+| G2 | records that the rules keep, and nothing else | left as it is | no |
+| G3 | an unknown-kind line and records that the rules keep | left as it is | no |
+| G4 | a torn frame and records that the rules keep | left as it is | no |
+| G5 | a line that does not parse and records that the rules keep | left as it is | no |
+| G6 | records that the rules drop and records that they keep | replaced | no |
+| G7 | only records that the rules drop | deleted | no |
+| G8 | a record that repeats one of an older generation byte for byte, and records that stay | replaced | no |
+| G9 | only records that repeat those of older generations | deleted | no |
+| G10 | an unknown-kind line and records that the rules drop | replaced, the unknown-kind line kept as it was | no |
+| G11 | a torn frame and records that the rules drop | replaced, the torn frame dropped | no |
+| G12 | a line that does not parse, and records that the rules drop and keep | replaced, the line dropped | yes |
+| G13 | a line that does not parse and only records that the rules drop | deleted | yes |
+| G14 | no bytes | left as it is | no |
+| G15 | a symlink, a FIFO, a directory, a hard link or a loose mode where a regular private file belongs | the run is refused and nothing changes | no |
+
+- **Replaced** means the lines that stay are written to `journal.compact.tmp` (created exclusively, mode 0600), in their original order and with their original bytes, each framed as 0x1E, the bytes and 0x0A. The file is synced and renamed over the generation, and the directory is synced at the end of the run. A bare line without the 0x1E gains its frame.
+- **A duplicate** is a record in a closed generation whose bytes equal those of a record read earlier in the run. Files are read in stamp order and the active file last, so the copy in the older file stays. A duplicate in the active file is not touched and readers collapse it. Duplicates are removed before the rules run, so the size limit counts a record once.
+- **A copy** is the whole generation, byte for byte, in `journal.jsonl.corrupt-<n>` (created exclusively, mode 0600, synced before the rewrite). `<n>` is the millisecond of the run, moved up to the next free number. A torn frame is dropped without a copy, because it is the trace of a write that failed and was never acknowledged. Retention never deletes a copy.
+- **A line of a newer schema version** holds its generation, whatever else the generation holds. The line is recognised from its `{"v":` prefix, so a line over the frame cap is held as well.
+- **A generation that cannot be read** is never deleted. A read error before the run changes anything fails the run, and the generation stays.
+
+The retention rules stay in spec 3.2: earlier boots first, ended sessions after 14 days or past 20 MB, active sessions pinned. The algorithm only fixes how a rule is carried out. A pinned record is simply a kept record. It stays in its generation, in its place.
 
 - **No record moves.** A record is never moved to another file and never appended again. A reader holds a set of open files, and a record that moved between them could be in none of the files that reader holds. Replacing a generation under its own name keeps every record in a file that a reader either has or will list.
-- **No grace window.** No step depends on elapsed time. C2 needs none, because the recheck, and not a delay, protects a late writer. A grace window protects only a writer paused for less than its length, and the interleaving tests show C losing the record beyond it. The benchmark's `grace_ms` is an argument that tests set to a number, and the value to ship is 0.
-- **Generations stay separate.** Merging them would shorten the list but rewrite every older generation on each pass. Rotation is rare, so the list stays short.
-
-Open: whether a damaged generation is copied aside before it is rewritten. That is the corrupt-state recovery task's decision, and this algorithm drops what it cannot parse only when it rewrites a generation for another reason.
+- **No grace window.** No step depends on elapsed time. C2 needs none, because the recheck, and not a delay, protects a late writer. A grace window protects only a writer paused for less than its length, and the interleaving tests show C losing the record beyond it. The shipped code has no grace parameter. The one use of the clock is the age rule of spec 3.2 and the millisecond of a stamp, both passed in by the caller.
+- **Generations stay separate.** Merging them would shorten the list but rewrite every older generation on each pass. A run rotates whenever the active file holds a byte, so the caller sets the cadence, and the list grows by at most one file per run.
+- **Crash points.** A crash after the copy leaves the copy and the generation, and the next run makes another copy. A crash after the temporary file is written leaves a `journal.compact.tmp` that no reader reads and the next run removes. A crash after the rename leaves the replacement.
 
 ## Reading
 
@@ -207,7 +229,8 @@ The cap says nothing about a real `sample` record. The `procs` list of spec 3.2 
 - One machine, one macOS version and one local APFS volume, under a 1 minute load average of 25 to 45.
 - Unpaced writers. A real hook fires far less often than 2,400 times in 100 ms.
 - No write was killed in the middle, no disk was full and no power was pulled. The error cases are injected into the real append through the `FrameWriter` trait. The kernel did not produce them.
-- The rotation stress in `journal_append_rotation.rs` has no retention in it, so it does not fail when the recheck is removed. The interleaving tests do.
+- The rotation stress in `journal_append_rotation.rs` has no retention in it, so it does not fail when the recheck is removed. The interleaving tests in `journal_rotate_interleave.rs` and `journal_retain_interleave.rs` do.
+- Retention was run on journals of a few thousand records. A journal at the 20 MB limit is read into memory whole, and that was not measured.
 - No network volume was available.
 - Records are padded in `session_id`. A real `sample` record is not measured.
 - A stopped rotator and a stopped appender were tested for refusal and not timed.
@@ -231,7 +254,7 @@ Storage: `journal.jsonl` and closed generations `journal.<stamp>.jsonl`, in a di
 Section 3.2, retention paragraph. After "records of active sessions are pinned." add:
 
 ```text
-Retention visits each closed generation, oldest first, and never the active file. A generation that holds a line of a newer schema version is left as it is. Otherwise the records the rules above keep are written, as they were, to `journal.compact.tmp`, which is synced and renamed over the generation, and the directory is synced. A generation with no kept record is deleted, and one with nothing to drop is left as it is. A record is never moved to another file and never appended again. An exact duplicate of a record kept earlier in the same run is dropped. No step depends on elapsed time.
+Retention visits each closed generation, oldest first, and never the active file. A generation that holds a line of a newer schema version is left as it is. A record whose bytes repeat those of a record read earlier in the run is dropped, and so are the records the rules above drop. A generation with nothing to drop is left as it is, and one with no line left is deleted. In any other case the lines that stay are written, with their original bytes, to `journal.compact.tmp`, which is synced and renamed over the generation, and the directory is synced. Before a rewrite or a delete drops a line that does not parse, the generation is copied byte for byte to `journal.jsonl.corrupt-<n>`. A line of an unknown kind stays. A record is never moved to another file and never appended again. No step depends on elapsed time. Only rotation and retention take `journal.maint`, and the hook never runs either.
 ```
 
 Section 4.4, journal write budget. Replace:
@@ -257,7 +280,7 @@ Section 7.2, table row. Replace:
 with:
 
 ```text
-| `journal.jsonl`, `journal.<stamp>.jsonl`, `journal.compact.tmp`, `journal.maint` | section 3.2 fields only. `journal.maint` is empty and only rotation and retention take it | section 3.2 |
+| `journal.jsonl`, `journal.<stamp>.jsonl`, `journal.compact.tmp`, `journal.jsonl.corrupt-<n>`, `journal.maint` | section 3.2 fields only. `journal.maint` is empty and only rotation and retention take it. A `corrupt` file is a copy of a generation that held a line that did not parse | section 3.2 |
 ```
 
 Section 7.3, after the paragraph on the data directory. Add:
@@ -276,6 +299,10 @@ Section 9.1. Add after S21, and extend S18:
 
 S18, tests column: append "A journal line of a future version longer than 65,536 bytes is counted as a newer version, and retention leaves its generation as it is".
 
+S16, tests column: append "a rotation or retention run in a directory that holds any of them refuses and changes nothing".
+
+S13, tests column: append "a hook run in a directory that holds a generation full of droppable records changes no file but the active journal and takes no maintenance lock".
+
 Section 9.2, stress row. Replace "three concurrent journal writers, rotation under load, PID churn" with "3 and 16 concurrent journal writer processes with a rotator, a reader and retention running, PID churn".
 
 Section 10, journal format row. Replace "M1 contention benchmark" with "M1 contention benchmark: one `O_APPEND` file, no lock for appenders and readers, an append recheck (docs/m1/adr-journal-format.md)".
@@ -290,11 +317,10 @@ Grouped by concern.
 
 - Point the benchmark's C2 at `Journal::append`, so that the 16 writer test (S22) runs against the shipped append. The benchmark keeps its own frozen copy of the append until then.
 
-**Rotation, retention and recovery:**
+**Rotation, retention and recovery** is built: `Journal::rotate`, `retain` and `prune` in `agentdust_core::journal` follow "Retention" as stated, with the spec's keep rules in `journal::retention` and `journal.maint` for exclusion. [journal-retention.md](journal-retention.md) describes it. Two items are left:
 
-- Implement "Retention" as stated, with the spec's keep rules as the predicate and `journal.maint` for exclusion.
-- Decide whether a damaged generation is copied aside before it is rewritten.
-- Carry `degraded` for a session whose pinned evidence was dropped.
+- Persist or carry `RetainReport.degraded`, the sessions whose pinned evidence was dropped. It is returned and not stored.
+- Call `prune` from the CLI and the server. Nothing calls it, and the hook never does.
 
 **Hook write path and health** (spec 4.4):
 

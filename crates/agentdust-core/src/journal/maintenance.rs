@@ -6,15 +6,21 @@ use thiserror::Error;
 
 use super::ACTIVE_FILE;
 use super::generations::generation_path;
+use super::retain::{self, RetainReport};
+use super::retention::Policy;
 use super::volume::{self, FsFacts, VolumeProbe};
 use crate::safe_open::{self, Access, SafeOpenError};
 
 pub const MAINT_FILE: &str = "journal.maint";
+pub const COMPACT_TMP: &str = "journal.compact.tmp";
+pub const CORRUPT_PREFIX: &str = "journal.jsonl.corrupt-";
 
 #[derive(Debug, Error)]
 pub enum MaintenanceError {
     #[error("another rotation or retention run holds {MAINT_FILE}")]
     Busy,
+    #[error("the current boot is empty, so every record would look like an earlier boot")]
+    EmptyBoot,
     #[error("the journal directory is on a volume that is not supported: {}", .0.describe())]
     UnsupportedFilesystem(FsFacts),
     #[error("refused to touch {}: {source}", path.display())]
@@ -29,10 +35,17 @@ pub enum Rotation {
     Empty,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PruneReport {
+    pub rotation: Rotation,
+    pub retained: RetainReport,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MaintenancePoint {
     Locked,
     Rotated,
+    Planned,
 }
 
 pub trait MaintenanceProbe: Sync {
@@ -67,6 +80,54 @@ pub(super) fn rotate(
     let _lock = lock(dir)?;
     probe.reached(MaintenancePoint::Locked);
     rotate_locked(dir, &dir_handle, probe, now_ms)
+}
+
+pub(super) fn retain(
+    dir: &Path,
+    volume: &dyn VolumeProbe,
+    probe: &dyn MaintenanceProbe,
+    policy: &Policy,
+    now_ms: u64,
+    current_boot: &str,
+) -> Result<RetainReport, MaintenanceError> {
+    if current_boot.is_empty() {
+        return Err(MaintenanceError::EmptyBoot);
+    }
+    let Some(dir_handle) = prepare(dir, volume)? else {
+        return Ok(RetainReport::default());
+    };
+    let _lock = lock(dir)?;
+    probe.reached(MaintenancePoint::Locked);
+    let sources = retain::open_sources(dir)?;
+    retain::remove_stale_tmp(dir)?;
+    retain::retain_locked(dir, &dir_handle, sources, policy, now_ms, current_boot, probe)
+}
+
+pub(super) fn prune(
+    dir: &Path,
+    volume: &dyn VolumeProbe,
+    probe: &dyn MaintenanceProbe,
+    policy: &Policy,
+    now_ms: u64,
+    current_boot: &str,
+) -> Result<PruneReport, MaintenanceError> {
+    if current_boot.is_empty() {
+        return Err(MaintenanceError::EmptyBoot);
+    }
+    let Some(dir_handle) = prepare(dir, volume)? else {
+        return Ok(PruneReport {
+            rotation: Rotation::Empty,
+            retained: RetainReport::default(),
+        });
+    };
+    let _lock = lock(dir)?;
+    probe.reached(MaintenancePoint::Locked);
+    drop(retain::open_sources(dir)?);
+    retain::remove_stale_tmp(dir)?;
+    let rotation = rotate_locked(dir, &dir_handle, probe, now_ms)?;
+    let sources = retain::open_sources(dir)?;
+    let retained = retain::retain_locked(dir, &dir_handle, sources, policy, now_ms, current_boot, probe)?;
+    Ok(PruneReport { rotation, retained })
 }
 
 fn prepare(dir: &Path, volume: &dyn VolumeProbe) -> Result<Option<File>, MaintenanceError> {
