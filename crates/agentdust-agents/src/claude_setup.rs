@@ -424,7 +424,6 @@ impl Plan {
         let manifest_old = manifest::load(&env.data_dir)?;
         let base = manifest_old.clone().unwrap_or_default();
         let command = hook_command(&env.exe);
-        // The first claude command can rewrite settings.json, so the lookup runs before the file is read.
         let mcp = plan_mcp(env, &exe, &base.entries);
         let hooks = plan_hooks(env, &base.entries, &command);
         let target = env.target();
@@ -998,16 +997,23 @@ impl RemovePlan {
     fn apply(self, env: &SetupEnv) -> RemoveReport {
         let mut lines: Vec<String> = Vec::new();
         let mut failed = false;
+        let mut manifest_new = self.manifest_new.clone();
         if let HooksRemoval::Edit { before, removal } = &self.hooks {
             match user_file::replace(&self.settings, before, removal.text.as_bytes()) {
                 Ok(()) => lines.push(format!("Edited {}.", self.settings.display())),
                 Err(err) => {
                     failed = true;
                     lines.push(format!("Could not edit {}: {err}.", self.settings.display()));
+                    let target = env.target();
+                    for entry in &self.manifest_old.entries {
+                        let ours = entry.resource == Resource::Hook && entry.target == target;
+                        if ours && !manifest_new.entries.contains(entry) {
+                            manifest_new.entries.push(entry.clone());
+                        }
+                    }
                 }
             }
         }
-        let mut manifest_new = self.manifest_new.clone();
         if let (McpRemoval::Unregister { command }, Some(runner)) = (&self.mcp, env.runner) {
             match native_cli::unregister_if_ours(runner, command) {
                 Ok(()) => lines.push(format!("Unregistered the MCP server {SERVER_NAME}.")),
