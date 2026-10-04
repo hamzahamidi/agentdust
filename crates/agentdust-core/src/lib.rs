@@ -7,6 +7,7 @@ pub mod procargs;
 pub mod provider;
 pub mod revalidate;
 pub mod safe_open;
+pub mod secret;
 
 #[cfg(target_os = "macos")]
 pub mod darwin;
