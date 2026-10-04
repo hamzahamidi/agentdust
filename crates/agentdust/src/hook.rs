@@ -1,11 +1,25 @@
 use std::error::Error;
 use std::io::{self, BufReader};
+use std::panic;
 
 use agentdust_agents::claude::{self, HookEvent};
 use agentdust_core::journal::{self, Agent, Record, SCHEMA_VERSION};
 use agentdust_core::{clock, darwin, paths};
 
-pub fn run_claude() {
+pub fn run() {
+    panic::set_hook(Box::new(|_| {}));
+    let _ = panic::catch_unwind(dispatch);
+    let _ = panic::catch_unwind(drain_stdin);
+}
+
+fn dispatch() {
+    let args: Vec<String> = std::env::args().skip(2).collect();
+    if args == ["claude"] {
+        run_claude();
+    }
+}
+
+fn run_claude() {
     let mut input = BufReader::new(io::stdin().lock());
     let event = claude::parse_event(&mut input);
     let _ = io::copy(&mut input, &mut io::sink());
@@ -33,6 +47,6 @@ fn record(event: &HookEvent) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn drain_stdin() {
+fn drain_stdin() {
     let _ = io::copy(&mut io::stdin().lock(), &mut io::sink());
 }
