@@ -5,10 +5,13 @@ use agentdust_core::journal::{Agent, ExeBase, Kind};
 use serde::{Deserialize, Serialize};
 
 mod load;
+mod plan;
 
 pub use load::{Loaded, Problem, ProblemKind, load, load_dir, parse_str};
+pub use plan::{Group, Member, ParentExpectation, Plan, PlanProblem, Structure};
 
 pub const SCHEMA_VERSION: u32 = 1;
+pub const FIXTURE_SECONDS: u64 = 120;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
