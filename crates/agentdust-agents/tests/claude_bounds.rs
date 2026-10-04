@@ -1,6 +1,6 @@
 use std::io::{self, BufReader, Cursor, Read};
 
-use agentdust_agents::claude::{EventError, MAX_ID_LEN, parse_event};
+use agentdust_agents::claude::{EventError, MAX_CWD_LEN, MAX_ID_LEN, parse_event};
 
 const FIELDS: [&str; 5] = [
     "session_id",
@@ -130,4 +130,86 @@ fn through_the_hooks_buffered_reader_the_retained_bytes_stay_bounded() {
         served <= 8 * MAX_ID_LEN + HOOK_BUFFER,
         "read {served} bytes from the source"
     );
+}
+
+#[test]
+fn a_working_directory_of_exactly_the_limit_is_accepted() {
+    let cwd = format!("/{}", "d".repeat(MAX_CWD_LEN - 1));
+    let input = format!(r#"{{"session_id":"s","hook_event_name":"SessionStart","cwd":"{cwd}"}}"#);
+    assert_eq!(parse_event(input.as_bytes()).unwrap().cwd, Some(cwd));
+}
+
+#[test]
+fn a_working_directory_over_the_limit_is_rejected() {
+    let cwd = format!("/{}", "d".repeat(MAX_CWD_LEN));
+    let input = format!(r#"{{"session_id":"s","hook_event_name":"SessionStart","cwd":"{cwd}"}}"#);
+    assert!(matches!(
+        parse_event(input.as_bytes()),
+        Err(EventError::FieldTooLong)
+    ));
+}
+
+#[test]
+fn the_working_directory_limit_counts_bytes_not_characters() {
+    let accepted = format!("/a{}", "\u{e9}".repeat(MAX_CWD_LEN / 2 - 1));
+    assert_eq!(accepted.len(), MAX_CWD_LEN);
+    let input = format!(r#"{{"session_id":"s","hook_event_name":"SessionStart","cwd":"{accepted}"}}"#);
+    assert_eq!(parse_event(input.as_bytes()).unwrap().cwd, Some(accepted));
+    let rejected = format!("/a{}", "\u{e9}".repeat(MAX_CWD_LEN / 2));
+    let input = format!(r#"{{"session_id":"s","hook_event_name":"SessionStart","cwd":"{rejected}"}}"#);
+    assert!(matches!(
+        parse_event(input.as_bytes()),
+        Err(EventError::FieldTooLong)
+    ));
+}
+
+#[test]
+fn a_50_mb_working_directory_is_rejected_after_a_bounded_read() {
+    let mut reader = long_string_field("cwd", 50_000_000);
+    let result = parse_event(&mut reader);
+    assert!(matches!(result, Err(EventError::FieldTooLong)), "{result:?}");
+    assert!(reader.served <= 8 * MAX_CWD_LEN, "read {} bytes", reader.served);
+}
+
+#[test]
+fn escapes_in_a_working_directory_count_by_decoded_length() {
+    let escape = format!("{}u0064", char::from(0x5c));
+    let escaped = |count: usize| {
+        let cwd = escape.repeat(count);
+        format!(r#"{{"session_id":"s","hook_event_name":"SessionStart","cwd":"{cwd}"}}"#)
+    };
+    let event = parse_event(escaped(MAX_CWD_LEN).as_bytes()).unwrap();
+    assert_eq!(event.cwd, Some("d".repeat(MAX_CWD_LEN)));
+    assert!(matches!(
+        parse_event(escaped(MAX_CWD_LEN + 1).as_bytes()),
+        Err(EventError::FieldTooLong)
+    ));
+}
+
+#[test]
+fn the_larger_working_directory_limit_does_not_loosen_the_identifier_limit() {
+    let long = "i".repeat(MAX_ID_LEN + 1);
+    for field in FIELDS {
+        let others: String = ["session_id", "hook_event_name"]
+            .into_iter()
+            .filter(|name| *name != field)
+            .map(|name| format!(r#","{name}":"x""#))
+            .collect();
+        let input = format!(r#"{{"cwd":"/a","{field}":"{long}"{others}}}"#);
+        assert!(
+            matches!(parse_event(input.as_bytes()), Err(EventError::FieldTooLong)),
+            "{field}"
+        );
+    }
+}
+
+#[test]
+fn a_working_directory_after_a_skipped_field_is_still_read() {
+    let mut reader = counting(
+        r#"{"session_id":"s","hook_event_name":"PostToolUse","tool_response":{"stdout":""#.into(),
+        5_000_000,
+        r#""},"cwd":"/Users/dev/project"}"#.into(),
+    );
+    let event = parse_event(&mut reader).unwrap();
+    assert_eq!(event.cwd.as_deref(), Some("/Users/dev/project"));
 }
