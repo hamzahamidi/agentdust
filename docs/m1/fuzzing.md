@@ -10,6 +10,7 @@ Spec 9.2 lists the journal decoder and the hook payload parsers as fuzz targets,
 | `journal_decode` | journal bytes | `journal::decode` |
 | `journal_read` | up to four files, split at byte `0x1C` | `journal::read` over a 0700 directory of 0600 files |
 | `claude_payload` | hook stdin | `claude::parse_event` |
+| `sanitize` | any bytes | `sanitize::escape`, `redact_command`, `terminal_command` and `terminal_path`, and `inventory::parse_launchctl_list` |
 
 `journal_read` writes the first three parts as `journal.1000.jsonl`, `journal.1001.jsonl` and `journal.1002.jsonl` and the last part as `journal.jsonl`. A part may be empty, and separators after the third stay inside the last part. `0x1E` is the frame delimiter, so the file separator is `0x1C`. JSON text cannot hold either byte raw. Copying a frame across a separator gives the reader duplicates to remove.
 
@@ -25,6 +26,7 @@ Every target fails on a panic and on memory use above its bound.
 | `journal_decode`, resynchronisation | a known frame appended to the input is the last record read, after exactly the records the input gave, with every counter unchanged and no truncated tail. A known frame placed before the input is the first record read |
 | `journal_read` | records plus duplicates equal the records of each part decoded alone, every counter is the sum over the parts, no file is reported unsafe, the records are exactly the distinct records of the parts, and the order is strictly increasing under the key of [journal-schema.md](journal-schema.md), computed again inside the target |
 | `claude_payload` | no field is longer than its limit, `journal_kind` does not panic, and an event written back as JSON parses to the same event |
+| `sanitize` | the escaped text holds no control, bidirectional or invisible character and is undone exactly by reading the escapes back, the terminal views of any argument bytes and any path bytes hold none either, and the launchctl list parser never panics |
 
 The resynchronisation check is the framing contract: whatever precedes a frame, a cut write included, costs only the bytes of that write.
 
@@ -58,7 +60,7 @@ Peaks measured with the same allocator on release builds, `uptime` load 6.36 to 
 
 ## Seeds
 
-`fuzz/seeds/<target>/` holds one file per behaviour class: 9 files for `procargs`, 37 for `journal_decode`, 18 for `journal_read` and 24 for `claude_payload`. The largest file is 70,358 bytes, a `journal_read` seed. A reproducer that a fuzz run finds is added to the seed directory under a name that says what it is.
+`fuzz/seeds/<target>/` holds one file per behaviour class: 9 files for `procargs`, 37 for `journal_decode`, 18 for `journal_read`, 24 for `claude_payload` and 12 for `sanitize`. The largest file is 70,358 bytes, a `journal_read` seed. A reproducer that a fuzz run finds is added to the seed directory under a name that says what it is.
 
 The journal seeds are in the frame format and group like this:
 
@@ -75,7 +77,7 @@ The 18 `journal_read` seeds split at `0x1C` into files: one file, two boots over
 
 The seeds are replayed twice:
 
-- The normal suite. `journal_corpus` decodes every `journal_decode` seed, compares it with chunked reads at six sizes, re-encodes every accepted record and reads every `journal_read` seed as files. Named seeds pin the claims: a cut costs one record, a glued pair of bare lines costs two, a newer version line over the cap is counted as newer and hides nothing. `claude_corpus` parses every `claude_payload` seed, and `procargs_corpus` parses every `procargs` seed. Each also checks that the seeds still reach every outcome (a record, a malformed segment, a torn frame, a newer version, an unknown kind, a duplicate, several boots, each journal kind, both parse errors), so an emptied or renamed directory fails. `fuzz_layout` requires a seed directory for every target in `fuzz/Cargo.toml` and a target for every seed directory, and reads `.github/workflows/ci.yml` to require the replay loop.
+- The normal suite. `journal_corpus` decodes every `journal_decode` seed, compares it with chunked reads at six sizes, re-encodes every accepted record and reads every `journal_read` seed as files. Named seeds pin the claims: a cut costs one record, a glued pair of bare lines costs two, a newer version line over the cap is counted as newer and hides nothing. `claude_corpus` parses every `claude_payload` seed, and `procargs_corpus` parses every `procargs` seed, and `sanitize_corpus` runs every `sanitize` seed through the same checks and requires that some seeds change under escaping and under redaction and that the list parser both accepts and refuses seeds. Each also checks that the seeds still reach every outcome (a record, a malformed segment, a torn frame, a newer version, an unknown kind, a duplicate, several boots, each journal kind, both parse errors), so an emptied or renamed directory fails. `fuzz_layout` requires a seed directory for every target in `fuzz/Cargo.toml` and a target for every seed directory, and reads `.github/workflows/ci.yml` to require the replay loop.
 - The Linux CI job. For each target listed by `cargo fuzz list` it checks that `fuzz/seeds/<target>` exists and runs `cargo fuzz run <target> fuzz/seeds/<target> -- -runs=0` with the pinned nightly, which replays every seed through the instrumented target and its memory assertions. libFuzzer also runs the empty input once, so it reports one run more than there are non-empty seeds: 37 runs for the 36 non-empty `journal_decode` seeds.
 
 ## Running a target
@@ -88,13 +90,14 @@ The working corpus goes first because libFuzzer writes new inputs to the first d
 
 ## Results
 
-Runs on an Apple silicon Mac, one per journal or payload target, 16 seconds each (libFuzzer reports 17), fresh corpus, seeds as the initial inputs, 51 seconds in all:
+Runs on an Apple silicon Mac, one per target, 16 seconds each (libFuzzer reports 17), fresh corpus, seeds as the initial inputs. The first three rows were one session of 51 seconds. The `sanitize` row is a later run of the same kind:
 
 | Target | `-max_len` | Runs | Runs per second | Load before and after | Crashes |
 | --- | --- | --- | --- | --- | --- |
 | `journal_decode` | 1,048,576 | 41,806 | 2,459 | 6.46 and 5.68 | 0 |
 | `journal_read` | 262,144 | 23,069 | 1,357 | 5.68 and 11.28 | 0 |
 | `claude_payload` | 1,000,000 | 136,168 | 8,009 | 11.28 and 9.21 | 0 |
+| `sanitize` | 4,096 | 137,804 | 8,106 | 7.41 and 7.24 | 0 |
 
 ## Limits
 

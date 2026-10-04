@@ -1,6 +1,6 @@
 # Provenance: the agent identity, the session tag and session scopes
 
-This page describes what the Claude Code hook records about the agent behind a session, and how `agentdust_core::session` turns the journal into session scopes. Spec sections 3.1 to 3.3 and 4.1 to 4.4 hold the design. The last sections list where the code differs from the spec and what is not built. Nothing here signals a process. The classifier and `apply` read these results and are separate work.
+This page describes what the Claude Code hook records about the agent behind a session, and how `agentdust_core::session` turns the journal into session scopes. Spec sections 3.1 to 3.3 and 4.1 to 4.4 hold the design. The last sections list where the code differs from the spec and what is not built. Nothing here signals a process. The classifier and `doctor` read these results ([doctor](doctor.md)), and `apply` is separate work.
 
 ## What the hook writes
 
@@ -37,6 +37,7 @@ The widest identity encodes to 150 bytes, and `MAX_AGENT_IDENTITY_LEN` is 160. T
 `ancestry::find_agent(provider, start)` starts at the parent of the hook and walks up. It returns the first process that is an agent:
 
 - Its executable basename is exactly `claude`. The comparison is on bytes and case sensitive, so the desktop application `Claude`, `claude-code`, `claudex` and a path that ends in a slash do not match.
+- Or its executable path ends in `claude/versions/<version>`, the layout of the native installer, with exactly those two directory names and a non-empty last component.
 - Or its executable basename is exactly `node` and its script argument path contains `claude`.
 
 The script argument is the first argument after the program name that does not start with `-`. The value of `-r`, `--require`, `--import`, `--loader`, `--experimental-loader`, `-C` and `--conditions` is skipped. An argument after `--` is the script. `-e`, `--eval`, `-p` and `--print` mean the code is on the command line and there is no script. `procargs::script_argument` parses only the argument part of the `KERN_PROCARGS2` buffer. The environment part is never read, and the arguments of a process are read only when its executable is `node`.
@@ -141,10 +142,10 @@ Each cell is one of two runs. At that load the previous binary is over the 20 ms
 
 ## Not built here
 
-- The known executable list of `setup`. A Claude Code installed with the native installer runs from `~/.local/share/claude/versions/<version>`, which `~/.local/bin/claude` points to on the development machine, so the executable basename is the version number and the hook finds no agent. Those sessions are journaled and degraded. The Claude Code of the desktop application runs as `claude` and is found, and so is a `node` process whose script path mentions `claude`.
+- The known executable list of `setup`. A Claude Code installed with the native installer runs from `~/.local/share/claude/versions/<version>`, which `~/.local/bin/claude` points to on the development machine, and the layout rule finds it. An installation in another layout under another name is journaled with no identity, and its sessions are degraded. The Claude Code of the desktop application runs as `claude` and is found, and so is a `node` process whose script path mentions `claude`.
 - A hook wrapper that is itself a `node` script with `claude` in its path would be taken for the agent, and would end before it, which makes a live session look ended. The tests do not cover this case.
 - `health.json`: the per-agent hook health record of spec 4.4. A degraded scope is derived from the journal.
-- The classifier, sampling, `doctor` and `apply`. `session::scopes` has no caller yet.
+- Sampling and `apply`. `session::scopes` is called by `doctor` and by nothing else.
 
 ## Tests
 

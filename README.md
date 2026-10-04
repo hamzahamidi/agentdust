@@ -2,7 +2,7 @@
 
 AgentDust is a macOS tool in development. It will find the processes that AI coding agents (Claude Code, Codex, Cursor) leave running after their sessions end, and stop them only after you approve each one with a typed code.
 
-**There is no release yet. It cannot find or clean processes today.**
+**There is no release yet. A development build can list leftover processes with `agentdust doctor`, which only reads. It cannot clean anything today.**
 
 - Need cleanup now? It is not ready. Release 0.1 will cover Claude Code on Apple silicon and install through Homebrew. Watch the repository's releases.
 - Want to help test? Run the non-destructive [approval probe](#running-the-development-probe).
@@ -19,12 +19,13 @@ Release 0.1 adds the analysis and the approved cleanup for Claude Code. The Code
 | --- | --- |
 | Process identity, one environment variable read from another process, `KERN_PROCARGS2` parser (fuzzed) | Built |
 | Claude Code hook that records session and shell events in a local journal | Built |
-| The hook records the agent process above it and hands each session a tag through `CLAUDE_ENV_FILE`. `session::scopes` derives unknown, active and ended sessions from the journal ([provenance](docs/m2/provenance.md)), and no command calls it yet | Built |
+| The hook records the agent process above it and hands each session a tag through `CLAUDE_ENV_FILE`. `session::scopes` derives unknown, active and ended sessions from the journal ([provenance](docs/m2/provenance.md)), and `doctor` reads them | Built |
 | Journal rotation and retention, as library functions that nothing runs yet | Built |
 | MCP approval probe: a typed-code form that changes nothing | Built |
 | Reproducible release pipeline | Proven in a dry run: two identical binaries, a deterministic tarball, a verified attestation ([report](docs/m0/report.md)) |
 | Homebrew distribution | Proven with a local tap in the dry run. No public tap or release yet |
-| `doctor` (analysis), plan and apply (cleanup with approval) | Planned for 0.1 |
+| `agentdust doctor`: takes a snapshot of your processes, gives each a class (managed, owned by a live or an ended session, suspect, unknown), prints the counts and the findings, and says when owned classes are unavailable. It never signals ([doctor](docs/m2/doctor.md)) | Built |
+| Plan and apply (cleanup with approval) | Planned for 0.1 |
 
 ## How cleanup will work
 
@@ -49,7 +50,7 @@ True of the code today:
 - The hook exits 0 and prints nothing, including on malformed input, an unwritable data directory and a data directory on a volume that is not local APFS, where it records nothing.
 - The journal decoder, the journal reader and the hook payload parser are [fuzzed](docs/m1/fuzzing.md) beside the `KERN_PROCARGS2` parser. Each target runs under a counting allocator and fails when memory is not bounded by the input or by what the call kept, and the decoder target checks that a record appended after any bytes is read. The seeds are replayed by the test suite and by the Linux CI job, and property tests check that a short write costs the record it cut and no other.
 - The live tests start real processes (some ignore SIGTERM, some detach into their own session, some outlive their parent) through a [harness](docs/m1/live-harness.md) that can only signal processes it started. It revalidates each one's identity before every signal and logs each signal sent.
-- The classifier will be judged against a [corpus of 22 fixtures](docs/fixtures.md) that carry the truth about each process: left behind by an ended session, live, detached, managed or unknown. It includes six protected cases (PID 1, another user, the agent itself, a launchd job, a Homebrew service, an app helper). The fixtures that can be started are started for real through the harness, and each one's parent, session and liveness are checked against the kernel.
+- The classifier is run over a [corpus of 22 fixtures](docs/fixtures.md) that carry the truth about each process: left behind by an ended session, live, detached, managed or unknown. It includes six protected cases (PID 1, another user, the agent itself, a launchd job, a Homebrew service, an app helper). The fixtures that can be started are started for real through the harness, each one's parent, session and liveness are checked against the kernel, and every observed process must get the class its label names. `agentdust doctor` never signals, never puts a command or a path in its JSON, and says when owned classes are unavailable ([doctor](docs/m2/doctor.md)).
 
 Design for 0.1, not implemented yet:
 
@@ -84,6 +85,18 @@ What has been checked, per client ([client matrix](docs/m0/client-matrix.md)):
 - Codex CLI 0.156.1: the full typed-code flow, including a wrong code, Esc and a timeout.
 - Claude Code 2.1.282: the server connects and lists its tool. The typed-code form has not been run yet.
 - Cursor: not tested.
+
+## Running doctor
+
+`doctor` is read-only. It takes about 2 seconds, because it samples CPU time twice, and it creates nothing in your data directory.
+
+```bash
+cargo build --release
+./target/release/agentdust doctor
+./target/release/agentdust doctor --json
+```
+
+The text report lists processes that belong to an ended session or look abandoned, with a redacted command and the directory of each. The JSON holds typed fields only: no command and no path. Without the hook installed the journal is empty, so owned classes are reported as unavailable and only suspects can appear.
 
 ## Licence
 

@@ -66,7 +66,7 @@ The callers wait for each other with a 60 second timeout, so a failing run stops
 
 HMAC pads a key shorter than its 64 byte block with zero bytes, so two keys that differ only in trailing zero bytes are one key. The secret is always 32 bytes, so the property that two secrets give two digests is tested with 32 byte keys.
 
-`Domain::Session` has no caller yet. The session tag digest arrives with the Claude Code adapter of M2.
+`Domain::Session` is used through `tag::key_of`, by the hook for the key of a new session tag and by the process inventory for the key of the tag it reads from an environment.
 
 ## Canonical working directory
 
