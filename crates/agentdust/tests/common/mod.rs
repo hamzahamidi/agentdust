@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 pub mod chain;
+pub mod sleeper;
 
 use std::ffi::OsStr;
 use std::fs::{self, DirBuilder};
