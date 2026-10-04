@@ -85,7 +85,7 @@ pub fn list_generations(dir: &Path) -> io::Result<Vec<Generation>> {
     Ok(found)
 }
 
-pub fn rotate(dir: &Path, now_ms: u64, swap: Swap) -> Result<Rotation, MaintenanceError> {
+pub fn rotate(dir: &Path, now_ms: u64, sync: bool, swap: Swap) -> Result<Rotation, MaintenanceError> {
     let active = dir.join(ACTIVE);
     let meta = match fs::symlink_metadata(&active) {
         Ok(meta) => meta,
@@ -118,7 +118,9 @@ pub fn rotate(dir: &Path, now_ms: u64, swap: Swap) -> Result<Rotation, Maintenan
     };
     fs::rename(&active, &sealed)?;
     drop(guard);
-    sync_dir(dir)?;
+    if sync {
+        sync_dir(dir)?;
+    }
     Ok(Rotation::Rotated { stamp })
 }
 
@@ -131,6 +133,7 @@ pub fn retain(
     dir: &Path,
     plan: &Retention,
     framing: Framing,
+    sync: bool,
     swap: Swap,
 ) -> Result<RetainReport, MaintenanceError> {
     let mut report = RetainReport::default();
@@ -190,7 +193,7 @@ pub fn retain(
             drop(guard);
             report.deleted += 1;
         } else {
-            write_tmp(dir, &kept, framing)?;
+            write_tmp(dir, &kept, framing, sync)?;
             let tmp = dir.join(COMPACT_TMP);
             let guard = match swap() {
                 Ok(guard) => guard,
@@ -205,7 +208,7 @@ pub fn retain(
         }
         changed = true;
     }
-    if changed {
+    if changed && sync {
         sync_dir(dir)?;
     }
     Ok(report)
@@ -221,7 +224,7 @@ fn remove_stale_tmp(dir: &Path) -> io::Result<()> {
     }
 }
 
-fn write_tmp(dir: &Path, kept: &[&[u8]], framing: Framing) -> io::Result<()> {
+fn write_tmp(dir: &Path, kept: &[&[u8]], framing: Framing, sync: bool) -> io::Result<()> {
     let file = open_private(&dir.join(COMPACT_TMP), |options| {
         options.write(true).create_new(true)
     })?;
@@ -230,5 +233,8 @@ fn write_tmp(dir: &Path, kept: &[&[u8]], framing: Framing) -> io::Result<()> {
         out.write_all(&wrap(raw, framing))?;
     }
     let file = out.into_inner().map_err(io::IntoInnerError::into_error)?;
-    file.sync_all()
+    if sync {
+        file.sync_all()?;
+    }
+    Ok(())
 }

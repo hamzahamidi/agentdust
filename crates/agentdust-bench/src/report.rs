@@ -11,6 +11,7 @@ pub struct RunReport {
     pub load_before: String,
     pub load_after: String,
     pub filesystem: String,
+    pub maintenance_sync: bool,
     pub repeats: u32,
     pub elapsed_secs: f64,
     pub cells: Vec<CellRuns>,
@@ -97,6 +98,10 @@ pub fn render_markdown(report: &RunReport) -> String {
     ));
     out.push_str(&format!("- Load averages after the run: {}\n", report.load_after));
     out.push_str(&format!("- Data directory file system: {}\n", report.filesystem));
+    out.push_str(&format!(
+        "- Maintenance sync: {}\n",
+        if report.maintenance_sync { "on" } else { "off" }
+    ));
     out.push_str(&format!(
         "- Run time: {} s. Repeats per cell: {}.\n\n",
         plain(report.elapsed_secs),

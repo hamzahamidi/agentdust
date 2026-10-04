@@ -51,12 +51,14 @@ pub struct Appended {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Options {
     pub maintenance_budget: Duration,
+    pub sync: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
         Self {
             maintenance_budget: Duration::from_millis(500),
+            sync: true,
         }
     }
 }
@@ -173,7 +175,7 @@ impl Journal for Store {
             return Ok(Rotation::Empty);
         }
         let _run = self.run_guard()?;
-        maintenance::rotate(&self.dir, now_ms, &|| self.swap_guard())
+        maintenance::rotate(&self.dir, now_ms, self.options.sync, &|| self.swap_guard())
     }
 
     fn retain(&self, plan: &Retention) -> Result<RetainReport, MaintenanceError> {
@@ -181,7 +183,9 @@ impl Journal for Store {
             return Ok(RetainReport::default());
         }
         let _run = self.run_guard()?;
-        maintenance::retain(&self.dir, plan, self.kind.framing(), &|| self.swap_guard())
+        maintenance::retain(&self.dir, plan, self.kind.framing(), self.options.sync, &|| {
+            self.swap_guard()
+        })
     }
 
     fn file_count(&self) -> io::Result<usize> {
