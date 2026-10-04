@@ -79,6 +79,7 @@ pub(super) fn rotate(
     };
     let _lock = lock(dir)?;
     probe.reached(MaintenancePoint::Locked);
+    drop(retain::open_generations(dir)?);
     rotate_locked(dir, &dir_handle, probe, now_ms)
 }
 

@@ -68,7 +68,7 @@ struct Parsed {
     droppable: bool,
 }
 
-pub(super) fn open_sources(dir: &Path) -> Result<Vec<Source>, MaintenanceError> {
+pub(super) fn open_generations(dir: &Path) -> Result<Vec<Source>, MaintenanceError> {
     let mut sources = Vec::new();
     for generation in list_generations(dir)? {
         match safe_open::open_file(&generation.path, Access::Read) {
@@ -81,6 +81,11 @@ pub(super) fn open_sources(dir: &Path) -> Result<Vec<Source>, MaintenanceError> 
             Err(err) => return Err(refuse(&generation.path, err)),
         }
     }
+    Ok(sources)
+}
+
+pub(super) fn open_sources(dir: &Path) -> Result<Vec<Source>, MaintenanceError> {
+    let mut sources = open_generations(dir)?;
     let active = dir.join(ACTIVE_FILE);
     match safe_open::open_file(&active, Access::Read) {
         Ok(file) => sources.push(Source {
