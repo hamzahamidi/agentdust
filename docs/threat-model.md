@@ -74,7 +74,7 @@ Untrusted: everything a model writes, process metadata, the contents of hook pay
 
 **Residual risk.**
 
-- The host stays in the trusted computing base (7.1). It shows the code to the person. A host that fills the form itself, or hands the form text to the model and lets the model answer, defeats approval. Codex 0.156.1 on protocol 2025-06-18 did not do this. Claude Code and Cursor have not been run through the form, and on protocol 2026-07-28 the code travels inside the tool result, which no client has been tested on.
+- The host stays in the trusted computing base (7.1). It shows the code to the person. A host that fills the form itself, or hands the form text to the model and lets the model answer, defeats approval. Codex 0.156.1 on protocol 2025-06-18 and Claude Code 2.1.289 on protocol 2026-07-28 did not do this in the recorded runs. Cursor has not been tested.
 - A model with free shell access can signal any process of the user without AgentDust and can open a pseudo-terminal (7.4). The ancestor check of 6.6 makes running `agentdust apply` that way harder and does not prove a human is present.
 - The model can ask the person to type the code. The damage is bounded: at most 10 items per call, processes of the same user, SIGTERM only, and a separate code for each suspect.
 - A model that runs shell commands in a loop makes the hook append one record per session or Bash tool event, each at most 65,536 bytes. Nothing calls `prune`, so the journal grows until a caller exists. The limit of 20,000,000 bytes is the default policy of `prune` and applies only when it runs.
@@ -125,8 +125,8 @@ Untrusted: everything a model writes, process metadata, the contents of hook pay
 **Residual risk.**
 
 - The code reaches the host in the clear. A client that reads it from the message and fills the form, or forwards it to the model, approves without the person. This is the trusted host assumption of 7.1, and AgentDust cannot detect it.
-- The client matrix is thin. Codex 0.156.1 on protocol 2025-06-18 is the only client run through every scenario. Claude Code 2.1.282 connects and lists the tool, but its typed-code form has not run because the CLI sign-in expired. Cursor is not installed on the test machine.
-- Protocol 2026-07-28 delivers the code inside the tool result. Whether a client lets the model read it is unknown until a client on that path runs the matrix.
+- The client matrix has two tested clients. Codex 0.156.1 on protocol 2025-06-18 and Claude Code 2.1.289 on protocol 2026-07-28 completed their recorded scenarios. Cursor is not installed on the test machine.
+- Protocol 2026-07-28 delivers the code inside the tool result. Claude Code 2.1.289 completed the retry-path scenarios without observed model approval; Cursor remains untested.
 - Codex has no decline control, so Esc is the only refusal a Codex user can give.
 
 ## 4. Same-user tampering
@@ -139,7 +139,7 @@ Untrusted: everything a model writes, process metadata, the contents of hook pay
 
 | Control | Spec | Requirement | Status | Tests |
 | --- | --- | --- | --- | --- |
-| Every persistent file that exists is opened with `O_NOFOLLOW` and `O_NONBLOCK` and then judged on the descriptor: a regular file, one link, owned by the effective user, no mode bit outside 0600 (0700 for a directory). A FIFO is refused at once. The hook writes nothing and exits 0 when it meets any of these | 7.3 | S16 | implemented | `crates/agentdust-core/src/safe_open.rs`, `crates/agentdust-core/tests/safe_open.rs`, `crates/agentdust-core/tests/safe_open_dir.rs`, `crates/agentdust-core/tests/journal_append.rs`, `crates/agentdust/tests/hook.rs` |
+| Every persistent file that exists is opened with `O_NOFOLLOW` and `O_NONBLOCK` and then judged on the descriptor: a regular file, one link, owned by the effective user, no mode bit outside 0600 (0700 for a directory), and no extended ACL allow entry on macOS. A FIFO is refused at once. The hook writes nothing and exits 0 when it meets any of these | 7.3 | S16 | implemented | `crates/agentdust-core/src/safe_open.rs`, `crates/agentdust-core/src/acl.rs`, `crates/agentdust-core/tests/safe_open.rs`, `crates/agentdust-core/tests/safe_open_dir.rs`, `crates/agentdust-core/tests/safe_open_acl.rs`, `crates/agentdust-core/tests/journal_append.rs`, `crates/agentdust/tests/hook.rs` |
 | A reader does not follow an unsafe generation. It counts the file in `unsafe_files` and reads the rest. An unsafe active file or data directory fails the read | 7.3 | S16 | implemented | `crates/agentdust-core/tests/journal_read.rs` |
 | Rotation and retention refuse before any change when the data directory, `journal.maint`, the active file or any generation is a symlink, a FIFO, a directory, hard linked or too loose. A FIFO is refused without blocking | 7.3 | S16 | implemented | `crates/agentdust-core/tests/journal_rotate.rs`, `crates/agentdust-core/tests/journal_retain.rs` |
 | `manifest.json` and `config.toml` are opened with the same checks. A symlink, a hard link, a directory or a mode outside 0600 makes `setup` refuse and makes the apply switch read as unusable, which disables apply | 7.2, 7.3 | S16 | implemented | `crates/agentdust-core/src/manifest.rs`, `crates/agentdust-core/src/config.rs`, `crates/agentdust-core/tests/manifest.rs`, `crates/agentdust-core/tests/config.rs`, `crates/agentdust/tests/status.rs` |
@@ -219,6 +219,10 @@ Spec 3.2 and 4.4 describe a `flock` taken by every journal writer. The code foll
 | After approval each item is reclassified from scratch, including managed detection, and a change to a less certain class aborts the item | 6.4 | S6 | implemented | `crates/agentdust-core/tests/apply_server.rs`, `crates/agentdust-testkit/tests/apply_live.rs`, `crates/agentdust-testkit/tests/apply_end_to_end.rs` |
 | `apply = false`, or a configuration file that exists and cannot be read or parsed, refuses everything for both MCP and terminal apply. The setting is read when `apply` runs | 6.5 | S21 | implemented | `crates/agentdust-core/tests/config.rs`, `crates/agentdust-core/tests/apply_server.rs`, `crates/agentdust/tests/status.rs` |
 | Evidence for an active session is pinned when the journal is trimmed, and the loss of such evidence is listed in the `prune` report as degraded provenance | 3.2 | none | implemented | `crates/agentdust-core/tests/journal_retention.rs`, `crates/agentdust-core/tests/journal_retain_rules.rs` |
+| One framed journal record is written in one append call, is capped at 65,536 bytes, and short or failed writes cost only that record | 3.2, 4.4, 9.2 | S22 | implemented | `crates/agentdust-core/tests/journal_frame.rs`, `crates/agentdust-core/tests/journal_append_faults.rs`, `crates/agentdust-core/tests/journal_truncation_props.rs`, `crates/agentdust/tests/hook.rs` |
+| An acknowledged append remains present exactly once across append, read, rotation and retention interleavings | 3.2, 9.2 | S23 | implemented | `crates/agentdust-core/tests/journal_append_recheck.rs`, `crates/agentdust-core/tests/journal_rotate_interleave.rs`, `crates/agentdust-core/tests/journal_retain_interleave.rs`, `crates/agentdust-core/tests/journal_snapshot.rs` |
+| Journal writes and secret operations require a local APFS volume | 3.2, 7.2, 7.3 | S24 | implemented | `crates/agentdust-core/tests/journal_volume.rs`, `crates/agentdust-core/tests/journal_append_volume.rs`, `crates/agentdust-core/tests/secret_volume.rs` |
+| Journal readers return a deterministic order and collapse exact duplicate records | 3.2 | S25 | implemented | `crates/agentdust-core/tests/journal_read.rs` |
 | `doctor` shows degraded provenance and owned classes follow it | 3.2, 6.5 | none | implemented | `crates/agentdust-core/tests/doctor_report.rs`, `crates/agentdust-core/tests/doctor_sessions.rs`, `crates/agentdust-core/tests/classifier_provenance.rs` |
 
 The identity check right before the signal (section 5) is what catches an exit and PID reuse since the plan was made.

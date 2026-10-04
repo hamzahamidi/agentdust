@@ -80,9 +80,9 @@ kind: session_start | session_end | shell_start | shell_end | sample | server_st
 - `mono_ts` is a system-wide monotonic clock read, used to order events within one boot. `wall_ts` is for display.
 - Same-user forging of journal records is out of scope (section 7.4).
 
-Storage until the M1 contention benchmark decides otherwise: `journal.jsonl` plus a separate `journal.lock` taken with `flock` by every reader, writer and rotator before opening the data file. Rotation never truncates the active file. A truncated last line is ignored and counted in hook health.
+Storage: `journal.jsonl` and closed generations `journal.<stamp>.jsonl`, in a directory on a local APFS volume (section 7.3). A record is one frame: the byte 0x1E, the record as compact JSON, the byte 0x0A. An append opens `journal.jsonl` with `O_APPEND` and `O_NOFOLLOW`, writes the frame with one `write(2)` and compares `fstat` of the descriptor with `lstat` of the path. When the path names another file, or none, the frame is written again, up to 3 attempts in all. An appender takes no lock. A call interrupted by a signal before it transferred anything may be restarted. A write that returns fewer bytes than the frame is an error and is never completed by a second call. A frame longer than 65,536 bytes is dropped. Hook health (section 4.4) is planned for M2 and counts each kind of drop. A record is acknowledged when the append returns after a complete write and a recheck that finds the path still naming the file written, and an earlier write that a recheck rejected is tentative and not acknowledged. Appends are not synced: an acknowledged record can be lost on an OS crash or a power failure, and lost evidence only lowers confidence (S19). `journal.maint`, taken with `flock` by rotation and retention only, keeps two maintenance runs apart. Rotation renames `journal.jsonl` to `journal.<stamp>.jsonl`, where `<stamp>` is the wall clock in milliseconds moved up to the next free number, and never truncates or rewrites the active file. Rotation and retention open the active file and every generation with the safe opens of section 7.3 before they rename, replace or delete anything, and refuse when one is unsafe. Readers take no lock. A reader opens `journal.jsonl`, lists the generations, opens each one that still exists, collapses records that are equal in every field, and orders the rest by the wall time at which their boot first appears, then `mono_ts`, then the remaining fields in a fixed order. This order is for presentation. It does not show which event caused which, and the order of boots is weak because wall time can move backwards. A frame without its closing 0x0A, a line that does not parse and a line of an unknown kind are skipped and counted. A line of a newer schema version is counted apart, including one over the size limit, which is recognised by its leading `{"v":`.
 
-Retention: records from earlier boots are pruned first, records of ended sessions after 14 days or when the journal passes 20 MB, and records of active sessions are pinned. When evidence for an active session is lost, its provenance is marked degraded.
+Retention: records from earlier boots are pruned first, records of ended sessions after 14 days or when the journal passes 20 MB, and records of active sessions are pinned. When evidence for an active session is lost, its provenance is marked degraded. A session is ended only when it has a `session_end` and every `session_start` of it has a smaller `mono_ts` than its earliest `session_end`, so a session resumed after an end, a delayed end of the old run and a start and an end with the same `mono_ts` stay active until the boot changes. The wall clock and the read order never decide. Retention visits each closed generation, oldest first, and never the active file. A generation that holds a line of a newer schema version is left as it is. A record whose bytes repeat those of a record read earlier in the run is dropped, and so are the records the rules above drop. A generation with nothing to drop is left as it is, and one with no line left is deleted. In any other case the lines that stay are written, with their original bytes, to `journal.compact.tmp`, which is synced and renamed over the generation, and the directory is synced. Before a rewrite or a delete drops a line that does not parse, the generation is copied byte for byte to `journal.jsonl.corrupt-<n>`. A line of an unknown kind stays. A record is never moved to another file and never appended again. No step depends on elapsed time. Only rotation and retention take `journal.maint`, and the hook never runs either.
 
 ### 3.3 Session state machine
 
@@ -151,11 +151,11 @@ Timing has three separate limits:
 
 - Service level for normal input: p50 under 10 ms and p95 under 20 ms.
 - Host timeout: the hook configuration written by `setup` sets a 10 second timeout, the hard bound on how long an agent can wait.
-- Journal write budget: the lock is taken without blocking, with retries for at most 20 ms. On failure the record is dropped and hook health is updated. The health update follows the same budget and is best effort.
+- Journal write budget: an append is a few system calls and takes no lock, so it waits for no other process. The record is dropped when the frame is longer than 65,536 bytes, when the volume is not a local APFS volume, when a write returns fewer bytes than the frame, or when the active file was replaced in 3 attempts in a row. The M1 hook drops it silently, and the health update, which is best effort, is planned for M2.
 
 Benchmarks with 1, 10 and 100 MB payloads assert latency and that each host handles the hook normally.
 
-A hook always exits 0 and prints nothing. Each agent has a health record (last success, last error, error count, error kind) updated under the journal lock. `doctor` and `status` report each agent as healthy, degraded or unavailable, and a provenance failure only lowers confidence.
+A hook always exits 0 and prints nothing. Each agent has a health record (last success, last error, error count, error kind) kept in `health.json`, which is replaced by writing a temporary file and renaming it over the old one. The last writer wins, so a count can miss an update. `doctor` and `status` report each agent as healthy, degraded or unavailable, and a provenance failure only lowers confidence.
 
 ## 5. MCP tools
 
@@ -238,7 +238,7 @@ The data directory is 0700 and every file in it is 0600.
 | File | Content | Retention |
 | --- | --- | --- |
 | `install.secret` | 32 random bytes, created atomically with exclusive, no-follow semantics | until purge |
-| `journal.jsonl`, `journal.lock` | section 3.2 fields only | section 3.2 |
+| `journal.jsonl`, `journal.<stamp>.jsonl`, `journal.compact.tmp`, `journal.jsonl.corrupt-<n>`, `journal.maint` | section 3.2 fields only. `journal.maint` is empty and only rotation and retention take it. A `corrupt` file is a copy of a generation that held a line that did not parse | section 3.2 |
 | `health.json` | per-agent hook health, no input snippets | overwritten |
 | `audit.log` | plan ID, item, identity, class, evidence kinds, result | rotates at 5 MB |
 | `inspection/` | sanitised plan reports | deleted at plan expiry |
@@ -253,6 +253,8 @@ A test plants fake API keys, user names and repository names in commands, paths,
 Every command that reads trusted state first checks the data directory: it must be a real directory owned by the current UID, and the secret must have no group or world access. A wrong mode on the directory is corrected. Anything else makes the command refuse with a specific message.
 
 Every file the tool writes (secret, journal, lock files, health, audit log, inspection reports, manifest, config) is opened with no-follow semantics and must be a regular file with a single link. New files are created exclusively. A symlink, hard link or non-regular file in their place makes the command refuse.
+
+The journal directory must be on a local APFS volume: `statfs` reports `f_fstypename` equal to `apfs` and `MNT_LOCAL` in `f_flags`. On any other volume the hook writes nothing and drops the record silently. Hook health, which records `unsupported_filesystem` and the file system name, and `agentdust status`, which prints the file system name, whether it is local and whether it is supported, are planned for M2. `Journal::status()` returns the same facts.
 
 `agentdust setup --remove --purge-data` removes the agent integrations first and verifies the removal. Only then does it delete the data directory. If removal fails, the manifest and secret stay so the user can retry.
 
@@ -332,15 +334,19 @@ After `brew upgrade`, an old MCP server can keep running while new hooks run the
 | S10 | No lock is held during approval | contract: second apply proceeds while the first waits |
 | S11 | Plan expiry and server restart prevent any signal | contract: expired plan, restart during approval |
 | S12 | Terminal apply refuses without terminals, controlling terminal or foreground group, or under an agent ancestor | PTY tests for each condition and one success case |
-| S13 | Hooks exit 0, print nothing and stay within section 4.4 limits | performance: normal and 1, 10, 100 MB payloads in each host |
+| S13 | Hooks exit 0, print nothing and stay within section 4.4 limits | performance: normal and 1, 10, 100 MB payloads in each host. A hook run in a directory that holds a generation full of droppable records changes no file but the active journal and takes no maintenance lock (`crates/agentdust/tests/hook_never_prunes.rs`) |
 | S14 | Raw tags, commands, output and environments are never persisted | privacy invariant test |
 | S15 | `ModelFinding` and elicitation prompts hold no command text and no path | privacy invariant test on tool output and prompt snapshots |
-| S16 | Startup validation and safe opens refuse unsafe state for every persistent file | symlinked and hard-linked state files, foreign owner, loose modes |
+| S16 | Startup validation and safe opens refuse unsafe state for every persistent file | symlinked and hard-linked state files, foreign owner, loose modes, and on macOS an extended ACL with an allow entry. A rotation or retention run in a directory that holds an unsafe generation refuses and changes nothing |
 | S17 | Setup never edits a symlinked or non-regular file, never removes what it did not create, and verifies native command results | setup fixtures for each case, including a stubbed CLI that exits 0 without changing anything |
-| S18 | Unknown schema or manifest versions fail closed | journal and manifest from a future version |
+| S18 | Unknown schema or manifest versions fail closed | journal and manifest from a future version. A journal line of a future version longer than 65,536 bytes is counted as a newer version, and retention leaves its generation as it is |
 | S19 | Provenance failures only lower confidence | hook failures injected, classifier output compared |
 | S20 | A release only comes from protected `main` with passing CI, pinned actions, the expected Xcode and SDK, and attested artifacts | release workflow dry run on a fork, including a toolchain drift case |
 | S21 | `apply = false` or an unreadable config disables both MCP and terminal apply | contract and PTY tests with the switch set and with a malformed config |
+| S22 | A journal record is one frame (the byte 0x1E, compact JSON, the byte 0x0A) written by one write call per attempt, and a frame is never longer than 65,536 bytes. Concurrent appenders never tear or interleave a line, and a cut write costs one record and never the next | `journal_frame.rs`, `journal_decode.rs`, `journal_truncation_props.rs` and `journal_append_faults.rs` in `crates/agentdust-core/tests`: byte level cuts after 0, 1, 2, half, all but 2 and all but 1 bytes, and injected short and failed writes. `journal_append.rs`: `an_append_is_one_write_call_of_one_whole_frame`, `a_frame_over_the_cap_is_refused_before_anything_is_created` and `sixteen_threads_appending_4000_byte_records_tear_and_lose_nothing`. `crates/agentdust/tests/hook.rs`: `concurrent_hooks_never_interleave_records`. `crates/agentdust-bench/tests/harness.rs`: `sixteen_writer_processes_with_4000_byte_records_tear_nothing` |
+| S23 | An acknowledged record is present exactly once after any interleaving of an append with rotation, a read and retention. A record is acknowledged when its append returned success after a complete write and a recheck that found the active file still at its path. Earlier writes that a recheck rejected are tentative, and an append that ends in `Stale` is not acknowledged | `journal_append_recheck.rs`, `journal_rotate_interleave.rs`, `journal_retain_interleave.rs` and `journal_snapshot.rs` in `crates/agentdust-core/tests`: pause points after the open, before the write and after the write, a reader paused after its open and after its listing, retention deleting and compacting. Stress with a rotator, a reader and writers: `journal_append_rotation.rs`, `journal_retain_stress.rs` and `crates/agentdust-testkit/tests/journal_stress.rs` |
+| S24 | The journal writes nothing on a volume that is not a local APFS volume | `journal_volume.rs` in `crates/agentdust-core/tests`: `the_injected_volume_matrix_of_s24_decides_support` with apfs local, apfs not local, hfs, devfs, nfs, smbfs and autofs. `journal_append_volume.rs`, `secret_volume.rs`, `journal_rotate.rs` and `journal_retain.rs`: no record, file or directory is created on a refused volume. `crates/agentdust/tests/hook.rs`: `a_data_directory_on_an_unsupported_volume_gets_no_record_and_no_noise` |
+| S25 | A reader returns the records of a journal in one fixed order that does not depend on which file holds a record or in which order the files were opened, and it collapses records that are equal in every field | `journal_read.rs` in `crates/agentdust-core/tests`: `records_are_ordered_by_monotonic_time_and_not_by_file_position`, `records_equal_in_boot_and_stamps_get_a_fixed_order_that_does_not_depend_on_the_files`, `the_final_key_compares_every_field_in_declaration_order_starting_with_the_kind` and `exact_duplicates_in_one_file_and_across_files_collapse_and_are_counted` |
 
 Every normative "never", "must" or "refuse" in this document maps to a row above. A new rule adds a row before it is implemented.
 
@@ -352,7 +358,7 @@ Every normative "never", "must" or "refuse" in this document maps to a row above
 | Fuzz | `KERN_PROCARGS2` parser, journal decoder, hook payload parsers, sanitiser, config patchers |
 | Recorded fixtures | ground-truth labels: `true_owned_ended`, `true_live_owned`, `true_detached`, `true_managed`, `true_unknown` |
 | Live harness | spawns real process trees and signals only PIDs it created, including SIGTERM-ignoring and detaching children |
-| Stress | three concurrent journal writers, rotation under load, PID churn |
+| Stress | 3 and 16 concurrent journal writer processes with a rotator, a reader and retention running, PID churn |
 | Release | two-job reproducibility check, clean-account install checklist |
 
 Every pull request compiles all fuzz targets and runs their regression corpora. Before each release, the procargs, payload and config parsers are fuzzed for at least 10 minutes each. PID reuse is tested deterministically through a simulated process provider, because a live churn test can pass without any reuse happening.
@@ -370,5 +376,5 @@ CI on every pull request runs one Linux job (fmt, clippy, unit and property test
 | How each client renders and answers the typed-code form | M0 client matrix |
 | Which process anchors a Cursor conversation | M0 experiment |
 | Whether Cursor `sessionStart` env reaches shell processes | M0 experiment |
-| Journal format | M1 contention benchmark |
+| Journal format | M1 contention benchmark: one `O_APPEND` file, no lock for appenders and readers, an append recheck (docs/m1/adr-journal-format.md) |
 | Suspect age and idleness thresholds | M1 fixture corpus |

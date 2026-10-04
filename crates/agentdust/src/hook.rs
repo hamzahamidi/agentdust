@@ -1,5 +1,6 @@
 use std::cell::OnceCell;
 use std::error::Error;
+use std::fs;
 use std::io::{self, BufReader};
 use std::os::unix::process::parent_id;
 use std::panic;
@@ -41,6 +42,15 @@ fn record(event: &HookEvent) -> Result<(), Box<dyn Error>> {
         return Ok(());
     };
     let dir = paths::data_dir()?;
+    if let Some(parent) = dir.parent() {
+        match fs::symlink_metadata(parent) {
+            Ok(metadata) if metadata.file_type().is_dir() => {}
+            Ok(_) => {
+                return Err(io::Error::other("the parent of the data directory is not a directory").into());
+            }
+            Err(err) => return Err(err.into()),
+        }
+    }
     let secret = LazySecret::new(&dir);
     let handed_out = (kind == Kind::SessionStart)
         .then(|| session_tag(&secret))

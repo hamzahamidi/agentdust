@@ -134,7 +134,7 @@ Ask the agent to call `agentdust_probe_approval`. The tool returns JSON such as 
 What has been checked, per client ([client matrix](docs/m0/client-matrix.md)):
 
 - Codex CLI 0.156.1: the full typed-code flow, including a wrong code, Esc and a timeout.
-- Claude Code 2.1.282: the server connects and lists its tool. The typed-code form has not been run yet.
+- Claude Code 2.1.289: the full typed-code form was tested, including accept, wrong code, decline, cancel, timeout and a forged retry. No automatic approval was observed.
 - Cursor: not tested.
 
 ## Licence
