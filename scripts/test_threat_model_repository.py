@@ -11,6 +11,9 @@ import check_threat_model
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "check_threat_model.py"
 MODEL = "docs/threat-model.md"
+CHECKER_STEP = "python3 scripts/check_threat_model.py"
+TESTS_STEP = "python3 -m unittest discover -s scripts -p 'test_*.py'"
+TOOLCHAIN_STEP = "rustup toolchain install"
 ROADMAP_LINE = re.compile(r"^- Written threat model covering (.+)\.$", re.MULTILINE)
 
 
@@ -18,6 +21,12 @@ def roadmap_adversaries():
     match = ROADMAP_LINE.search((ROOT / "ROADMAP.md").read_text(encoding="utf-8"))
     names = re.split(r",\s*|\s+and\s+", match.group(1)) if match else []
     return [re.sub(r"^(?:a|an|the)\s+", "", name.strip()).lower() for name in names]
+
+
+def ci_job(name):
+    text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    match = re.search(rf"^  {name}:\n(.*?)(?=^  \S|\Z)", text, re.MULTILINE | re.DOTALL)
+    return match.group(1) if match else ""
 
 
 class RepositoryThreatModelTest(unittest.TestCase):
@@ -49,6 +58,28 @@ class RepositoryThreatModelTest(unittest.TestCase):
         for name in roadmap_adversaries():
             with self.subTest(adversary=name):
                 self.assertIn(name, required)
+
+
+class ContinuousIntegrationTest(unittest.TestCase):
+    def test_the_linux_job_exists(self):
+        self.assertIn("runs-on: ubuntu-24.04", ci_job("linux"))
+
+    def test_the_linux_job_runs_the_threat_model_checker(self):
+        self.assertIn(CHECKER_STEP, ci_job("linux"))
+
+    def test_the_linux_job_runs_the_script_tests(self):
+        self.assertIn(TESTS_STEP, ci_job("linux"))
+
+    def test_both_python_steps_run_before_the_rust_toolchain_is_installed(self):
+        job = ci_job("linux")
+        for step in (CHECKER_STEP, TESTS_STEP):
+            with self.subTest(step=step):
+                self.assertIn(step, job)
+                self.assertLess(job.index(step), job.index(TOOLCHAIN_STEP))
+
+    def test_python_bytecode_is_ignored(self):
+        lines = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+        self.assertIn("__pycache__/", [line.strip() for line in lines])
 
 
 if __name__ == "__main__":
