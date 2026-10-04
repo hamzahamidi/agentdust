@@ -41,7 +41,7 @@ fn appended_records_read_back_in_order() {
     journal::append(&dir, &record("b")).unwrap();
     let report = journal::read(&dir).unwrap();
     assert_eq!(report.records, vec![record("a"), record("b")]);
-    assert_eq!(report.skipped_lines, 0);
+    assert_eq!(report.skipped_lines(), 0);
     fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -67,7 +67,7 @@ fn malformed_and_future_lines_are_skipped() {
     fs::write(dir.join("journal.jsonl"), text).unwrap();
     let report = journal::read(&dir).unwrap();
     assert_eq!(report.records, vec![record("a")]);
-    assert_eq!(report.skipped_lines, 2);
+    assert_eq!(report.skipped_lines(), 2);
     fs::remove_dir_all(&dir).unwrap();
 }
 
