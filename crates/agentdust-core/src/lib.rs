@@ -1,5 +1,6 @@
 pub mod ancestry;
 pub mod class;
+pub mod classifier;
 pub mod clock;
 pub mod cwd;
 pub mod digest;
