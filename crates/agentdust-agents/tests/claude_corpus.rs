@@ -81,3 +81,15 @@ fn the_payload_seeds_reach_every_outcome_of_the_parser() {
     assert!(outcomes.iter().flatten().any(|event| event.cwd.is_some()));
     assert!(outcomes.iter().flatten().any(|event| event.agent_id.is_some()));
 }
+
+#[test]
+fn a_top_level_string_over_the_leading_budget_is_too_long_and_not_a_json_error() {
+    let (_, data) = seeds()
+        .into_iter()
+        .find(|(name, _)| name == "top-level-string-long")
+        .unwrap();
+    assert!(matches!(
+        claude::parse_event(&data[..]),
+        Err(EventError::FieldTooLong)
+    ));
+}
