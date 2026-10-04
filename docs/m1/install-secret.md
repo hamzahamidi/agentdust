@@ -11,7 +11,7 @@ A reader without the secret cannot recover the path or test a guess against the 
 `secret::load_or_create(dir)`:
 
 1. Asks the volume probe about the directory, or about its nearest existing ancestor when it does not exist yet. A volume that is not local APFS returns `UnsupportedFilesystem` with the facts. Nothing is read or created, and the directory is not made.
-2. Checks the data directory with `safe_open::ensure_dir`, creating it with mode 0700 when it is missing.
+2. Checks the data directory with `safe_open::ensure_dir`, creating the final component with mode 0700 when it is missing. The parent must exist: a missing parent fails with `NotFound` and nothing is created.
 3. Reads `install.secret` through `safe_open` and requires exactly 32 bytes. A found secret is returned and the file is not touched.
 4. Only when the file is missing: draws 40 bytes, writes the first 32 to a temporary file in the same directory (created exclusively, mode 0600, named `install.secret.<16 hex characters>.tmp` from the other 8 bytes), syncs it, and renames it into place with an exclusive rename (`renamex_np` with `RENAME_EXCL` on macOS, `renameat2` with `RENAME_NOREPLACE` on Linux).
 5. A process that loses the rename removes its temporary file. Every caller then reads the installed file through step 3, so two hooks that start together end with one secret.
