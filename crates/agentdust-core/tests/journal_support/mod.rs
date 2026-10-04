@@ -1,15 +1,18 @@
 #![allow(dead_code)]
 
+use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
+use std::io::{self, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Condvar, LazyLock, Mutex};
 use std::time::Duration;
 
 use agentdust_core::journal::volume::FixedVolume;
 use agentdust_core::journal::{
-    Agent, Class, Journal, Kind, MAX_FRAME_LEN, ReadPoint, ReadProbe, Record, SCHEMA_VERSION, scan,
+    Agent, Class, FrameWriter, Journal, Kind, MAX_FRAME_LEN, ReadPoint, ReadProbe, Record, SCHEMA_VERSION,
+    scan,
 };
 
 pub const HANG_GUARD: Duration = Duration::from_secs(60);
@@ -229,5 +232,146 @@ impl ReadProbe for Gate {
             );
             state = next;
         }
+    }
+}
+
+pub enum Step {
+    Pass,
+    Interrupt,
+    Take(usize),
+    Fail(i32),
+    LandThenFail(usize, i32),
+}
+
+pub struct Scripted {
+    steps: VecDeque<Step>,
+    pub calls: Vec<usize>,
+}
+
+impl Scripted {
+    pub fn new(steps: impl IntoIterator<Item = Step>) -> Self {
+        Self {
+            steps: steps.into_iter().collect(),
+            calls: Vec::new(),
+        }
+    }
+}
+
+impl FrameWriter for Scripted {
+    fn write(&mut self, mut file: &File, frame: &[u8]) -> io::Result<usize> {
+        self.calls.push(frame.len());
+        match self.steps.pop_front().unwrap_or(Step::Pass) {
+            Step::Pass => file.write(frame),
+            Step::Interrupt => Err(io::Error::from_raw_os_error(libc::EINTR)),
+            Step::Take(n) => file.write(&frame[..n.min(frame.len())]),
+            Step::Fail(errno) => Err(io::Error::from_raw_os_error(errno)),
+            Step::LandThenFail(n, errno) => {
+                file.write_all(&frame[..n])?;
+                Err(io::Error::from_raw_os_error(errno))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WritePoint {
+    BeforeWrite,
+    AfterWrite,
+}
+
+pub struct Paused {
+    point: WritePoint,
+    attempt: u32,
+    seen: u32,
+    reached: Sender<()>,
+    release: Receiver<()>,
+}
+
+pub struct Pause {
+    reached: Receiver<()>,
+    release: Sender<()>,
+}
+
+pub fn paused(point: WritePoint, attempt: u32) -> (Paused, Pause) {
+    let (reached_tx, reached_rx) = channel();
+    let (release_tx, release_rx) = channel();
+    (
+        Paused {
+            point,
+            attempt,
+            seen: 0,
+            reached: reached_tx,
+            release: release_rx,
+        },
+        Pause {
+            reached: reached_rx,
+            release: release_tx,
+        },
+    )
+}
+
+impl Pause {
+    pub fn wait_reached(&self) {
+        self.reached
+            .recv_timeout(HANG_GUARD)
+            .expect("the writer never reached its pause");
+    }
+
+    pub fn release(&self) {
+        let _ = self.release.send(());
+    }
+}
+
+impl Paused {
+    fn pause(&self) {
+        self.reached.send(()).unwrap();
+        self.release
+            .recv_timeout(HANG_GUARD)
+            .expect("the pause of the writer was never released");
+    }
+}
+
+impl FrameWriter for Paused {
+    fn write(&mut self, mut file: &File, frame: &[u8]) -> io::Result<usize> {
+        self.seen += 1;
+        let here = self.seen == self.attempt;
+        if here && self.point == WritePoint::BeforeWrite {
+            self.pause();
+        }
+        let written = file.write(frame)?;
+        if here && self.point == WritePoint::AfterWrite {
+            self.pause();
+        }
+        Ok(written)
+    }
+}
+
+pub struct RotateAfterEachWrite<'a> {
+    pub dir: &'a Path,
+    pub next_stamp: u64,
+}
+
+impl FrameWriter for RotateAfterEachWrite<'_> {
+    fn write(&mut self, mut file: &File, frame: &[u8]) -> io::Result<usize> {
+        let written = file.write(frame)?;
+        rotate_by_rename(self.dir, self.next_stamp);
+        self.next_stamp += 1;
+        Ok(written)
+    }
+}
+
+pub struct RemoveAfterWrite<'a> {
+    pub dir: &'a Path,
+    pub left: u32,
+}
+
+impl FrameWriter for RemoveAfterWrite<'_> {
+    fn write(&mut self, mut file: &File, frame: &[u8]) -> io::Result<usize> {
+        let written = file.write(frame)?;
+        if self.left > 0 {
+            self.left -= 1;
+            fs::remove_file(self.dir.join("journal.jsonl"))?;
+        }
+        Ok(written)
     }
 }
