@@ -125,7 +125,7 @@ fn locate_asks_about_the_directory_itself_when_it_exists() {
     let dir = private_dir("volume-existing");
     let probe = Recording::new();
     locate(&probe, &dir).unwrap();
-    assert_eq!(probe.asked(), [dir.clone()]);
+    assert_eq!(probe.asked(), vec![dir.clone()]);
     fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -134,7 +134,7 @@ fn locate_asks_about_the_nearest_existing_ancestor_of_a_missing_directory() {
     let root = private_dir("volume-missing");
     let probe = Recording::new();
     locate(&probe, &root.join("a/b/data")).unwrap();
-    assert_eq!(probe.asked(), [root.clone()]);
+    assert_eq!(probe.asked(), vec![root.clone()]);
     assert!(!root.join("a").exists());
     fs::remove_dir_all(&root).unwrap();
 }
@@ -146,7 +146,7 @@ fn locate_walks_past_a_regular_file_in_the_path() {
     fs::write(&file, b"x").unwrap();
     let probe = Recording::new();
     locate(&probe, &file.join("child/leaf")).unwrap();
-    assert_eq!(probe.asked(), [file.clone()]);
+    assert_eq!(probe.asked(), vec![file.clone()]);
     fs::remove_dir_all(&root).unwrap();
 }
 
