@@ -10,7 +10,7 @@ use agentdust_bench::maintenance::{MaintenanceError, RetainReport, Retention, Ro
 use agentdust_bench::payload::{is_marker, marker};
 use agentdust_bench::{Candidate, Journal, Options};
 use agentdust_core::journal::Record;
-use common::{Scratch, count_of, named, names_in, plant, plant_bytes};
+use common::{Scratch, count_of, data_files, named, names_in, plant, plant_bytes};
 
 const T: u64 = 1_800_000_000_000;
 
@@ -513,10 +513,24 @@ fn files_that_are_not_canonical_generations_are_never_touched() {
         ] {
             plant(dir, name, candidate, &[expired(1)]);
         }
-        let before: Vec<_> = names_in(dir);
+        let data = |dir: &Path| -> Vec<String> {
+            data_files(dir)
+                .iter()
+                .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+                .collect()
+        };
+        let before = data(dir);
         let report = retain(&*open(candidate, dir), T, 0);
         assert_eq!(report.eligible + report.waiting, 0, "{}", candidate.label());
-        assert_eq!(names_in(dir), before, "{}", candidate.label());
+        assert_eq!(data(dir), before, "{}", candidate.label());
+        for name in &before {
+            assert_eq!(
+                fs::read(dir.join(name)).unwrap(),
+                bytes_of(candidate, &[expired(1)]),
+                "{} {name}",
+                candidate.label()
+            );
+        }
     });
 }
 
