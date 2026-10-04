@@ -29,8 +29,9 @@ A reader reads `journal.jsonl` and every file whose name is exactly `journal.<ca
 1. Opens the data directory with the safe open rules. A missing directory is left missing and the result is `Rotation::Empty`.
 2. Asks the volume probe about the directory. A volume that is not local APFS returns `UnsupportedFilesystem` and creates nothing.
 3. Creates `journal.maint` exclusively when it is missing, opens it with the safe open rules and takes the lock without blocking. A held lock is `Busy`.
-4. Opens `journal.jsonl` for reading with the safe open rules. A missing or empty file is `Rotation::Empty`.
-5. Renames it to `journal.<stamp>.jsonl`, taking the next free stamp when the name is taken, even by a dangling symlink, and syncs the directory. Nothing is truncated and the inode is kept.
+4. Opens every existing generation `journal.<stamp>.jsonl` with the safe open rules, oldest stamp first, and closes it again. The first one that is a symlink, a FIFO, a directory, hard linked, owned by another user or too loose fails the run with `Refused` and its path, before anything is renamed. The check is the one retention makes, shared in the code. A FIFO is refused without blocking.
+5. Opens `journal.jsonl` for reading with the safe open rules. A missing or empty file is `Rotation::Empty`.
+6. Renames it to `journal.<stamp>.jsonl`, taking the next free stamp when the name is taken, and syncs the directory. Nothing is truncated and the inode is kept.
 
 The active file is renamed and never rewritten. An appender that opened the old inode and writes later lands in a file that readers still list, and its recheck sees that the path no longer names that file and writes the frame again. That recheck is the protection of a late writer, so no step of rotation or retention waits for time to pass.
 
