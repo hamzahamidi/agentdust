@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "name": "unrelated_process_beside_live_session",
+  "description": "An unrelated process that runs next to a live session with a sampled server. The server is owned-live and the bystander is unknown, and neither may be signalled.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      }
+    },
+    {
+      "role": "dev_server",
+      "parent_role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_live_owned",
+        "class": "owned-live",
+        "must_never_signal": true
+      }
+    },
+    {
+      "role": "bystander",
+      "flags": [],
+      "expected": {
+        "label": "true_unknown",
+        "class": "unknown",
+        "must_never_signal": true
+      }
+    }
+  ],
+  "journal": [
+    {
+      "kind": "session_start",
+      "session_id": "s1"
+    },
+    {
+      "kind": "shell_start",
+      "session_id": "s1",
+      "tool_use_id": "t1",
+      "exe_base": "node"
+    },
+    {
+      "kind": "sample",
+      "session_id": "s1",
+      "roles": [
+        "dev_server"
+      ]
+    }
+  ],
+  "session_ended": false
+}

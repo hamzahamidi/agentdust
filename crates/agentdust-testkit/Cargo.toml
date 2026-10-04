@@ -11,6 +11,14 @@ name = "fixture-sleeper"
 path = "src/bin/fixture-sleeper.rs"
 test = false
 
-[dev-dependencies]
+[[bin]]
+name = "fixture-journal"
+path = "src/bin/fixture-journal.rs"
+test = false
+
+[dependencies]
 agentdust-core.workspace = true
 libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

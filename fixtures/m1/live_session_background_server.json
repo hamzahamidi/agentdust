@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "name": "live_session_background_server",
+  "description": "A background server of a session whose agent is still running. It is owned-live and must never be signalled, however long it has been idle.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      }
+    },
+    {
+      "role": "dev_server",
+      "parent_role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_live_owned",
+        "class": "owned-live",
+        "must_never_signal": true
+      }
+    }
+  ],
+  "journal": [
+    {
+      "kind": "session_start",
+      "session_id": "s1"
+    },
+    {
+      "kind": "shell_start",
+      "session_id": "s1",
+      "tool_use_id": "t1",
+      "exe_base": "node"
+    },
+    {
+      "kind": "sample",
+      "session_id": "s1",
+      "roles": [
+        "dev_server"
+      ]
+    }
+  ],
+  "session_ended": false
+}

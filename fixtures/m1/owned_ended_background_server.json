@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "name": "owned_ended_background_server",
+  "description": "The agent started a dev server through a shell call and sampled it as a descendant. The session ended and the server kept running under launchd, so it is owned by an ended session.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      }
+    },
+    {
+      "role": "dev_server",
+      "parent_role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_owned_ended",
+        "class": "owned-ended",
+        "must_never_signal": false
+      }
+    }
+  ],
+  "journal": [
+    {
+      "kind": "session_start",
+      "session_id": "s1"
+    },
+    {
+      "kind": "shell_start",
+      "session_id": "s1",
+      "tool_use_id": "t1",
+      "exe_base": "node"
+    },
+    {
+      "kind": "sample",
+      "session_id": "s1",
+      "roles": [
+        "dev_server"
+      ]
+    },
+    {
+      "kind": "session_end",
+      "session_id": "s1"
+    }
+  ],
+  "session_ended": true
+}

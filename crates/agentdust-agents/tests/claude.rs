@@ -1,4 +1,4 @@
-use agentdust_agents::claude::{EventError, HookEvent, MAX_ID_LEN, journal_kind, parse_event};
+use agentdust_agents::claude::{EventError, HookEvent, MAX_CWD_LEN, MAX_ID_LEN, journal_kind, parse_event};
 use agentdust_core::journal::Kind;
 
 #[test]
@@ -14,8 +14,34 @@ fn reads_only_the_fields_it_needs() {
             tool_name: Some("Bash".into()),
             tool_use_id: Some("toolu_9".into()),
             agent_id: None,
+            cwd: None,
         }
     );
+}
+
+#[test]
+fn reads_the_working_directory() {
+    let input = br#"{"session_id":"s1","hook_event_name":"PreToolUse","cwd":"/Users/dev/project"}"#;
+    let event = parse_event(&input[..]).unwrap();
+    assert_eq!(event.cwd.as_deref(), Some("/Users/dev/project"));
+}
+
+#[test]
+fn an_event_without_a_working_directory_has_none() {
+    let event = parse_event(&br#"{"session_id":"s1","hook_event_name":"SessionStart"}"#[..]).unwrap();
+    assert_eq!(event.cwd, None);
+}
+
+#[test]
+fn a_working_directory_keeps_spaces_unicode_and_escapes() {
+    let input = r#"{"session_id":"s","hook_event_name":"Stop","cwd":"/Users/d\u00e9v/My Project/\u4e2d"}"#;
+    let event = parse_event(input.as_bytes()).unwrap();
+    assert_eq!(event.cwd.as_deref(), Some("/Users/d\u{e9}v/My Project/\u{4e2d}"));
+}
+
+#[test]
+fn the_working_directory_limit_is_4096_bytes() {
+    assert_eq!(MAX_CWD_LEN, 4096);
 }
 
 #[test]
@@ -31,6 +57,7 @@ fn event(name: &str, tool: Option<&str>) -> HookEvent {
         tool_name: tool.map(Into::into),
         tool_use_id: None,
         agent_id: None,
+        cwd: None,
     }
 }
 
@@ -99,26 +126,29 @@ fn fields_are_accepted_in_any_order_among_unknown_ones() {
     assert_eq!(event.tool_name.as_deref(), Some("Bash"));
     assert_eq!(event.tool_use_id.as_deref(), Some("t1"));
     assert_eq!(event.agent_id.as_deref(), Some("a1"));
+    assert_eq!(event.cwd.as_deref(), Some("/x"));
 }
 
 #[test]
 fn null_optional_fields_are_none() {
-    let input =
-        br#"{"session_id":"s","hook_event_name":"Stop","tool_name":null,"tool_use_id":null,"agent_id":null}"#;
+    let input = br#"{"session_id":"s","hook_event_name":"Stop","tool_name":null,"tool_use_id":null,"agent_id":null,"cwd":null}"#;
     let event = parse_event(&input[..]).unwrap();
     assert_eq!(
-        (event.tool_name, event.tool_use_id, event.agent_id),
-        (None, None, None)
+        (event.tool_name, event.tool_use_id, event.agent_id, event.cwd),
+        (None, None, None, None)
     );
 }
 
 #[test]
 fn malformed_events_are_errors() {
-    let cases: [&[u8]; 6] = [
+    let cases: [&[u8]; 9] = [
         br#"{"session_id":"s"}"#,
         br#"{"session_id":"s","session_id":"t","hook_event_name":"Stop"}"#,
         br#"{"session_id":5,"hook_event_name":"Stop"}"#,
         br#"{"session_id":"s","hook_event_name":"Stop","tool_name":{"a":1}}"#,
+        br#"{"session_id":"s","hook_event_name":"Stop","cwd":5}"#,
+        br#"{"session_id":"s","hook_event_name":"Stop","cwd":"/a","cwd":"/b"}"#,
+        br#"{"session_id":"s","hook_event_name":"Stop","cwd":["/a"]}"#,
         br#"["session_id"]"#,
         br#"{"session_id":"s","hook_event_name":"Sto"#,
     ];

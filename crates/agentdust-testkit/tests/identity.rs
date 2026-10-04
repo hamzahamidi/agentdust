@@ -1,22 +1,14 @@
 #![cfg(target_os = "macos")]
 
 use std::path::Path;
-use std::process::{Child, Command};
+use std::process::Command;
 
 use agentdust_core::darwin::{self, DarwinProvider};
 use agentdust_core::provider::{ProcessProvider, ProcessRead};
 use agentdust_core::revalidate::{Revalidation, revalidate};
+use agentdust_testkit::Fixture;
 
 const SLEEPER: &str = env!("CARGO_BIN_EXE_fixture-sleeper");
-
-struct Fixture(Child);
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
 
 fn spawn_sleeper() -> Fixture {
     Fixture(Command::new(SLEEPER).arg("30").spawn().unwrap())

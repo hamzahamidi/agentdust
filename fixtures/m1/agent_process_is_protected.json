@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "name": "agent_process_is_protected",
+  "description": "The agent process itself, analysed by a tool the agent runs. The deny list covers live agent processes, so it is managed and never signalled.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      }
+    }
+  ],
+  "journal": [
+    {
+      "kind": "session_start",
+      "session_id": "s1"
+    }
+  ],
+  "session_ended": false
+}

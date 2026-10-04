@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "name": "launchd_job_lookalike",
+  "description": "A launchd job with a helper child. Its parent is launchd and it has run for a long time, which is also what a leftover looks like, but a loaded launchd job is managed. Record only because a test cannot load a job.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "launchd_job",
+      "flags": [],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      },
+      "record_only": true
+    },
+    {
+      "role": "job_helper",
+      "parent_role": "launchd_job",
+      "flags": [],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      },
+      "record_only": true
+    }
+  ],
+  "journal": [],
+  "session_ended": false
+}

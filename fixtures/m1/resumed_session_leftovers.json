@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "name": "resumed_session_leftovers",
+  "description": "A session resumed under a new agent process with the same session id. Both agent processes ended and each left a sampled process behind, so both are owned by an ended scope.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "agent_first",
+      "flags": [],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      }
+    },
+    {
+      "role": "first_leftover",
+      "parent_role": "agent_first",
+      "flags": [],
+      "expected": {
+        "label": "true_owned_ended",
+        "class": "owned-ended",
+        "must_never_signal": false
+      }
+    },
+    {
+      "role": "agent_resumed",
+      "flags": [],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      }
+    },
+    {
+      "role": "second_leftover",
+      "parent_role": "agent_resumed",
+      "flags": [],
+      "expected": {
+        "label": "true_owned_ended",
+        "class": "owned-ended",
+        "must_never_signal": false
+      }
+    }
+  ],
+  "journal": [
+    {
+      "kind": "session_start",
+      "session_id": "s1"
+    },
+    {
+      "kind": "shell_start",
+      "session_id": "s1",
+      "tool_use_id": "t1",
+      "exe_base": "node"
+    },
+    {
+      "kind": "sample",
+      "session_id": "s1",
+      "roles": [
+        "first_leftover"
+      ]
+    },
+    {
+      "kind": "session_end",
+      "session_id": "s1"
+    },
+    {
+      "kind": "session_start",
+      "session_id": "s1"
+    },
+    {
+      "kind": "shell_start",
+      "session_id": "s1",
+      "tool_use_id": "t2",
+      "exe_base": "node"
+    },
+    {
+      "kind": "sample",
+      "session_id": "s1",
+      "roles": [
+        "second_leftover"
+      ]
+    }
+  ],
+  "session_ended": true
+}

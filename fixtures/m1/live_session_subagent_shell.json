@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "name": "live_session_subagent_shell",
+  "description": "A helper started by a subagent shell call while the agent is still running. Subagents share the session scope, so it is owned-live.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      }
+    },
+    {
+      "role": "helper",
+      "parent_role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_live_owned",
+        "class": "owned-live",
+        "must_never_signal": true
+      }
+    }
+  ],
+  "journal": [
+    {
+      "kind": "session_start",
+      "session_id": "s1"
+    },
+    {
+      "kind": "shell_start",
+      "session_id": "s1",
+      "subagent_id": "sub1",
+      "tool_use_id": "t1",
+      "exe_base": "node"
+    },
+    {
+      "kind": "sample",
+      "session_id": "s1",
+      "subagent_id": "sub1",
+      "roles": [
+        "helper"
+      ]
+    }
+  ],
+  "session_ended": false
+}

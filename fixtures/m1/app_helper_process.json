@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "name": "app_helper_process",
+  "description": "A helper process of a running application. It is managed while its owning application runs. Record only because a test cannot verify a real application.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "app_main",
+      "flags": [],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      },
+      "record_only": true
+    },
+    {
+      "role": "app_helper",
+      "parent_role": "app_main",
+      "flags": [],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      },
+      "record_only": true
+    }
+  ],
+  "journal": [],
+  "session_ended": false
+}

@@ -23,6 +23,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - run: python3 scripts/check_threat_model.py
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal -c clippy -c rustfmt
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --exclude agentdust --all-targets --locked -- -D warnings
@@ -34,12 +36,13 @@ jobs:
       - run: cargo deny check
       - run: cargo audit
       - run: rustup toolchain install "$FUZZ_TOOLCHAIN" --profile minimal
-      - name: Build every fuzz target
+      - name: Build every fuzz target and replay its seeds
         run: |
           targets="$(cargo "+$FUZZ_TOOLCHAIN" fuzz list)"
           test -n "$targets"
           for target in $targets; do
-            cargo "+$FUZZ_TOOLCHAIN" fuzz build "$target" --target x86_64-unknown-linux-gnu
+            test -d "fuzz/seeds/$target"
+            cargo "+$FUZZ_TOOLCHAIN" fuzz run "$target" "fuzz/seeds/$target" --target x86_64-unknown-linux-gnu -- -runs=0
           done
 
   macos:

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "name": "abrupt_termination_no_session_end",
+  "description": "The agent was killed, so no session_end was written and the last shell call has no end. The sampled child is owned-ended.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      }
+    },
+    {
+      "role": "sampled_child",
+      "parent_role": "agent",
+      "flags": [],
+      "expected": {
+        "label": "true_owned_ended",
+        "class": "owned-ended",
+        "must_never_signal": false
+      }
+    }
+  ],
+  "journal": [
+    {
+      "kind": "session_start",
+      "session_id": "s1"
+    },
+    {
+      "kind": "shell_start",
+      "session_id": "s1",
+      "tool_use_id": "t1",
+      "exe_base": "node"
+    },
+    {
+      "kind": "sample",
+      "session_id": "s1",
+      "roles": [
+        "sampled_child"
+      ]
+    }
+  ],
+  "session_ended": true
+}

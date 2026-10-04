@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "name": "other_user_process",
+  "description": "A process owned by another user. The deny list covers other users, so it is managed. A test cannot start a process as another user, so it is record only.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "other_user_daemon",
+      "flags": [],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      },
+      "record_only": true
+    }
+  ],
+  "journal": [],
+  "session_ended": false
+}

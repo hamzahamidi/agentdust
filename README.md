@@ -9,7 +9,7 @@ AgentDust is a macOS tool in development. It will find the processes that AI cod
 
 Agents start dev servers, MCP servers and helpers. When a session ends or crashes, some of them keep running under `launchd`, holding memory, ports and sometimes CPU. The upstream reports are open: [anthropics/claude-code#1935](https://github.com/anthropics/claude-code/issues/1935) and [openai/codex#21008](https://github.com/openai/codex/issues/21008).
 
-Security and privacy: [SECURITY.md](SECURITY.md) and the [section below](#security-and-privacy).
+Security and privacy: [SECURITY.md](SECURITY.md), the [threat model](docs/threat-model.md) and the [section below](#security-and-privacy).
 
 ## Status
 
@@ -19,6 +19,7 @@ Release 0.1 adds the analysis and the approved cleanup for Claude Code. The Code
 | --- | --- |
 | Process identity, one environment variable read from another process, `KERN_PROCARGS2` parser (fuzzed) | Built |
 | Claude Code hook that records session and shell events in a local journal | Built |
+| Journal rotation and retention, as library functions that nothing runs yet | Built |
 | MCP approval probe: a typed-code form that changes nothing | Built |
 | Reproducible release pipeline | Proven in a dry run: two identical binaries, a deterministic tarball, a verified attestation ([report](docs/m0/report.md)) |
 | Homebrew distribution | Proven with a local tap in the dry run. No public tap or release yet |
@@ -43,8 +44,11 @@ Related tools exist. [tidewake](https://github.com/berkkorkmaz/tidewake) is a re
 True of the code today:
 
 - The release binary imports no socket calls, and the dependency tree has no networking crates.
-- The journal holds event kinds, session and tool identifiers, timestamps and the boot session. A test sends a 9 MB tool response through the hook and checks that neither the output nor the command reaches the journal.
-- The hook exits 0 and prints nothing, including on malformed input, an unwritable data directory and a busy journal lock.
+- The journal holds event kinds, session and tool identifiers, timestamps, the boot session and a keyed digest of the working directory, never the path. The digest is an HMAC under a random secret that stays in the data directory. A [privacy test](docs/m1/privacy-test.md) runs the hook for four events whose payloads carry sentinels in the command, a 5 MB response, the working directory, a transcript path, an unknown field and the environment, then reads every byte of every file in the data directory (secret, maintenance lock, journal and rotated copies) and every file the run left in the system temp directory. Only the session id may appear, and a journal key outside one list in the code fails the test. Another test sends a 9 MB tool response through the hook and checks that neither the output nor the command reaches the journal.
+- The hook exits 0 and prints nothing, including on malformed input, an unwritable data directory and a data directory on a volume that is not local APFS, where it records nothing.
+- The journal decoder, the journal reader and the hook payload parser are [fuzzed](docs/m1/fuzzing.md) beside the `KERN_PROCARGS2` parser. Each target runs under a counting allocator and fails when memory is not bounded by the input or by what the call kept, and the decoder target checks that a record appended after any bytes is read. The seeds are replayed by the test suite and by the Linux CI job, and property tests check that a short write costs the record it cut and no other.
+- The live tests start real processes (some ignore SIGTERM, some detach into their own session, some outlive their parent) through a [harness](docs/m1/live-harness.md) that can only signal processes it started. It revalidates each one's identity before every signal and logs each signal sent.
+- The classifier will be judged against a [corpus of 22 fixtures](docs/fixtures.md) that carry the truth about each process: left behind by an ended session, live, detached, managed or unknown. It includes six protected cases (PID 1, another user, the agent itself, a launchd job, a Homebrew service, an app helper). The fixtures that can be started are started for real through the harness, and each one's parent, session and liveness are checked against the kernel.
 
 Design for 0.1, not implemented yet:
 

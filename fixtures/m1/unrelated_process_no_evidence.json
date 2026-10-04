@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "name": "unrelated_process_no_evidence",
+  "description": "A process of the same user with no journal record and no agent ancestor. Without evidence it is unknown and never actionable.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "bystander",
+      "flags": [],
+      "expected": {
+        "label": "true_unknown",
+        "class": "unknown",
+        "must_never_signal": true
+      }
+    }
+  ],
+  "journal": [],
+  "session_ended": false
+}
