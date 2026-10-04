@@ -23,10 +23,15 @@ struct Orphan(Option<KernelIdentity>);
 
 impl Orphan {
     fn adopt(pid: i32) -> Self {
-        let identity = darwin::boot_session_uuid()
-            .ok()
-            .and_then(|boot| darwin::process_info(pid, &boot).ok().flatten())
-            .map(|info| info.identity);
+        let identity = (0..5).find_map(|attempt| {
+            if attempt > 0 {
+                thread::sleep(Duration::from_millis(20));
+            }
+            darwin::boot_session_uuid()
+                .ok()
+                .and_then(|boot| darwin::process_info(pid, &boot).ok().flatten())
+                .map(|info| info.identity)
+        });
         Self(identity)
     }
 }
