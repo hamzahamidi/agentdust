@@ -7,7 +7,7 @@ use std::os::unix::fs::DirBuilderExt;
 use std::thread;
 
 use agentdust_core::journal::{self, Agent, Kind};
-use common::{pre_tool_use, run_hook, run_hook_with, scratch_dir};
+use common::{pre_tool_use, private_dir, run_hook, run_hook_with, scratch_dir};
 
 fn tool_event(event: &str, tool: &str) -> Vec<u8> {
     format!(
@@ -283,7 +283,7 @@ fn a_non_utf8_argument_still_lets_the_host_finish_writing() {
 fn an_empty_data_dir_override_writes_under_home_not_the_working_directory() {
     let root = scratch_dir("empty-override");
     let (home, cwd) = (root.join("home"), root.join("repo"));
-    fs::create_dir_all(&home).unwrap();
+    fs::create_dir_all(home.join("Library/Application Support")).unwrap();
     fs::create_dir_all(&cwd).unwrap();
     let output = run_hook_with(
         ["hook", "claude"],
@@ -318,5 +318,17 @@ fn a_relative_data_dir_override_records_nothing() {
     assert!(output.stderr.is_empty());
     assert!(fs::read_dir(&cwd).unwrap().next().is_none());
     assert!(fs::read_dir(&home).unwrap().next().is_none());
+    fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn a_data_directory_below_a_missing_parent_records_nothing_and_creates_nothing() {
+    let root = private_dir("missing-parent");
+    let data_dir = root.join("missing/data");
+    let output = run_hook(&data_dir, &pre_tool_use("s1", "toolu_1"));
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+    assert!(fs::read_dir(&root).unwrap().next().is_none());
     fs::remove_dir_all(&root).unwrap();
 }

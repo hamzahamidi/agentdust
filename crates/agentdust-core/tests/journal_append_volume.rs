@@ -108,9 +108,22 @@ fn a_directory_that_does_not_exist_is_judged_by_its_nearest_existing_ancestor() 
     let probe = Counting {
         asked: Mutex::new(Vec::new()),
     };
-    let dir = root.join("a/b");
+    let dir = root.join("data");
     Journal::with_volume(&dir, &probe).append(&named("a")).unwrap();
     assert_eq!(*probe.asked.lock().unwrap(), vec![root.to_path_buf()]);
+}
+
+#[test]
+fn a_directory_below_a_missing_parent_is_judged_by_its_nearest_existing_ancestor_and_not_created() {
+    let root = TempDir::private("volume-ancestor-missing-parent");
+    let probe = Counting {
+        asked: Mutex::new(Vec::new()),
+    };
+    let dir = root.join("a/b");
+    let result = Journal::with_volume(&dir, &probe).append(&named("a"));
+    assert!(matches!(&result, Err(JournalError::Io(err)) if err.kind() == io::ErrorKind::NotFound));
+    assert_eq!(*probe.asked.lock().unwrap(), vec![root.to_path_buf()]);
+    assert!(!root.join("a").exists());
 }
 
 #[test]
