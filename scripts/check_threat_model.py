@@ -12,6 +12,10 @@ ADVERSARIES = (
     "Concurrent apply",
     "Stale plans",
     "Compromised release artifact",
+    "Unsupported filesystem",
+    "Journal poisoning and short writes",
+    "Stale writers and rotation",
+    "Durability limits",
 )
 DEFAULT_MODEL = "docs/threat-model.md"
 DEFAULT_SPEC = "docs/superpowers/specs/2026-10-03-agentdust-design.md"
@@ -24,6 +28,9 @@ SPEC_ROW = re.compile(r"^\|\s*(S\d+)\s*\|")
 CITATION = re.compile(r"\bS\d+\b")
 SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")
 STATUS = re.compile(r"implemented|planned m\d")
+REQUIREMENT = re.compile(r"(?i:none)|S\d+(?:(?:\s*,\s*|\s+)S\d+)*")
+RESIDUAL = re.compile(r"^\*\*Residual risk\.\*\*")
+BULLET = re.compile(r"^\s*[-*]\s+\S")
 PATH_SPAN = re.compile(r"`([^`\s]*/[^`\s]*)`")
 
 
@@ -52,12 +59,15 @@ def spec_requirements(spec_text):
     return ids
 
 
-def adversary_headings(model_text):
-    found = set()
+def sections(model_text):
+    found = {}
+    current = None
     for _, line in prose_lines(model_text):
         heading = HEADING.match(line)
         if heading:
-            found.add(heading.group(1).lower())
+            current = found.setdefault(heading.group(1).lower(), [])
+        elif current is not None:
+            current.append(line)
     return found
 
 
@@ -65,20 +75,24 @@ def cells(line):
     return [cell.strip() for cell in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
 
 
-def status_rows(model_text):
+def control_rows(model_text):
     header = None
-    status = None
+    columns = None
     for number, line in prose_lines(model_text):
         if not line.lstrip().startswith("|"):
-            header = status = None
+            header = columns = None
             continue
         row = cells(line)
         if header is None:
             header = row
         elif all(SEPARATOR_CELL.match(cell) for cell in row):
-            status = next((i for i, cell in enumerate(header) if cell.lower() == "status"), None)
-        elif status is not None:
-            yield number, row, status
+            columns = {}
+            for index, cell in enumerate(header):
+                columns.setdefault(cell.lower(), index)
+            if "status" not in columns:
+                columns = None
+        elif columns is not None:
+            yield number, row, columns
 
 
 def in_repository(root, token):
@@ -88,12 +102,27 @@ def in_repository(root, token):
 
 
 def check_headings(model_text):
-    present = adversary_headings(model_text)
+    present = sections(model_text)
     return [
         f'missing heading "## {title}"'
         for title in ADVERSARIES
         if title.lower() not in present
     ]
+
+
+def check_residual(model_text):
+    present = sections(model_text)
+    problems = []
+    for title in ADVERSARIES:
+        lines = present.get(title.lower())
+        if lines is None:
+            continue
+        marker = next((i for i, line in enumerate(lines) if RESIDUAL.match(line)), None)
+        if marker is None:
+            problems.append(f'section "{title}" has no "Residual risk." part')
+        elif not any(BULLET.match(line) for line in lines[marker + 1 :]):
+            problems.append(f'section "{title}" lists nothing under "Residual risk."')
+    return problems
 
 
 def check_citations(model_text, known):
@@ -113,7 +142,14 @@ def check_citations(model_text, known):
 
 def check_rows(model_text, root):
     problems = []
-    for number, row, column in status_rows(model_text):
+    for number, row, columns in control_rows(model_text):
+        if "requirement" in columns:
+            requirement = row[columns["requirement"]] if columns["requirement"] < len(row) else ""
+            if not REQUIREMENT.fullmatch(requirement):
+                problems.append(
+                    f'line {number}: requirement "{requirement}" is not "none" or a list of S-ids'
+                )
+        column = columns["status"]
         status = row[column].lower() if column < len(row) else ""
         if not STATUS.fullmatch(status):
             problems.append(
@@ -137,6 +173,7 @@ def check(model_text, spec_text, root):
     if not known:
         problems.append("spec section 9.1 holds no requirement ids")
     problems += check_headings(model_text)
+    problems += check_residual(model_text)
     problems += check_rows(model_text, root)
     problems += check_citations(model_text, known)
     return problems
