@@ -1,0 +1,35 @@
+{
+  "load_before": "36.48 40.80 45.24",
+  "load_after": "36.48 40.80 45.24",
+  "filesystem": "apfs, local, supported",
+  "elapsed_secs": 0.9,
+  "rows": [
+    {
+      "mode": "none",
+      "samples": 200,
+      "size": 150,
+      "p50": 1750,
+      "p95": 4250,
+      "p99": 8584,
+      "max": 29000
+    },
+    {
+      "mode": "fsync",
+      "samples": 200,
+      "size": 150,
+      "p50": 44334,
+      "p95": 93333,
+      "p99": 123083,
+      "max": 162458
+    },
+    {
+      "mode": "full",
+      "samples": 200,
+      "size": 150,
+      "p50": 4000042,
+      "p95": 5918250,
+      "p99": 7228417,
+      "max": 19953667
+    }
+  ]
+}
