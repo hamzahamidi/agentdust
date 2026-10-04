@@ -29,6 +29,19 @@ pub use volume::{FixedVolume, FsFacts, SystemVolume, VolumeProbe};
 
 pub const SCHEMA_VERSION: u32 = 1;
 pub const ACTIVE_FILE: &str = "journal.jsonl";
+pub const RECORD_KEYS: [&str; 11] = [
+    "v",
+    "kind",
+    "agent",
+    "session_id",
+    "subagent_id",
+    "tool_use_id",
+    "wall_ts",
+    "mono_ts",
+    "boot",
+    "cwd_key",
+    "exe_base",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
