@@ -97,6 +97,11 @@ pub fn load_or_create_with(
     read_secret(&path)
 }
 
+pub fn load_existing(dir: &Path) -> Result<Secret, SecretError> {
+    safe_open::check_dir(dir)?;
+    read_secret(&dir.join(SECRET_FILE))
+}
+
 fn read_secret(path: &Path) -> Result<Secret, SecretError> {
     let mut file = safe_open::open_file(path, Access::Read)?;
     let len = file.metadata()?.len();

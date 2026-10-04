@@ -4,6 +4,7 @@ pub mod classifier;
 pub mod clock;
 pub mod cwd;
 pub mod digest;
+pub mod doctor;
 mod entropy;
 pub mod finding;
 pub mod identity;
