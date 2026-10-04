@@ -385,5 +385,22 @@ class TapJobTest(unittest.TestCase):
         self.assertEqual(download["with"], {"name": "homebrew-formula", "path": "formula"})
 
 
+class DryRunTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.build = load(WORKFLOWS / "release-dry-run.yml")["jobs"]["build"]
+
+    def test_the_toolchain_is_recorded_before_it_is_checked(self):
+        self.assertLess(step_index(self.build, "toolchain.py record"), step_index(self.build, "toolchain.py check"))
+
+    def test_the_record_is_uploaded_even_when_the_check_found_drift(self):
+        upload = step_with(self.build, "actions/upload-artifact")
+        self.assertEqual(upload["if"], "always()")
+        self.assertIn("toolchain.json", upload["with"]["path"].split())
+
+    def test_the_dry_run_still_builds_only_after_the_check_passed(self):
+        self.assertLess(step_index(self.build, "toolchain.py check"), step_index(self.build, "cargo build"))
+
+
 if __name__ == "__main__":
     unittest.main()
