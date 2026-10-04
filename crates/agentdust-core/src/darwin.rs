@@ -7,6 +7,7 @@ use std::ptr;
 
 use crate::identity::{KernelIdentity, ProcessInfo};
 use crate::procargs;
+use crate::provider::{ProcessProvider, ProcessRead};
 
 pub fn boot_session_uuid() -> io::Result<String> {
     let mut buf = [0u8; 64];
@@ -106,6 +107,34 @@ pub fn env_var(pid: i32, name: &str) -> io::Result<Option<Vec<u8>>> {
     };
     let parsed = procargs::parse(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     Ok(procargs::env_value(&parsed, name).map(<[u8]>::to_vec))
+}
+
+pub struct DarwinProvider {
+    boot_session_uuid: String,
+}
+
+impl DarwinProvider {
+    pub fn new() -> io::Result<Self> {
+        Ok(Self {
+            boot_session_uuid: boot_session_uuid()?,
+        })
+    }
+}
+
+impl ProcessProvider for DarwinProvider {
+    fn read(&self, pid: i32) -> io::Result<ProcessRead> {
+        let boot = &self.boot_session_uuid;
+        let Some(before) = process_info(pid, boot)? else {
+            return Ok(ProcessRead::Gone);
+        };
+        let path = exe_path(pid).ok().flatten();
+        let after = process_info(pid, boot)?;
+        Ok(ProcessRead::from_samples(
+            Some(before.identity),
+            path,
+            after.map(|info| info.identity),
+        ))
+    }
 }
 
 fn missing_or<T>(err: io::Error) -> io::Result<Option<T>> {
