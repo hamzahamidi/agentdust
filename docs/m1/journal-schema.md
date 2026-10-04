@@ -141,18 +141,23 @@ On this machine `$TMPDIR` is `apfs, local, supported` and `/dev` is `devfs, loca
 
 ## Cost
 
-Three runs on a shared machine, load average 4.0 to 4.5 over 1 minute, 2,000 samples after 200 warm-up calls, a 150 byte record, release build, `cargo test --release -p agentdust-core --test journal_cost -- --ignored --nocapture`:
+`cargo test --release -p agentdust-core --test journal_cost -- --ignored --nocapture` measures 2,000 samples after 200 warm-up calls, with a 150 byte record. Two sessions of three runs each, on a shared machine. Each cell is the range of the three runs, in milliseconds.
 
-| Call | p50 | p95 |
-| --- | ---: | ---: |
-| `statfs` of the directory | 0.0015 to 0.0038 ms | 0.0016 to 0.0040 ms |
-| `lstat` and `statfs` (`locate`) | 0.0031 to 0.0058 ms | 0.0032 to 0.0067 ms |
-| `append` with the system probe | 0.0422 to 0.0430 ms | 0.0523 to 0.0593 ms |
-| `append` with a fixed probe | 0.0394 to 0.0416 ms | 0.0456 to 0.0500 ms |
+| Call | p50, load 4.0 to 4.5 | p95, load 4.0 to 4.5 | p50, load 13.3 | p95, load 13.3 |
+| --- | ---: | ---: | ---: | ---: |
+| `statfs` of the directory | 0.0015 to 0.0038 | 0.0016 to 0.0040 | 0.0016 to 0.0017 | 0.0019 to 0.0023 |
+| `lstat` and `statfs` (`locate`) | 0.0031 to 0.0058 | 0.0032 to 0.0067 | 0.0033 to 0.0035 | 0.0042 to 0.0053 |
+| `append` with the system probe | 0.0422 to 0.0430 | 0.0523 to 0.0593 | 0.0486 to 0.0511 | 0.0694 to 0.0732 |
+| `append` with a fixed probe | 0.0394 to 0.0416 | 0.0456 to 0.0500 | 0.0457 to 0.0496 | 0.0630 to 0.0732 |
 
-Each cell is the range of the three runs. The system probe adds 0.001 to 0.004 ms to the p50 of an append, which is under 0.2% of the 2.2 ms of a hook.
+The system probe adds 0.001 to 0.005 ms to the p50 of an append, under 0.2% of the 2.2 ms of a hook.
 
-The whole hook, measured with `cargo test --release -p agentdust --test hook_latency -- --ignored --nocapture` after 20 warm-up runs, load average 6.2 to 6.7 over 1 minute: p50 2.20 to 2.21 ms and p95 2.42 to 2.77 ms in three runs, against a budget of 10 ms and 20 ms.
+The whole hook is measured with `cargo test --release -p agentdust --test hook_latency -- --ignored --nocapture` after 20 warm-up runs, against a budget of p50 10 ms and p95 20 ms. The first session is commit 9f904e6 and the second is commit 62046c0.
+
+| Session | Load, 1 minute | p50 | p95 |
+| --- | ---: | ---: | ---: |
+| First, 3 runs | 6.2 to 6.7 | 2.20 to 2.21 ms | 2.42 to 2.77 ms |
+| Last commit, 3 runs | 13.3 | 2.66 to 2.73 ms | 3.03 to 3.81 ms |
 
 ## Where this differs from the spec
 
