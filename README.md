@@ -23,6 +23,7 @@ Release 0.1 adds the analysis and the approved cleanup for Claude Code. The Code
 | MCP approval probe: a typed-code form that changes nothing | Built |
 | Reproducible release pipeline | Proven in a dry run: two identical binaries, a deterministic tarball, a verified attestation ([report](docs/m0/report.md)) |
 | Homebrew distribution | Proven with a local tap in the dry run. No public tap or release yet |
+| Release workflow: tag gate, audit, two builds, tarball, attestation, draft release, formula | Built. It has not run on GitHub yet ([release process](docs/release.md)) |
 | `agentdust setup` for Claude Code (hooks in `settings.json`, the MCP server through the `claude` CLI, a diff and consent, `--check`, `--remove`) and `agentdust status` | Built ([setup](docs/m3/setup.md)) |
 | `doctor` (analysis), plan and apply (cleanup with approval) | Planned for 0.1 |
 
@@ -59,6 +60,45 @@ Design for 0.1, not implemented yet:
 - The only action is `SIGTERM` to one PID.
 
 Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
+
+## Using AgentDust (from release 0.1)
+
+Release 0.1 is not published. This section describes how 0.1 works on Apple silicon with Claude Code. The Status table above shows which parts the code has today.
+
+### Install and connect
+
+```bash
+brew install hamzahamidi/agentdust/agentdust
+agentdust setup
+```
+
+`brew install` pours the prebuilt binary. Check what you downloaded with `gh attestation verify` ([how](docs/release.md#verify-a-release)). `agentdust setup` shows a diff and asks before it changes anything ([details](#setting-up-claude-code)).
+
+### Find leftover processes
+
+`agentdust doctor` lists the processes that look left behind by an agent session, each with a class and the evidence for it. `agentdust doctor --json` prints the same report as JSON. Neither changes anything.
+
+| Class | Meaning | Can AgentDust signal it |
+| --- | --- | --- |
+| owned-ended | Started by an agent session that has ended | Yes, with one code for the batch |
+| suspect | Its parent is launchd or its launcher chain is dead, same user, old, idle and not managed | Yes, with one code per process |
+| owned-live | Started by a session that is still running | Never |
+| managed | A launchd job, a Homebrew service, a helper of a running app, or on the deny list | Never |
+| unknown | Everything else | Never |
+
+You can also ask the agent. Claude Code calls the `agentdust_doctor` tool and reports what it finds. The findings hold the class, the program name, the PID, the age and the kinds of evidence, and no command text or path.
+
+### Clean up with your approval
+
+Through the agent: ask Claude Code to clean up leftover processes. It calls `agentdust_plan`, which keeps only owned-ended and suspect processes, then `agentdust_apply`, which shows a form in Claude Code. The form lists the processes and a 4-character code that AgentDust generated. Type the code to approve. There is one code for the whole batch of owned-ended processes and one code per suspect, shown with its evidence. A call covers at most 10 items. A wrong or empty code, a decline, a cancel, and two minutes without an answer end the approval, and nothing is signalled. If the client cannot show the form, `agentdust_apply` returns `apply_not_supported` and points to the terminal command.
+
+In a terminal: run `agentdust apply`. It runs the same steps in one process under the same rules. It refuses unless stdin, stdout and `/dev/tty` are terminals, the process is in the terminal's foreground, and no ancestor is a known agent, so run it from a terminal window that is not inside an agent. No flag or environment variable supplies a code.
+
+Before each approved process is signalled, AgentDust classifies it again and compares boot session, PID, start time, user and executable path. It then sends `SIGTERM` to that one PID. It sends no other signal and never signals a process group. It waits up to 5 seconds and reports the process as terminated, a survivor, gone before the signal, or failed revalidation.
+
+### Check, pause and remove
+
+`agentdust status` shows the version, the data directory, the journal counters, whether setup is installed and whether apply is enabled. To turn cleanup off and keep everything else, put `apply = false` in `config.toml` in the data directory (`~/Library/Application Support/agentdust`). To disconnect Claude Code run `agentdust setup --remove`, then `brew uninstall agentdust`. The data directory stays until you delete it. If a release is withdrawn, see [SECURITY.md](SECURITY.md) and [docs/release.md](docs/release.md#roll-back).
 
 ## Setting up Claude Code
 
