@@ -1,5 +1,6 @@
-use std::fs::{DirBuilder, File, Metadata, OpenOptions};
+use std::fs::{self, DirBuilder, File, Metadata, OpenOptions};
 use std::io;
+use std::os::fd::AsRawFd;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
@@ -30,6 +31,8 @@ pub enum SafeOpenError {
     ForeignOwner { found: u32, expected: u32 },
     #[error("mode {mode:o} is looser than {allowed:o}")]
     LooseMode { mode: u32, allowed: u32 },
+    #[error("the extended ACL holds an allow entry")]
+    ExtendedAcl,
     #[error(transparent)]
     Io(#[from] io::Error),
 }
@@ -45,7 +48,12 @@ pub fn open_file(path: &Path, access: Access) -> Result<File, SafeOpenError> {
 
 pub fn open_file_as(path: &Path, access: Access, owner: u32) -> Result<File, SafeOpenError> {
     let file = open_without_following(path, access)?;
-    verify(&file.metadata()?, Shape::File, owner)?;
+    if let Err(err) = judge(&file, Shape::File, owner) {
+        if access == Access::Create {
+            let _ = fs::remove_file(path);
+        }
+        return Err(err);
+    }
     Ok(file)
 }
 
@@ -63,19 +71,23 @@ pub fn open_dir(path: &Path) -> Result<File, SafeOpenError> {
 
 pub fn open_dir_as(path: &Path, owner: u32) -> Result<File, SafeOpenError> {
     let dir = open_without_following(path, Access::Read)?;
-    verify(&dir.metadata()?, Shape::Dir, owner)?;
+    judge(&dir, Shape::Dir, owner)?;
     Ok(dir)
 }
 
 pub fn ensure_dir(path: &Path) -> Result<(), SafeOpenError> {
     match check_dir(path) {
         Err(SafeOpenError::Io(err)) if err.kind() == io::ErrorKind::NotFound => {
-            match DirBuilder::new().mode(DIR_MODE).create(path) {
-                Ok(()) => {}
-                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
+            let created = match DirBuilder::new().mode(DIR_MODE).create(path) {
+                Ok(()) => true,
+                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => false,
                 Err(err) => return Err(err.into()),
+            };
+            let checked = check_dir(path);
+            if created && checked.is_err() {
+                let _ = fs::remove_dir(path);
             }
-            check_dir(path)
+            checked
         }
         checked => checked,
     }
@@ -94,6 +106,14 @@ fn open_without_following(path: &Path, access: Access) -> Result<File, SafeOpenE
         Some(libc::ENXIO | libc::EISDIR) => SafeOpenError::NotRegular,
         _ => SafeOpenError::Io(err),
     })
+}
+
+fn judge(file: &File, shape: Shape, owner: u32) -> Result<(), SafeOpenError> {
+    verify(&file.metadata()?, shape, owner)?;
+    if crate::acl::extended_acl_has_allow_entry(file.as_raw_fd())? {
+        return Err(SafeOpenError::ExtendedAcl);
+    }
+    Ok(())
 }
 
 fn verify(metadata: &Metadata, shape: Shape, owner: u32) -> Result<(), SafeOpenError> {
