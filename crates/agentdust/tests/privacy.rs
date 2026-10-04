@@ -7,6 +7,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::panic::catch_unwind;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use agentdust_core::clock::wall_ms;
@@ -45,7 +46,8 @@ fn relay_hop() {
 }
 
 fn run_id() -> String {
-    std::process::id().to_string()
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    format!("{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed))
 }
 
 fn big_output(s: &Sentinels) -> String {
