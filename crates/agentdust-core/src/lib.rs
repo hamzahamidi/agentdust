@@ -11,6 +11,7 @@ pub mod procargs;
 pub mod provider;
 pub mod revalidate;
 pub mod safe_open;
+pub mod sanitize;
 pub mod secret;
 pub mod session;
 pub mod tag;

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::identity::{KernelIdentity, ProcessIdentity};
+use crate::sanitize::is_control_or_bidi;
 
 pub const MAX_EXE_BASE_LEN: usize = 64;
 pub const MAX_CWD_KEY_LEN: usize = 64;
@@ -220,12 +221,4 @@ impl AgentIdentity {
             uid: self.uid,
         }
     }
-}
-
-fn is_control_or_bidi(c: char) -> bool {
-    c.is_control()
-        || matches!(
-            c,
-            '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'
-        )
 }
