@@ -48,7 +48,13 @@ fn every_fuzz_target_has_a_seed_directory_and_every_seed_directory_a_target() {
 #[test]
 fn the_parsers_the_spec_names_are_fuzz_targets() {
     let targets: BTreeSet<String> = declared_targets().into_iter().map(|(name, _)| name).collect();
-    for name in ["procargs", "journal_decode", "journal_read", "claude_payload"] {
+    for name in [
+        "procargs",
+        "journal_decode",
+        "journal_read",
+        "claude_payload",
+        "sanitize",
+    ] {
         assert!(targets.contains(name), "no fuzz target {name}");
     }
 }
