@@ -1,4 +1,5 @@
 pub mod ancestry;
+pub mod apply;
 pub mod class;
 pub mod classifier;
 pub mod clock;

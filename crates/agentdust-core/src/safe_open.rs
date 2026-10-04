@@ -8,6 +8,7 @@ use thiserror::Error;
 const FILE_MODE: u32 = 0o600;
 const DIR_MODE: u32 = 0o700;
 const PERMISSION_BITS: u32 = 0o7777;
+const PRIVATE_OPEN_FLAGS: i32 = libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_NOCTTY;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Access {
@@ -59,10 +60,43 @@ pub fn open_shared_append_as(path: &Path, owner: u32) -> Result<File, SafeOpenEr
         .append(true)
         .create(true)
         .mode(FILE_MODE)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_NOCTTY)
+        .custom_flags(PRIVATE_OPEN_FLAGS)
         .open(path)
         .map_err(refusal)?;
     verify(&file.metadata()?, Shape::SharedFile, owner)?;
+    Ok(file)
+}
+
+pub fn open_lock_file(path: &Path) -> Result<File, SafeOpenError> {
+    open_lock_file_as(path, current_uid())
+}
+
+pub fn open_lock_file_as(path: &Path, owner: u32) -> Result<File, SafeOpenError> {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .mode(FILE_MODE)
+        .custom_flags(PRIVATE_OPEN_FLAGS)
+        .open(path)
+        .map_err(refusal)?;
+    verify(&file.metadata()?, Shape::File, owner)?;
+    Ok(file)
+}
+
+pub fn open_private_append(path: &Path) -> Result<File, SafeOpenError> {
+    open_private_append_as(path, current_uid())
+}
+
+pub fn open_private_append_as(path: &Path, owner: u32) -> Result<File, SafeOpenError> {
+    let file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .mode(FILE_MODE)
+        .custom_flags(PRIVATE_OPEN_FLAGS)
+        .open(path)
+        .map_err(refusal)?;
+    verify(&file.metadata()?, Shape::File, owner)?;
     Ok(file)
 }
 
