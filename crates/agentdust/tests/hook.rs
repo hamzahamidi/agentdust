@@ -8,6 +8,13 @@ use std::time::{Duration, Instant};
 use agentdust_core::journal::{self, Agent, Kind};
 use common::{pre_tool_use, run_hook, run_hook_with, scratch_dir};
 
+fn tool_event(event: &str, tool: &str) -> Vec<u8> {
+    format!(
+        r#"{{"session_id":"s1","hook_event_name":"{event}","tool_name":"{tool}","tool_use_id":"toolu_1","tool_input":{{"file_path":"/etc/hosts"}}}}"#
+    )
+    .into_bytes()
+}
+
 #[test]
 fn pre_tool_use_appends_one_shell_start_record() {
     let dir = scratch_dir("pre");
@@ -35,6 +42,45 @@ fn events_outside_the_journal_append_nothing() {
 }
 
 #[test]
+fn tool_events_for_other_tools_append_nothing() {
+    let dir = scratch_dir("read-tool");
+    for event in ["PreToolUse", "PostToolUse"] {
+        let output = run_hook(&dir, &tool_event(event, "Read"));
+        assert!(output.status.success(), "{event}");
+        assert!(output.stdout.is_empty(), "{event}");
+        assert!(output.stderr.is_empty(), "{event}");
+    }
+    assert_eq!(journal::read(&dir).unwrap().records.len(), 0);
+}
+
+#[test]
+fn tool_events_without_a_tool_name_append_nothing() {
+    let dir = scratch_dir("no-tool-name");
+    for event in ["PreToolUse", "PostToolUse"] {
+        let input = format!(r#"{{"session_id":"s1","hook_event_name":"{event}","tool_use_id":"toolu_1"}}"#);
+        assert!(run_hook(&dir, input.as_bytes()).status.success(), "{event}");
+    }
+    assert_eq!(journal::read(&dir).unwrap().records.len(), 0);
+}
+
+#[test]
+fn session_events_are_recorded_without_a_tool_name() {
+    let dir = scratch_dir("session-events");
+    for event in ["SessionStart", "SessionEnd"] {
+        let input = format!(r#"{{"session_id":"s1","hook_event_name":"{event}"}}"#);
+        assert!(run_hook(&dir, input.as_bytes()).status.success(), "{event}");
+    }
+    let kinds: Vec<Kind> = journal::read(&dir)
+        .unwrap()
+        .records
+        .iter()
+        .map(|r| r.kind)
+        .collect();
+    assert_eq!(kinds, [Kind::SessionStart, Kind::SessionEnd]);
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn malformed_input_exits_zero_and_appends_nothing() {
     let dir = scratch_dir("malformed");
     let output = run_hook(&dir, b"not json at all");
@@ -48,7 +94,7 @@ fn a_large_tool_response_is_read_but_never_stored() {
     let dir = scratch_dir("large");
     let output_text = "secret-output-".repeat(700_000);
     let input = format!(
-        r#"{{"session_id":"s2","hook_event_name":"PostToolUse","tool_use_id":"toolu_2","tool_response":{{"stdout":"{output_text}"}}}}"#
+        r#"{{"session_id":"s2","hook_event_name":"PostToolUse","tool_name":"Bash","tool_use_id":"toolu_2","tool_response":{{"stdout":"{output_text}"}}}}"#
     );
     assert!(input.len() > 9_000_000);
     let output = run_hook(&dir, input.as_bytes());

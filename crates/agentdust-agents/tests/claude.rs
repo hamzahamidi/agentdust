@@ -11,6 +11,7 @@ fn reads_only_the_fields_it_needs() {
         HookEvent {
             session_id: "s1".into(),
             hook_event_name: "PostToolUse".into(),
+            tool_name: Some("Bash".into()),
             tool_use_id: Some("toolu_9".into()),
             agent_id: None,
         }
@@ -18,18 +19,59 @@ fn reads_only_the_fields_it_needs() {
 }
 
 #[test]
-fn maps_hook_events_to_journal_kinds() {
-    let event = |name: &str| HookEvent {
+fn an_event_without_a_tool_name_has_none() {
+    let event = parse_event(&br#"{"session_id":"s1","hook_event_name":"SessionStart"}"#[..]).unwrap();
+    assert_eq!(event.tool_name, None);
+}
+
+fn event(name: &str, tool: Option<&str>) -> HookEvent {
+    HookEvent {
         session_id: "s".into(),
         hook_event_name: name.into(),
+        tool_name: tool.map(Into::into),
         tool_use_id: None,
         agent_id: None,
-    };
-    assert_eq!(journal_kind(&event("SessionStart")), Some(Kind::SessionStart));
-    assert_eq!(journal_kind(&event("SessionEnd")), Some(Kind::SessionEnd));
-    assert_eq!(journal_kind(&event("PreToolUse")), Some(Kind::ShellStart));
-    assert_eq!(journal_kind(&event("PostToolUse")), Some(Kind::ShellEnd));
-    assert_eq!(journal_kind(&event("Stop")), None);
+    }
+}
+
+#[test]
+fn maps_bash_tool_events_to_shell_kinds() {
+    assert_eq!(
+        journal_kind(&event("PreToolUse", Some("Bash"))),
+        Some(Kind::ShellStart)
+    );
+    assert_eq!(
+        journal_kind(&event("PostToolUse", Some("Bash"))),
+        Some(Kind::ShellEnd)
+    );
+}
+
+#[test]
+fn ignores_tool_events_for_any_other_tool() {
+    for tool in [
+        None,
+        Some("Read"),
+        Some("Edit"),
+        Some("mcp__srv__Bash"),
+        Some("bash"),
+        Some("Bash "),
+        Some(""),
+    ] {
+        assert_eq!(journal_kind(&event("PreToolUse", tool)), None, "{tool:?}");
+        assert_eq!(journal_kind(&event("PostToolUse", tool)), None, "{tool:?}");
+    }
+}
+
+#[test]
+fn session_events_map_whatever_the_tool_name() {
+    for tool in [None, Some("Bash"), Some("Read")] {
+        assert_eq!(
+            journal_kind(&event("SessionStart", tool)),
+            Some(Kind::SessionStart)
+        );
+        assert_eq!(journal_kind(&event("SessionEnd", tool)), Some(Kind::SessionEnd));
+        assert_eq!(journal_kind(&event("Stop", tool)), None);
+    }
 }
 
 #[test]
