@@ -43,7 +43,7 @@ impl From<SafeOpenError> for AuditError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum Phase {
-    Signal,
+    Attempt,
     Result,
 }
 
@@ -63,8 +63,8 @@ pub struct Entry {
 }
 
 impl Entry {
-    pub fn signalling(plan: &str, model: &ModelFinding, kernel: &KernelIdentity) -> Self {
-        Self::of(plan, model, kernel, Phase::Signal, None, None)
+    pub fn attempt(plan: &str, model: &ModelFinding, kernel: &KernelIdentity) -> Self {
+        Self::of(plan, model, kernel, Phase::Attempt, None, None)
     }
 
     pub fn result(
