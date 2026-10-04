@@ -17,7 +17,18 @@ pub enum ParseError {
     Truncated,
 }
 
-pub fn parse(buf: &[u8]) -> Result<ProcArgs<'_>, ParseError> {
+const VALUE_OPTIONS: [&[u8]; 7] = [
+    b"-r",
+    b"--require",
+    b"--import",
+    b"--loader",
+    b"--experimental-loader",
+    b"-C",
+    b"--conditions",
+];
+const CODE_OPTIONS: [&[u8]; 4] = [b"-e", b"--eval", b"-p", b"--print"];
+
+fn read_args(buf: &[u8]) -> Result<(&[u8], Vec<&[u8]>, &[u8]), ParseError> {
     let header: [u8; 4] = buf
         .get(..4)
         .and_then(|h| h.try_into().ok())
@@ -32,6 +43,11 @@ pub fn parse(buf: &[u8]) -> Result<ProcArgs<'_>, ParseError> {
     for _ in 0..argc {
         args.push(take_cstr(&mut rest).ok_or(ParseError::Truncated)?);
     }
+    Ok((exec_path, args, rest))
+}
+
+pub fn parse(buf: &[u8]) -> Result<ProcArgs<'_>, ParseError> {
+    let (exec_path, args, mut rest) = read_args(buf)?;
     let mut env = Vec::new();
     while let Some(entry) = take_cstr(&mut rest) {
         if entry.is_empty() {
@@ -40,6 +56,27 @@ pub fn parse(buf: &[u8]) -> Result<ProcArgs<'_>, ParseError> {
         env.push(entry);
     }
     Ok(ProcArgs { exec_path, args, env })
+}
+
+pub fn script_argument(buf: &[u8]) -> Result<Option<&[u8]>, ParseError> {
+    let (_, args, _) = read_args(buf)?;
+    let mut rest = args.into_iter().skip(1);
+    while let Some(arg) = rest.next() {
+        if arg == b"--" {
+            return Ok(rest.next());
+        }
+        if CODE_OPTIONS.contains(&arg) {
+            return Ok(None);
+        }
+        if VALUE_OPTIONS.contains(&arg) {
+            rest.next();
+            continue;
+        }
+        if !arg.starts_with(b"-") {
+            return Ok(Some(arg));
+        }
+    }
+    Ok(None)
 }
 
 pub fn env_value<'a>(parsed: &ProcArgs<'a>, name: &str) -> Option<&'a [u8]> {

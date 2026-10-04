@@ -5,6 +5,7 @@ use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::ptr;
 
+use crate::ancestry::AncestryProvider;
 use crate::identity::{KernelIdentity, ProcessInfo};
 use crate::procargs;
 use crate::provider::{ProcessProvider, ProcessRead};
@@ -134,6 +135,24 @@ impl ProcessProvider for DarwinProvider {
             path,
             after.map(|info| info.identity),
         ))
+    }
+}
+
+impl AncestryProvider for DarwinProvider {
+    fn parent(&self, identity: &KernelIdentity) -> io::Result<Option<i32>> {
+        match process_info(identity.pid, &self.boot_session_uuid)? {
+            Some(info) if info.identity == *identity => Ok(Some(info.ppid)),
+            _ => Ok(None),
+        }
+    }
+
+    fn script_argument(&self, pid: i32) -> io::Result<Option<Vec<u8>>> {
+        let Some(buf) = procargs2(pid)? else {
+            return Ok(None);
+        };
+        let script =
+            procargs::script_argument(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        Ok(script.map(<[u8]>::to_vec))
     }
 }
 
