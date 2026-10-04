@@ -5,9 +5,13 @@ use agentdust_core::journal::{Agent, ExeBase, Kind};
 use serde::{Deserialize, Serialize};
 
 mod load;
+#[cfg(target_os = "macos")]
+mod materialise;
 mod plan;
 
 pub use load::{Loaded, Problem, ProblemKind, load, load_dir, parse_str};
+#[cfg(target_os = "macos")]
+pub use materialise::{MaterialiseError, Materialised, Violation, materialise, materialise_plan};
 pub use plan::{Group, Member, ParentExpectation, Plan, PlanProblem, Structure};
 
 pub const SCHEMA_VERSION: u32 = 1;
