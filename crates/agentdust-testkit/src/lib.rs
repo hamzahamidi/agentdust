@@ -1,5 +1,7 @@
 use std::process::Child;
 
+#[cfg(target_os = "macos")]
+pub mod harness;
 pub mod report;
 pub mod spec;
 pub mod wait;
