@@ -3,7 +3,7 @@ mod common;
 use std::fs;
 use std::time::Instant;
 
-use common::{pre_tool_use_with, run_hook, scratch_dir};
+use common::{pre_tool_use_with, private_dir, run_hook, run_hook_with, scratch_dir};
 
 const WARM_UP: usize = 20;
 const RUNS: usize = 200;
@@ -69,4 +69,43 @@ fn the_first_hook_in_an_empty_data_directory_is_within_budget() {
     let (p50, p95) = percentiles(samples);
     println!("first hook in an empty data directory p50 {p50:.2} ms, p95 {p95:.2} ms");
     assert!(p50 < 50.0, "p50 {p50:.2} ms");
+}
+
+#[test]
+#[ignore = "measures the real binary: cargo test --release -p agentdust --test hook_latency -- --ignored --nocapture --test-threads=1"]
+fn session_start_latency_is_within_budget() {
+    let cwd = env!("CARGO_MANIFEST_DIR");
+    let input = format!(
+        r#"{{"session_id":"latency","hook_event_name":"SessionStart","source":"startup","cwd":"{cwd}"}}"#
+    );
+    let work = private_dir("latency-env");
+    let env_file = work.join("env.sh");
+    let dir = scratch_dir("latency-session-start");
+    let run = || {
+        let envs = [
+            ("AGENTDUST_DATA_DIR", dir.as_os_str()),
+            ("CLAUDE_ENV_FILE", env_file.as_os_str()),
+        ];
+        assert!(
+            run_hook_with(["hook", "claude"], &envs, None, input.as_bytes())
+                .status
+                .success()
+        );
+    };
+    for _ in 0..WARM_UP {
+        run();
+    }
+    let samples = (0..RUNS)
+        .map(|_| {
+            let start = Instant::now();
+            run();
+            milliseconds(start)
+        })
+        .collect();
+    let (p50, p95) = percentiles(samples);
+    println!("session start latency with a tag and an env file p50 {p50:.2} ms, p95 {p95:.2} ms");
+    fs::remove_dir_all(&dir).unwrap();
+    fs::remove_dir_all(&work).unwrap();
+    assert!(p50 < 10.0, "p50 {p50:.2} ms");
+    assert!(p95 < 20.0, "p95 {p95:.2} ms");
 }

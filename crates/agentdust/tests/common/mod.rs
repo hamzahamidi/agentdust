@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+pub mod chain;
+
 use std::ffi::OsStr;
 use std::fs::{self, DirBuilder};
 use std::io::Write;
@@ -47,6 +49,30 @@ pub fn run_hook_within(data_dir: &Path, input: &[u8], limit: Duration) -> Option
         .unwrap();
     child.stdin.take().unwrap().write_all(input).unwrap();
     let deadline = Instant::now() + limit;
+    loop {
+        if child.try_wait().unwrap().is_some() {
+            return Some(child.wait_with_output().unwrap());
+        }
+        if Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+pub fn run_hook_guarded(envs: &[(&str, &OsStr)], input: &[u8]) -> Option<Output> {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_agentdust"))
+        .args(["hook", "claude"])
+        .envs(envs.iter().copied())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(input).unwrap();
+    let deadline = Instant::now() + HANG_GUARD;
     loop {
         if child.try_wait().unwrap().is_some() {
             return Some(child.wait_with_output().unwrap());

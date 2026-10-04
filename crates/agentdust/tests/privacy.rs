@@ -11,27 +11,38 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use agentdust_core::clock::wall_ms;
 use agentdust_core::darwin::boot_session_uuid;
+use agentdust_core::identity::ProcessIdentity;
 use agentdust_core::journal::retention::Policy;
 use agentdust_core::journal::{self, Agent, Kind, Record};
 use agentdust_core::secret::SECRET_FILE;
-use common::{private_dir, run_hook_with};
+use common::chain::{Chain, run_hop};
+use common::private_dir;
 use privacy_support::{
     Scan, Sentinels, TempWatch, contains, is_journal_file, journal_bytes, scan_data_dir, system_temp_roots,
 };
 
 const EARLIER_BOOT: &str = "an-earlier-boot";
-const WRITTEN_BY_THE_HOOK: [&str; 10] = [
+const WRITTEN_BY_THE_HOOK: [&str; 12] = [
     "v",
     "kind",
     "agent",
     "session_id",
     "subagent_id",
+    "agent_identity",
     "tool_use_id",
     "wall_ts",
     "mono_ts",
     "boot",
+    "session_tag_key",
     "cwd_key",
 ];
+const IDENTITY_KEYS_WRITTEN: [&str; 4] = ["pid", "start_time_us", "uid", "exe_base"];
+
+#[test]
+#[ignore = "runs only as a hop of a process chain that another test started"]
+fn relay_hop() {
+    run_hop();
+}
 
 fn run_id() -> String {
     std::process::id().to_string()
@@ -83,19 +94,37 @@ fn payloads(s: &Sentinels) -> Vec<(&'static str, Vec<u8>)> {
     ]
 }
 
-fn run_all(s: &Sentinels, data_dir: &Path, cwd: &Path, extra_env: &[(&str, &OsStr)]) {
+fn run_all(
+    s: &Sentinels,
+    chain: &Chain,
+    data_dir: &Path,
+    env_file: &Path,
+    cwd: &Path,
+    extra_env: &[(&str, &OsStr)],
+) -> Vec<ProcessIdentity> {
+    let mut agents = Vec::new();
     for (name, payload) in payloads(s) {
         let mut envs: Vec<(&str, &OsStr)> = vec![
-            ("AGENTDUST_DATA_DIR", data_dir.as_os_str()),
             ("AGENTDUST_SESSION", OsStr::new(&s.tag)),
             ("PRIVACY_TEST_ENV", OsStr::new(&s.env_value)),
         ];
         envs.extend_from_slice(extra_env);
-        let output = run_hook_with(["hook", "claude"], &envs, Some(cwd), &payload);
-        assert!(output.status.success(), "{name}");
-        assert!(output.stdout.is_empty(), "{name}");
-        assert!(output.stderr.is_empty(), "{name}");
+        let outcome = chain.run(data_dir, &payload, Some(env_file), &envs, Some(cwd));
+        assert_eq!(outcome.status, Some(0), "{name}");
+        assert_eq!(outcome.stdout, "", "{name}");
+        assert_eq!(outcome.stderr, "", "{name}");
+        agents.push(outcome.hops[0].clone());
     }
+    agents
+}
+
+fn generated_tag(env_file: &Path) -> String {
+    let text = fs::read_to_string(env_file).unwrap();
+    let lines: Vec<&str> = text.lines().filter(|line| !line.is_empty()).collect();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    let tag = lines[0].strip_prefix("export AGENTDUST_SESSION=").unwrap();
+    assert_eq!(tag.len(), 32);
+    tag.to_owned()
 }
 
 fn assert_stage(dir: &Path, stage: &str, records: usize, s: &Sentinels) -> Scan {
@@ -138,19 +167,30 @@ fn earlier_boot_marker() -> Record {
 
 #[test]
 fn no_command_output_path_environment_or_unknown_field_reaches_the_data_or_the_temp_directory() {
-    let s = Sentinels::new(&run_id());
+    let mut s = Sentinels::new(&run_id());
     let dir = private_dir("privacy");
     let process_dir = private_dir("privacy-process").join(&s.process_dir);
     fs::create_dir(&process_dir).unwrap();
     let process_root = process_dir.parent().unwrap().to_path_buf();
+    let env_file = process_root.join("claude-env.sh");
+    let chain = Chain::within(&process_root, "chain").claude();
 
     let watch = TempWatch::start(&[&dir, &process_root]);
-    run_all(&s, &dir, &process_dir, &[]);
+    let agents = run_all(&s, &chain, &dir, &env_file, &process_dir, &[]);
+    s.also_never_stored(generated_tag(&env_file));
+    s.also_never_stored(agents[0].evidence.exe_path.to_string_lossy().into_owned());
 
     let after_hooks = assert_stage(&dir, "after the hooks", 4, &s);
     assert_eq!(
         after_hooks.names,
         BTreeSet::from(["journal.jsonl".to_owned(), SECRET_FILE.to_owned()])
+    );
+    assert_eq!(
+        after_hooks.identity_keys,
+        IDENTITY_KEYS_WRITTEN
+            .iter()
+            .map(|key| (*key).to_owned())
+            .collect()
     );
     assert!(
         fs::read_dir(&process_dir).unwrap().next().is_none(),
@@ -194,10 +234,14 @@ fn a_hook_given_an_empty_temp_directory_home_and_working_directory_leaves_all_th
     let tmp = private_dir("privacy-empty-tmp");
     let home = private_dir("privacy-empty-home");
     let cwd = private_dir("privacy-empty-cwd");
+    let elsewhere = private_dir("privacy-empty-elsewhere");
+    let chain = Chain::within(&elsewhere, "chain").claude();
 
     run_all(
         &s,
+        &chain,
         &data,
+        &elsewhere.join("env.sh"),
         &cwd,
         &[("TMPDIR", tmp.as_os_str()), ("HOME", home.as_os_str())],
     );
@@ -210,7 +254,7 @@ fn a_hook_given_an_empty_temp_directory_home_and_working_directory_leaves_all_th
             "the hook wrote into its {what}"
         );
     }
-    for dir in [data, tmp, home, cwd] {
+    for dir in [data, tmp, home, cwd, elsewhere] {
         fs::remove_dir_all(dir).unwrap();
     }
 }
@@ -411,4 +455,36 @@ fn the_temp_scan_covers_the_directory_a_hook_would_use() {
     let roots = system_temp_roots();
     assert!(roots.contains(&std::env::temp_dir()));
     assert!(roots.iter().all(|root| root.is_dir()));
+}
+
+#[test]
+fn the_scan_refuses_an_identity_key_that_is_not_on_the_list() {
+    let s = Sentinels::new(&format!("{}-plant", run_id()));
+    let identity = r#""agent_identity":{"pid":1,"start_time_us":2,"uid":3"#;
+    let listed = frame_with("s").replace(
+        "\"boot\":\"b\"",
+        &format!("\"boot\":\"b\",{identity},\"exe_base\":\"claude\"}}"),
+    );
+    assert!(!scan_refuses("journal.jsonl", &listed, &s), "{listed}");
+    let unlisted = frame_with("s").replace(
+        "\"boot\":\"b\"",
+        &format!("\"boot\":\"b\",{identity},\"exe_path\":\"/Users/a/claude\"}}"),
+    );
+    assert!(scan_refuses("journal.jsonl", &unlisted, &s), "{unlisted}");
+}
+
+#[test]
+fn the_scan_finds_a_generated_value_in_a_data_file() {
+    let mut s = Sentinels::new(&format!("{}-plant", run_id()));
+    s.also_never_stored("a-generated-tag-0123456789abcdef");
+    assert!(scan_refuses(
+        "install.secret",
+        "noise a-generated-tag-0123456789abcdef noise",
+        &s
+    ));
+    assert!(scan_refuses(
+        "journal.jsonl",
+        &frame_with("a-generated-tag-0123456789abcdef"),
+        &s
+    ));
 }
