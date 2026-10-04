@@ -11,6 +11,7 @@ mod fields;
 mod frame;
 mod generations;
 mod maintenance;
+mod retain;
 pub mod retention;
 mod store;
 pub mod volume;
@@ -20,8 +21,10 @@ pub use fields::{CwdKey, ExeBase, FieldError, MAX_CWD_KEY_LEN, MAX_EXE_BASE_LEN}
 pub use frame::{Class, MAX_FRAME_LEN, RS, decode, encode, scan};
 pub use generations::{Generation, generation_path, generation_stamp, list_generations};
 pub use maintenance::{
-    MAINT_FILE, MaintenanceError, MaintenancePoint, MaintenanceProbe, NoMaintenanceProbe, Rotation,
+    COMPACT_TMP, CORRUPT_PREFIX, MAINT_FILE, MaintenanceError, MaintenancePoint, MaintenanceProbe,
+    NoMaintenanceProbe, PruneReport, Rotation,
 };
+pub use retain::RetainReport;
 pub use volume::{FixedVolume, FsFacts, SystemVolume, VolumeProbe};
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -182,6 +185,24 @@ impl<'a> Journal<'a> {
         maintenance::rotate(self.dir, self.volume, self.probe, now_ms)
     }
 
+    pub fn retain(
+        &self,
+        policy: &retention::Policy,
+        now_ms: u64,
+        current_boot: &str,
+    ) -> Result<RetainReport, MaintenanceError> {
+        maintenance::retain(self.dir, self.volume, self.probe, policy, now_ms, current_boot)
+    }
+
+    pub fn prune(
+        &self,
+        policy: &retention::Policy,
+        now_ms: u64,
+        current_boot: &str,
+    ) -> Result<PruneReport, MaintenanceError> {
+        maintenance::prune(self.dir, self.volume, self.probe, policy, now_ms, current_boot)
+    }
+
     pub fn status(&self) -> io::Result<FsFacts> {
         volume::locate(self.volume, self.dir)
     }
@@ -201,4 +222,22 @@ pub fn read(dir: &Path) -> Result<ReadReport, JournalError> {
 
 pub fn rotate(dir: &Path, now_ms: u64) -> Result<Rotation, MaintenanceError> {
     Journal::new(dir).rotate(now_ms)
+}
+
+pub fn retain(
+    dir: &Path,
+    policy: &retention::Policy,
+    now_ms: u64,
+    current_boot: &str,
+) -> Result<RetainReport, MaintenanceError> {
+    Journal::new(dir).retain(policy, now_ms, current_boot)
+}
+
+pub fn prune(
+    dir: &Path,
+    policy: &retention::Policy,
+    now_ms: u64,
+    current_boot: &str,
+) -> Result<PruneReport, MaintenanceError> {
+    Journal::new(dir).prune(policy, now_ms, current_boot)
 }
