@@ -5,6 +5,7 @@ pub mod clock;
 pub mod cwd;
 pub mod digest;
 mod entropy;
+pub mod finding;
 pub mod identity;
 pub mod inventory;
 pub mod journal;
