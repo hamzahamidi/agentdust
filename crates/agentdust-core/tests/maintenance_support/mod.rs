@@ -7,6 +7,7 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Condvar, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use agentdust_core::journal::retention::Policy;
 use agentdust_core::journal::{
@@ -14,7 +15,9 @@ use agentdust_core::journal::{
 };
 use agentdust_core::safe_open::SafeOpenError;
 
-use crate::journal_support::{HANG_GUARD, Pause, Paused, WritePoint, journal, named, paused, plant};
+use crate::journal_support::{
+    HANG_GUARD, Pause, Paused, WritePoint, frames, generation_name, journal, named, names_in, paused, plant,
+};
 
 pub const T: u64 = 1_800_000_000_000;
 pub const BOOT: &str = "boot";
@@ -103,6 +106,24 @@ pub fn keep_everything() -> Policy {
         max_bytes: u64::MAX,
         ..Policy::default()
     }
+}
+
+pub fn policy(max_age_ms: u64, max_bytes: u64) -> Policy {
+    Policy {
+        ended_max_age: Duration::from_millis(max_age_ms),
+        max_bytes,
+    }
+}
+
+pub fn plant_generation(dir: &Path, stamp: u64, records: &[Record]) {
+    plant(dir, &generation_name(stamp), &frames(records));
+}
+
+pub fn corrupt_copies(dir: &Path) -> Vec<String> {
+    names_in(dir)
+        .into_iter()
+        .filter(|name| name.starts_with("journal.jsonl.corrupt-"))
+        .collect()
 }
 
 pub fn snapshot(dir: &Path) -> BTreeMap<String, Vec<u8>> {
