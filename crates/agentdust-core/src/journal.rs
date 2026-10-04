@@ -8,6 +8,10 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+mod fields;
+
+pub use fields::{CwdKey, ExeBase, FieldError, MAX_CWD_KEY_LEN, MAX_EXE_BASE_LEN};
+
 pub const SCHEMA_VERSION: u32 = 1;
 pub const LOCK_BUDGET: Duration = Duration::from_millis(20);
 const JOURNAL_FILE: &str = "journal.jsonl";
@@ -42,9 +46,13 @@ pub struct Record {
     pub subagent_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_use_id: Option<String>,
-    pub wall_ts_ms: u64,
-    pub mono_ns: u64,
+    pub wall_ts: u64,
+    pub mono_ts: u64,
     pub boot: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd_key: Option<CwdKey>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exe_base: Option<ExeBase>,
 }
 
 #[derive(Debug, Error)]

@@ -39,9 +39,11 @@ fn record(event: &HookEvent) -> Result<(), Box<dyn Error>> {
         session_id: event.session_id.clone(),
         subagent_id: event.agent_id.clone(),
         tool_use_id: event.tool_use_id.clone(),
-        wall_ts_ms: clock::wall_ms(),
-        mono_ns: clock::monotonic_ns(),
+        wall_ts: clock::wall_ms(),
+        mono_ts: clock::monotonic_ns(),
         boot: darwin::boot_session_uuid()?,
+        cwd_key: None,
+        exe_base: None,
     };
     journal::append(&paths::data_dir()?, &record)?;
     Ok(())
