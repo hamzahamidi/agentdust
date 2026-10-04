@@ -48,9 +48,11 @@ The active file is renamed and never rewritten. An appender that opened the old 
 | Earlier boots | The record's boot is not `current_boot` | Dropped on every run |
 | Age | The session has ended and `now_ms` minus the newest `wall_ts` of the session is more than `ended_max_age` (14 days) | Every record of the session is dropped |
 | Size, ended sessions | The kept records total more than `max_bytes` (20,000,000) | Ended sessions are dropped whole, the least recently active first, until the total fits |
-| Size, pinned sessions | Still over `max_bytes` | Records of sessions without a `session_end` are dropped, the least recently active session first, oldest record first, `session_start` last. Each such session is listed in `RetainReport::degraded` with the number of records lost |
+| Size, pinned sessions | Still over `max_bytes` | Records of sessions that have not ended are dropped, the least recently active session first, oldest record first, `session_start` last. Each such session is listed in `RetainReport::degraded` with the number of records lost |
 
-A session is an agent, a session id and a boot. A subagent record carries its parent's session id and belongs to the parent's session. A session has ended when any of its records is a `session_end`, and a late event keeps the whole session because the age is judged from the newest record. The same session id under two agents, or in two boots, is two sessions.
+A session is an agent, a session id and a boot. A subagent record carries its parent's session id and belongs to the parent's session. The same session id under two agents, or in two boots, is two sessions.
+
+A session has ended when its last lifecycle record is a `session_end`. The lifecycle records are the `session_start` and `session_end` records of the session, ordered by `mono_ts`, then `wall_ts`, then the order in which the run read them (generations by stamp, the active file last, lines in file order). A `session_start` after the last `session_end` reopens the session: its records are pinned, and they are dropped for the size limit only as pinned evidence, with a `degraded` entry. A later `session_end` ends it again. Spec 3.3 opens a resumed scope for a `session_start` with a different agent identity and ignores a duplicate one with the same identity. M1 records carry no agent identity, so the scope stays an agent, a session id and a boot, and every `session_start` after an end reopens it, a duplicate included. That pins more evidence than the spec does and never less. A finer scope arrives with the agent identity that M2 records. A late event of any kind keeps the whole session because the age is judged from the newest record.
 
 The size of a record is its whole frame: the JSON bytes plus the 0x1E and the 0x0A. Only records that parse count. Lines that do not parse, lines of an unknown kind and lines of a newer schema version are not counted. A record that cannot be dropped, because it sits in the active file or in a generation that holds a newer schema version, still counts, so a journal can stay above the limit until those files change. The planner is `journal::retention::plan`, a pure function of the records, the sizes, the policy, `now_ms` and the current boot.
 
@@ -87,7 +89,7 @@ A run that fails on a generation never deletes it. A reader reports an unsafe ge
 
 | File | Pins |
 | --- | --- |
-| `journal_retention.rs`, `journal_retention_props.rs` | The planner: 26 cases and 8 properties at 1,024 cases each |
+| `journal_retention.rs`, `journal_retention_props.rs` | The planner: 31 cases and 8 properties at 1,024 cases each, including a session resumed after its end |
 | `journal_rotate.rs` | Rotation, the stamp, the lock, the volume gate, every refusal, the probe points |
 | `journal_rotate_interleave.rs` | A writer paused before and after its write across rotations, a reader paused after its open and after its listing |
 | `journal_retain.rs` | The algorithm file by file: replacement under its own name, deletion, duplicates, the active file, the lock, the gate, unsafe files, torn and garbage lines, unknown kinds |
@@ -130,6 +132,9 @@ The mutation checks below were run once each, and each makes the named tests fai
 | No copy before a rewrite | 8 in `journal_retain_recovery.rs` and the ADR table test |
 | The lock is shared and not exclusive | 1 in `journal_rotate.rs` (the one that holds a run at the probe) |
 | The hook calls `prune` | 1 in `hook_never_prunes.rs` |
+| A session is ended by any `session_end` record, whatever follows | 2 in `journal_retain_rules.rs`, 4 in `journal_retention.rs`, 2 of the 8 properties in `journal_retention_props.rs` |
+| The last lifecycle record is the last one read and not the latest by time | 1 in `journal_retention.rs`, 3 of the 8 properties in `journal_retention_props.rs` |
+| A standalone rotation skips the check of the existing generations | 7 in `journal_rotate.rs` |
 
 ## Limits
 
