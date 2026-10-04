@@ -18,7 +18,5 @@ test = false
 
 [dependencies]
 agentdust-core.workspace = true
-thiserror.workspace = true
-
-[dev-dependencies]
 libc.workspace = true
+thiserror.workspace = true
