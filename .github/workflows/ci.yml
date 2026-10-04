@@ -29,7 +29,8 @@ jobs:
       - run: cargo test --workspace --exclude agentdust --locked
       - uses: taiki-e/install-action@861a07ce7084f55488e375df125cdc99bba60eb7 # v2.87.23
         with:
-          tool: cargo-deny,cargo-audit,cargo-fuzz@0.13.2
+          tool: cargo-deny,cargo-audit
+      - run: cargo install --locked --version 0.13.2 cargo-fuzz
       - run: cargo deny check
       - run: cargo audit
       - run: rustup toolchain install "$FUZZ_TOOLCHAIN" --profile minimal
