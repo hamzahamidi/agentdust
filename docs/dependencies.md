@@ -4,7 +4,7 @@ Every direct dependency has one line here. A pull request that adds a dependency
 
 | Crate | Used by | Why |
 | --- | --- | --- |
-| `libc` | agentdust-core, agentdust-bench (not shipped) | `proc_pidinfo`, `proc_pidpath`, `sysctl`, `flock`, `clock_gettime` and `statfs` |
+| `libc` | agentdust-core, agentdust-bench (not shipped) | `proc_pidinfo`, `proc_pidpath`, `sysctl`, `clock_gettime`, `statfs`, `geteuid` and the `O_NOFOLLOW` and `O_NONBLOCK` flags |
 | `serde`, `serde_json` | all crates | hook payloads, journal records, MCP results |
 | `thiserror` | agentdust-core, agentdust-agents, agentdust-bench (not shipped) | error types |
 | `rmcp` | agentdust-mcp | official MCP SDK (Tier 1), elicitation for both protocol generations |

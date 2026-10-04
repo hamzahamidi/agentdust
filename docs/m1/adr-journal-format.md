@@ -76,7 +76,7 @@ A frame starts with the byte 0x1E (record separator) and ends with 0x0A. Compact
 
 This makes a damaged write cost one record. If a write is cut anywhere, the next frame starts at its own 0x1E and is read whole. Without the 0x1E the cut text and the next record form one line that parses as neither, and both are lost. `tests/frame.rs` cuts a frame after 0, 1, 2, half, all but 2 and all but 1 bytes and checks that the next record is read in every case, and that without framing it is lost.
 
-The short write cases of the write itself (`EINTR` before any transfer, a zero byte write, a short write of 1 byte and of N minus 1 bytes, `ENOSPC`, `EIO`) are tested on bytes here. Tests that inject each error into the real `write` call belong to the journal store task, and each must show that record N plus 1 is readable.
+The short write cases of the write itself (`EINTR` before any transfer, a zero byte write, a short write of 1 byte and of N minus 1 bytes, `ENOSPC`, `EIO`) are injected into the real append by `crates/agentdust-core/tests/journal_append_faults.rs`. The injected writer keeps the bytes that reached the file, the test appends record N plus 1 for real, and both are read back. [journal-schema.md](journal-schema.md#what-survives-a-failed-write) lists what survives each case.
 
 A line of a newer schema version is counted apart from a malformed line, and that includes a line longer than the cap. The decoder never buffers more than 65,536 bytes of one segment, and it recognises the version of a longer segment from its start, `{"v":` and the digits. Writers therefore write `v` as the first key, and every future schema keeps it first. Retention never shrinks a generation that holds such a line.
 
@@ -94,9 +94,9 @@ What `journal-bench fs` reported on the benchmark machine:
 
 No NFS or SMB volume was available, so the refusal of a network volume rests on the flag and was not observed.
 
-- **Injectable.** The check is a function from a path to the file system name and the flags, so a test supplies them and platform independent code and the Linux job exercise the whole decision. [fsinfo.rs](../../crates/agentdust-bench/src/fsinfo.rs) is the reference: `classify(name, flags)` is the decision and `probe(path)` is the one `statfs` call.
-- **Status.** A later `agentdust status` prints the file system name, whether it is local and whether it is supported, in the form `apfs, local, supported`.
-- **Reads.** A read cannot tear anything, so readers do not refuse an unsupported volume. `status` reports it, and nothing is written there, so a new record never arrives.
+- **Injectable.** The check is the `VolumeProbe` trait of [volume.rs](../../crates/agentdust-core/src/journal/volume.rs), a function from a path to the file system name and the flags, so a test supplies them and platform independent code and the Linux job exercise the whole decision. `classify(name, flags)` is the decision and `SystemVolume` is the one `statfs` call. `locate` asks about the nearest existing ancestor of a directory that does not exist yet, so a refused volume gets no directory either.
+- **Status.** `Journal::status()` returns the file system name, whether it is local and whether it is supported, and a later `agentdust status` prints them in the form `apfs, local, supported`.
+- **Reads.** A read cannot tear anything, so readers do not refuse an unsupported volume. `ReadReport.filesystem` carries the facts and `status` reports them. Nothing is written there, so a new record never arrives.
 
 ## Durability contract
 
@@ -116,7 +116,7 @@ Rotation and retention do sync, because they run off the hook path and a replace
 
 ## Retention
 
-One algorithm, stated here once. [maintenance.rs](../../crates/agentdust-bench/src/maintenance.rs) implements it for the benchmark, and the journal task ports it.
+One algorithm, stated here once. [maintenance.rs](../../crates/agentdust-bench/src/maintenance.rs) implements it for the benchmark, and the retention task ports it into `agentdust-core`.
 
 Retention takes the exclusive lock on `journal.maint`, which only rotation and retention take. Then, for each closed generation `journal.<stamp>.jsonl`, oldest stamp first, and never for the active file:
 
@@ -136,7 +136,7 @@ Open: whether a damaged generation is copied aside before it is rewritten. That 
 
 ## Reading
 
-A reader takes no lock. It opens `journal.jsonl` first, then lists `journal.<stamp>.jsonl`, then opens each generation, and skips one that no longer exists. A name counts as a generation only when it is `journal.` and a canonical decimal number without leading zeros and `.jsonl`. A file that is a symlink or not a regular file is not followed and is counted as unreadable.
+A reader takes no lock. It opens `journal.jsonl` first, then lists `journal.<stamp>.jsonl`, then opens each generation, and skips one that no longer exists. A name counts as a generation only when it is `journal.` and a canonical decimal number without leading zeros and `.jsonl`. An active file or a directory that is unsafe fails the read with `Refused`. A generation that is a symlink, a FIFO, a directory, a hard link, owned by another user or has a loose mode is not followed and is counted in `unsafe_files`, so one planted file does not hide the rest of the evidence.
 
 - **A coherent set.** Every record acknowledged before the read began, and not dropped by a retention rule, is in a file the reader holds. If a rotation moved the active file after the reader opened it, the listing that follows shows it as a generation, and the reader recognises that it is the same inode and reads it once. If retention replaced a listed generation, the reader opens the replacement or the original, and each holds the record. If retention deleted a listed generation, every record in it was dropped by a rule.
 - **Records acknowledged during the read** may or may not appear.
@@ -148,7 +148,7 @@ The order of a read is a presentation order. It has three levels:
 
 1. **Boot.** Boots are ranked by the earliest `wall_ts` among the records read for each, then by the boot identifier.
 2. **Time within a boot.** `mono_ts`, which is read before the append, so a writer that is descheduled in between lands behind a later stamp. Timestamp order is not causal order, and no consumer may infer from it that one event caused another. Pairs are matched by `tool_use_id` and not by position.
-3. **A fixed final key.** Records equal in boot rank and `mono_ts` are ordered by `wall_ts`, agent, `session_id`, kind, `tool_use_id`, `subagent_id` and `v`, with agent and kind in the order the code declares them. The key holds every field, so records that are not equal never compare equal, and the order does not depend on which file holds a record or in which order the reader opened the files. [candidates.rs](../../crates/agentdust-bench/tests/candidates.rs) checks that two journals with the same records in different file positions read in the same order.
+3. **A fixed final key.** Records equal in boot rank and `mono_ts` are ordered by `wall_ts` and then by every field of the record in the order the struct declares them: `v`, `kind`, `agent`, `session_id`, `subagent_id`, `tool_use_id`, `wall_ts`, `mono_ts`, `boot`, `cwd_key`, `exe_base`, with `kind` and `agent` in the order of their variants. The key is the record itself, so records that are not equal never compare equal, the order does not depend on which file holds a record or in which order the reader opened the files, and no hash is needed. A hash would add collisions and an algorithm to keep stable across builds. [journal_read.rs](../../crates/agentdust-core/tests/journal_read.rs) checks that the same records in different file positions read in the same order.
 
 The order across boots is weak. A boot is ranked by wall time, which can go backwards (a clock step, a manual change), so two boots can swap. Retention does not use the rank: it compares a record's boot with the current one.
 
@@ -199,18 +199,19 @@ The cap says nothing about a real `sample` record. The `procs` list of spec 3.2 
 
 ### Neutral
 
-- **One `statfs` call per append** is in the design and its cost is not measured.
+- **One `statfs` call per append** costs 0.0015 to 0.0038 ms at p50 in three runs, and `append` with the system probe is 0.0422 to 0.0430 ms at p50 ([cost](journal-schema.md#cost)).
 - **`journal.maint` is empty.** Only rotation and retention take it.
 
 ## What this does not establish
 
 - One machine, one macOS version and one local APFS volume, under a 1 minute load average of 25 to 45.
 - Unpaced writers. A real hook fires far less often than 2,400 times in 100 ms.
-- No write was killed in the middle, no disk was full and no power was pulled. The error cases are tested on bytes, not by injecting them into `write`.
+- No write was killed in the middle, no disk was full and no power was pulled. The error cases are injected into the real append through the `FrameWriter` trait. The kernel did not produce them.
+- The rotation stress in `journal_append_rotation.rs` has no retention in it, so it does not fail when the recheck is removed. The interleaving tests do.
 - No network volume was available.
 - Records are padded in `session_id`. A real `sample` record is not measured.
 - A stopped rotator and a stopped appender were tested for refusal and not timed.
-- The benchmark and its tests have not run on Linux. The crate compiles for `x86_64-unknown-linux-gnu`.
+- The benchmark and the `agentdust-core` tests have not run on Linux. The crates compile for `x86_64-unknown-linux-gnu` with `cargo check --all-targets`.
 - "No observed losses" means none in 144,000 attempted appends per candidate in three runs. It is not a proof, and the rotation stress used a 1 ms period that no hook workload reaches.
 
 ## Spec edits to propose
@@ -281,18 +282,13 @@ Section 10, journal format row. Replace "M1 contention benchmark" with "M1 conte
 
 ROADMAP: remove open decision 1, and add a row to the decisions table: `| Journal | One O_APPEND file framed with RS, no lock for appenders and readers, an append recheck, 64 KiB frame cap, local APFS only |`. In the M1 bullet "Locking and the three-writer benchmark that picks the ledger format", replace "Locking and the three-writer benchmark" with "The 3 and 16 writer benchmark".
 
-## What the journal tasks must change
+## What the remaining journal tasks must change
 
 Grouped by concern.
 
-**Journal store** (`agentdust_core::journal`):
+**Journal store** (`agentdust_core::journal`) is built: the append of steps 1 to 6, the fault injection writer, the volume check and the status value, the reader of "Reading" and "Ordering", and the framing with its decoder. One item is left:
 
-- Replace the `flock` append with steps 1 to 6 of "The append". Remove `LOCK_BUDGET`, `lock_within` and `JournalError::LockBusy`. Add errors for a frame over the cap, a short write, `Stale` and an unsupported volume.
-- Add the fault injection writer abstraction, and tests for `EINTR` before any transfer (restart), a zero byte write, a short write of 1 byte and of N minus 1 bytes, `ENOSPC` and `EIO`. Each shows how much evidence survives and that record N plus 1 is readable.
-- Add the volume check as an injectable function and the status value, with tests for the volumes in S24.
-- Make the reader as in "Reading" and "Ordering", and return counts for each kind of line it skipped.
-- Replace the tests that pin the lock: `a_held_lock_fails_within_the_budget` in `crates/agentdust-core/tests/journal.rs`, `a_busy_journal_lock_drops_the_record_without_noise` in `crates/agentdust/tests/hook.rs`, and the `journal.lock` mode check in `files_are_private_to_the_user`.
-- Take the decoder, the framing and the retention algorithm from `agentdust-bench` (`frame.rs`, `maintenance.rs`, `store.rs`), and point the benchmark's C2 at the core append once it matches.
+- Point the benchmark's C2 at `Journal::append`, so that the 16 writer test (S22) runs against the shipped append. The benchmark keeps its own frozen copy of the append until then.
 
 **Rotation, retention and recovery:**
 
@@ -304,11 +300,10 @@ Grouped by concern.
 
 - Count each kind of drop in hook health: too large, a short write, `Stale`, an unsupported volume, any other error.
 - Write health to a temporary file and rename it, one file per agent, with no lock.
-- Keep the 16 writer test (S22) and the interleaving tests (S23) in the Linux and the macOS job.
+- Keep the 16 writer test (S22) and the interleaving tests (S23) in the Linux and the macOS job. They are `journal_append.rs`, `journal_append_recheck.rs` and `journal_snapshot.rs` in `agentdust-core`, and they are platform independent.
 
 ## Open questions
 
-- **What does `statfs` cost per append?** One call is in the design, and its cost was not measured.
 - **Is 64 KiB the right cap for a real `sample`?** It rests on latency. The M2 sampler decides the byte budget.
 - **Should `fsync(2)` be added?** It costs 0.044 ms at p50 and promises survival of an OS crash only. The contract promises neither today.
 - **Does the benchmark pass on Linux?** The tests are platform independent and have not run there.
