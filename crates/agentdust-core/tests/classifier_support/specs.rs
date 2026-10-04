@@ -50,7 +50,7 @@ pub fn arb_spec() -> impl Strategy<Value = Spec> {
             Role::AgentExe,
             Role::AgentScript,
         ]),
-        0..8u8,
+        0..9u8,
         any::<bool>(),
         select(vec![0u64, 29, 30, 31, 600]),
         0..3u8,
@@ -100,6 +100,8 @@ pub fn scopes() -> Vec<Scope> {
         alive(7002, &[2]),
         degraded(&[3]),
         unverified(7003, &[4]),
+        gone(7006, &[7]),
+        alive(7007, &[7]),
     ]
 }
 
@@ -159,7 +161,7 @@ pub fn expected(spec: &Spec, provenance: bool, launchd_known: bool) -> Class {
     let tagged = match spec.tag {
         0 => None,
         1 if provenance => Some(Class::OwnedEnded),
-        2 | 4 if provenance => Some(Class::OwnedLive),
+        2 | 4 | 7 if provenance => Some(Class::OwnedLive),
         _ => Some(Class::Unknown),
     };
     match tagged {
