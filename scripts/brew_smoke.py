@@ -14,7 +14,7 @@ def run(*command: str) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Install a agentdust formula from a local tap and run it.")
+    parser = argparse.ArgumentParser(description="Install an agentdust formula from a local tap and run it.")
     parser.add_argument("formula", type=Path)
     parser.add_argument("version")
     args = parser.parse_args()
