@@ -3,17 +3,13 @@ mod hook;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
+    if std::env::args_os().nth(1).is_some_and(|arg| arg == "hook") {
+        hook::run();
+        return ExitCode::SUCCESS;
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
-        ["hook", "claude"] => {
-            hook::run_claude();
-            ExitCode::SUCCESS
-        }
-        ["hook", ..] => {
-            hook::drain_stdin();
-            ExitCode::SUCCESS
-        }
         ["mcp"] => mcp(),
         ["version"] => {
             println!("agentdust {}", env!("CARGO_PKG_VERSION"));
