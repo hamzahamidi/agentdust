@@ -10,7 +10,6 @@ pub enum ProcessRead {
     PathUnreadable(KernelIdentity),
 }
 
-// Every field of one returned identity must come from the same process.
 pub trait ProcessProvider {
     fn read(&self, pid: i32) -> io::Result<ProcessRead>;
 }

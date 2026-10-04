@@ -15,7 +15,6 @@ pub struct IdentityEvidence {
     pub exe_path: PathBuf,
 }
 
-// Byte-exact: Path equality would ignore trailing and repeated separators.
 impl PartialEq for IdentityEvidence {
     fn eq(&self, other: &Self) -> bool {
         let Self { exe_path } = self;
