@@ -58,7 +58,10 @@ fn the_first_member_of_an_empty_object_uses_the_indent_of_its_line() {
     assert_eq!(new, "{\n  \"hooks\": {}\n}\n");
     let old = "{\n  \"hooks\": {}\n}\n";
     let new = insert_member(old, &[key("hooks")], "Stop", &Json::Array(vec![text("x")])).unwrap();
-    assert_eq!(new, "{\n  \"hooks\": {\n    \"Stop\": [\n      \"x\"\n    ]\n  }\n}\n");
+    assert_eq!(
+        new,
+        "{\n  \"hooks\": {\n    \"Stop\": [\n      \"x\"\n    ]\n  }\n}\n"
+    );
 }
 
 #[test]
@@ -101,7 +104,10 @@ fn an_item_is_appended_after_the_last_one() {
 fn the_first_item_of_an_empty_array_is_indented_under_its_line() {
     let old = "{\n  \"hooks\": {\n    \"Stop\": []\n  }\n}\n";
     let new = append_item(old, &[key("hooks"), key("Stop")], &Json::Int(1)).unwrap();
-    assert_eq!(new, "{\n  \"hooks\": {\n    \"Stop\": [\n      1\n    ]\n  }\n}\n");
+    assert_eq!(
+        new,
+        "{\n  \"hooks\": {\n    \"Stop\": [\n      1\n    ]\n  }\n}\n"
+    );
 }
 
 #[test]
@@ -140,10 +146,17 @@ fn removing_the_item_that_was_appended_restores_the_exact_bytes() {
         "{\n  \"a\": []\n}\n",
         "{\"a\": []}",
     ] {
-        let at: Vec<Seg> = if old.starts_with('[') { vec![] } else { vec![key("a")] };
+        let at: Vec<Seg> = if old.starts_with('[') {
+            vec![]
+        } else {
+            vec![key("a")]
+        };
         let added = append_item(old, &at, &group()).unwrap();
         let count = serde_json::from_str::<Value>(&added).unwrap();
-        let length = if at.is_empty() { &count } else { &count["a"] }.as_array().unwrap().len();
+        let length = if at.is_empty() { &count } else { &count["a"] }
+            .as_array()
+            .unwrap()
+            .len();
         assert_eq!(remove_item(&added, &at, length - 1).unwrap(), old, "{old:?}");
     }
 }
@@ -166,8 +179,14 @@ fn removing_the_only_item_or_member_leaves_an_empty_container() {
 #[test]
 fn removing_a_middle_member_takes_one_separator_with_it() {
     let old = "{\n  \"a\": 1,\n  \"b\": 2,\n  \"c\": 3\n}";
-    assert_eq!(remove_member(old, &[], "b").unwrap(), "{\n  \"a\": 1,\n  \"c\": 3\n}");
-    assert_eq!(remove_member(old, &[], "a").unwrap(), "{\n  \"b\": 2,\n  \"c\": 3\n}");
+    assert_eq!(
+        remove_member(old, &[], "b").unwrap(),
+        "{\n  \"a\": 1,\n  \"c\": 3\n}"
+    );
+    assert_eq!(
+        remove_member(old, &[], "a").unwrap(),
+        "{\n  \"b\": 2,\n  \"c\": 3\n}"
+    );
 }
 
 #[test]
@@ -208,9 +227,21 @@ fn strings_are_escaped_when_rendered() {
 
 #[test]
 fn invalid_json_is_refused_and_not_repaired() {
-    for old in ["", "{", "{\"a\":}", "{\"a\":1,}", "[1,]", "not json", "{} {}", "\u{feff}{}"] {
+    for old in [
+        "",
+        "{",
+        "{\"a\":}",
+        "{\"a\":1,}",
+        "[1,]",
+        "not json",
+        "{} {}",
+        "\u{feff}{}",
+    ] {
         assert!(
-            matches!(insert_member(old, &[], "k", &Json::Int(1)), Err(EditError::Syntax(_))),
+            matches!(
+                insert_member(old, &[], "k", &Json::Int(1)),
+                Err(EditError::Syntax(_))
+            ),
             "{old:?}"
         );
     }
@@ -304,7 +335,10 @@ fn a_duplicate_key_anywhere_in_the_document_is_refused() {
 fn validate_accepts_unambiguous_json_and_names_the_problem_otherwise() {
     assert_eq!(validate("{\"a\": [1, {\"b\": 2}]}\n"), Ok(()));
     assert_eq!(validate("[]"), Ok(()));
-    assert!(matches!(validate("{\"a\":1,\"a\":2}"), Err(EditError::Duplicate(_))));
+    assert!(matches!(
+        validate("{\"a\":1,\"a\":2}"),
+        Err(EditError::Duplicate(_))
+    ));
     assert!(matches!(validate("{"), Err(EditError::Syntax(_))));
     assert!(matches!(validate(""), Err(EditError::Syntax(_))));
 }

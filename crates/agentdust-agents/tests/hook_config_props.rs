@@ -29,7 +29,13 @@ fn user_group() -> impl Strategy<Value = Value> {
 
 fn hooks_object() -> impl Strategy<Value = Value> {
     prop::collection::btree_map(
-        prop::sample::select(vec!["Stop", "Notification", "PreToolUse", "SessionStart", "UserPromptSubmit"]),
+        prop::sample::select(vec![
+            "Stop",
+            "Notification",
+            "PreToolUse",
+            "SessionStart",
+            "UserPromptSubmit",
+        ]),
         prop::collection::vec(user_group(), 0..3),
         0..4,
     )

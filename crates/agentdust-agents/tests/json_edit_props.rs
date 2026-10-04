@@ -73,7 +73,10 @@ fn at<'a>(value: &'a Value, path: &[Seg]) -> &'a Value {
 fn addition() -> Json {
     Json::Object(vec![
         ("matcher".to_owned(), Json::Str("Bash".to_owned())),
-        ("hooks".to_owned(), Json::Array(vec![Json::Int(10), Json::Array(vec![])])),
+        (
+            "hooks".to_owned(),
+            Json::Array(vec![Json::Int(10), Json::Array(vec![])]),
+        ),
     ])
 }
 

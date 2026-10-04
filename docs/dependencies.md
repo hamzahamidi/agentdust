@@ -10,5 +10,5 @@ Every direct dependency has one line here. A pull request that adds a dependency
 | `hmac`, `sha2` | agentdust-core | HMAC-SHA256 for the keyed working directory and session digests (spec 3.2). RustCrypto crates, MIT or Apache-2.0. `sha2` has default features off, so the OID support crate is not built |
 | `rmcp` | agentdust-mcp | official MCP SDK (Tier 1), elicitation for both protocol generations |
 | `tokio` | agentdust-mcp, agentdust | runtime for the `mcp` subcommand only |
-| `proptest` | agentdust-core (tests only) | property tests for identity revalidation, the journal codec, truncated streams and the reader. Default features are off, so the fork and timeout support crates are not built |
+| `proptest` | agentdust-core and agentdust-agents (tests only) | property tests for identity revalidation, the journal codec, truncated streams, the reader, and the settings.json edits (install then remove restores every byte). Default features are off, so the fork and timeout support crates are not built |
 | `libfuzzer-sys` | fuzz (not shipped) | fuzz targets for the `KERN_PROCARGS2` parser, the journal decoder, the journal reader and the hook payload parser |

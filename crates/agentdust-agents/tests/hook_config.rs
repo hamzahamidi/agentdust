@@ -149,12 +149,24 @@ fn the_command_is_the_binary_then_hook_claude() {
 
 #[test]
 fn a_path_with_shell_characters_is_quoted_for_the_shell_that_runs_the_hook() {
-    assert_eq!(shell_quote("/opt/homebrew/bin/agentdust"), "/opt/homebrew/bin/agentdust");
-    assert_eq!(shell_quote("/Users/Jo Doe/bin/agentdust"), "'/Users/Jo Doe/bin/agentdust'");
+    assert_eq!(
+        shell_quote("/opt/homebrew/bin/agentdust"),
+        "/opt/homebrew/bin/agentdust"
+    );
+    assert_eq!(
+        shell_quote("/Users/Jo Doe/bin/agentdust"),
+        "'/Users/Jo Doe/bin/agentdust'"
+    );
     assert_eq!(shell_quote("/tmp/it's/agentdust"), "'/tmp/it'\\''s/agentdust'");
-    for risky in ["/a$b/x", "/a`b`/x", "/a\"b/x", "/a\\b/x", "/a*b/x", "/a;b/x", "/a&b/x", "/a|b/x", "/a(b)/x", "/a b", "~/x"] {
+    for risky in [
+        "/a$b/x", "/a`b`/x", "/a\"b/x", "/a\\b/x", "/a*b/x", "/a;b/x", "/a&b/x", "/a|b/x", "/a(b)/x", "/a b",
+        "~/x",
+    ] {
         let quoted = shell_quote(risky);
-        assert!(quoted.starts_with('\'') && quoted.ends_with('\''), "{risky}: {quoted}");
+        assert!(
+            quoted.starts_with('\'') && quoted.ends_with('\''),
+            "{risky}: {quoted}"
+        );
     }
     assert_eq!(
         hook_command(Path::new("/Users/Jo Doe/bin/agentdust")),
@@ -179,7 +191,11 @@ fn a_cellar_path_is_mapped_to_the_stable_prefix() {
         "/opt/homebrew/Cellar/agentdust/bin/agentdust",
         "/opt/homebrew/Cellar/agentdust/0.1.0/bin/agentdust/extra",
     ] {
-        assert_eq!(stable_exe(Path::new(unchanged)), Path::new(unchanged), "{unchanged}");
+        assert_eq!(
+            stable_exe(Path::new(unchanged)),
+            Path::new(unchanged),
+            "{unchanged}"
+        );
     }
 }
 
@@ -190,17 +206,21 @@ fn the_hash_ignores_key_order_and_whitespace_and_nothing_else() {
     assert_eq!(canonical_json(&a), r#"{"a":"s","b":[1,{"x":1,"y":2}]}"#);
     assert_eq!(group_hash(&a), group_hash(&b));
     assert_eq!(group_hash(&a), sha256_hex(canonical_json(&a).as_bytes()));
-    assert_ne!(group_hash(&a), group_hash(&json!({"b": [{"x": 1, "y": 2}, 1], "a": "s"})));
+    assert_ne!(
+        group_hash(&a),
+        group_hash(&json!({"b": [{"x": 1, "y": 2}, 1], "a": "s"}))
+    );
     assert_ne!(group_hash(&json!({"t": 10})), group_hash(&json!({"t": 11})));
 }
 
 #[test]
 fn a_fresh_install_writes_the_four_hooks_in_the_usual_layout() {
-    for input in [None, Some(""), Some("  \n"), Some("{}"), Some("{}\n")] {
+    for input in [None, Some(""), Some("  \n"), Some("{}\n")] {
         let result = fresh(input);
         assert_eq!(result.text, EXPECTED_FRESH, "{input:?}");
         assert_eq!(states(&result.states), all(HookState::Absent));
     }
+    assert_eq!(fresh(Some("{}")).text, EXPECTED_FRESH.trim_end());
 }
 
 #[test]
@@ -215,7 +235,12 @@ fn a_fresh_install_records_what_it_created() {
         assert_eq!(entry.command, CMD);
         assert_eq!(entry.hash, group_hash(&our_group(spec.event)));
         assert!(entry.created_event_key, "{}", spec.event);
-        assert_eq!(entry.created_hooks_key, spec.event == "SessionStart", "{}", spec.event);
+        assert_eq!(
+            entry.created_hooks_key,
+            spec.event == "SessionStart",
+            "{}",
+            spec.event
+        );
     }
 }
 
@@ -226,7 +251,11 @@ fn every_inserted_group_has_the_hash_the_manifest_records() {
     for spec in HOOK_SPECS {
         let groups = settings["hooks"][spec.event].as_array().unwrap();
         let hashes: Vec<String> = groups.iter().map(group_hash).collect();
-        assert!(hashes.contains(&entry_for(&result.entries, spec.event).hash), "{}", spec.event);
+        assert!(
+            hashes.contains(&entry_for(&result.entries, spec.event).hash),
+            "{}",
+            spec.event
+        );
     }
 }
 
@@ -326,7 +355,13 @@ fn the_same_command_under_another_matcher_or_type_is_not_equivalent() {
     .to_string();
     let result = fresh(Some(&text));
     assert_eq!(states(&result.states), all(HookState::Absent));
-    assert_eq!(parsed(&result.text)["hooks"]["PreToolUse"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        parsed(&result.text)["hooks"]["PreToolUse"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
 }
 
 #[test]
@@ -334,7 +369,10 @@ fn another_command_for_the_same_event_is_left_alone() {
     let text = json!({"hooks": {"SessionStart": [user_group("", "/usr/local/bin/other-tool")]}}).to_string();
     let result = fresh(Some(&text));
     let after = parsed(&result.text);
-    assert_eq!(after["hooks"]["SessionStart"][0], user_group("", "/usr/local/bin/other-tool"));
+    assert_eq!(
+        after["hooks"]["SessionStart"][0],
+        user_group("", "/usr/local/bin/other-tool")
+    );
     assert_eq!(after["hooks"]["SessionStart"][1], our_group("SessionStart"));
 }
 
@@ -344,17 +382,22 @@ fn a_hand_edited_group_is_reported_as_modified_and_left_alone() {
     let edited = first.text.replacen("\"timeout\": 10", "\"timeout\": 99", 1);
     assert_ne!(edited, first.text);
     let report = inspect(Some(&edited), TARGET, &first.entries, CMD).unwrap();
-    assert_eq!(report[0].state, HookState::Modified);
-    assert_eq!(report[1].state, HookState::Installed);
+    assert_eq!(report[2].state, HookState::Modified);
+    assert_eq!(report[0].state, HookState::Installed);
     let again = install(Some(&edited), TARGET, &first.entries, CMD).unwrap();
     assert_eq!(again.text, edited);
-    assert_eq!(entry_for(&again.entries, "SessionStart"), entry_for(&first.entries, "SessionStart"));
+    assert_eq!(
+        entry_for(&again.entries, "PreToolUse"),
+        entry_for(&first.entries, "PreToolUse")
+    );
     let removed = remove(Some(&edited), TARGET, &first.entries).unwrap();
-    assert_eq!(removed.drift, ["SessionStart"]);
+    assert_eq!(removed.drift, ["PreToolUse"]);
     assert_eq!(removed.kept.len(), 1);
-    assert_eq!(removed.kept[0].key, "SessionStart");
-    assert_eq!(parsed(&removed.text)["hooks"]["SessionStart"][0]["hooks"][0]["timeout"], json!(99));
-    assert!(parsed(&removed.text)["hooks"].get("SessionEnd").is_none());
+    assert_eq!(removed.kept[0].key, "PreToolUse");
+    let after = parsed(&removed.text);
+    assert_eq!(after["hooks"]["PreToolUse"].as_array().unwrap().len(), 2);
+    assert_eq!(after["hooks"]["PreToolUse"][1]["hooks"][0]["timeout"], json!(99));
+    assert!(after["hooks"].get("SessionEnd").is_none());
 }
 
 #[test]
@@ -362,7 +405,11 @@ fn a_group_whose_command_was_changed_counts_as_missing_not_as_ours() {
     let first = fresh(Some(SETTINGS));
     let edited = first.text.replacen(CMD, "/usr/bin/true", 1);
     let report = inspect(Some(&edited), TARGET, &first.entries, CMD).unwrap();
-    assert_eq!(report[0].state, HookState::Missing);
+    assert_eq!(report[2].state, HookState::Missing);
+    assert_eq!(report[0].state, HookState::Installed);
+    let removed = remove(Some(&edited), TARGET, &first.entries).unwrap();
+    assert_eq!(removed.gone, ["PreToolUse"]);
+    assert!(removed.drift.is_empty());
 }
 
 #[test]
@@ -372,9 +419,15 @@ fn a_group_the_user_deleted_is_missing_and_install_puts_it_back() {
     let report = inspect(Some(&without), TARGET, &first.entries, CMD).unwrap();
     assert_eq!(report[1].state, HookState::Missing);
     let again = install(Some(&without), TARGET, &first.entries, CMD).unwrap();
-    assert_eq!(parsed(&again.text)["hooks"]["SessionEnd"], json!([our_group("SessionEnd")]));
+    assert_eq!(
+        parsed(&again.text)["hooks"]["SessionEnd"],
+        json!([our_group("SessionEnd")])
+    );
     assert_eq!(states(&again.states)[1], ("SessionEnd", HookState::Missing));
-    assert_eq!(entry_for(&again.entries, "SessionEnd").hash, group_hash(&our_group("SessionEnd")));
+    assert_eq!(
+        entry_for(&again.entries, "SessionEnd").hash,
+        group_hash(&our_group("SessionEnd"))
+    );
 }
 
 fn remove_event(text: &str, event: &str) -> String {
@@ -485,7 +538,10 @@ fn unusable_shapes_are_refused_and_never_edited() {
         install(Some("{\"hooks\": []}"), TARGET, &[], CMD),
         Err(PatchError::Shape(_))
     ));
-    assert!(matches!(install(Some("{"), TARGET, &[], CMD), Err(PatchError::Syntax(_))));
+    assert!(matches!(
+        install(Some("{"), TARGET, &[], CMD),
+        Err(PatchError::Syntax(_))
+    ));
     assert!(matches!(
         install(Some("{\"hooks\": {}, \"hooks\": {}}"), TARGET, &[], CMD),
         Err(PatchError::Duplicate(_))
@@ -497,5 +553,11 @@ fn a_group_that_is_not_an_object_does_not_stop_the_scan() {
     let text = json!({"hooks": {"SessionStart": ["junk", 3, null, {"hooks": "x"}]}}).to_string();
     let result = fresh(Some(&text));
     assert_eq!(states(&result.states)[0], ("SessionStart", HookState::Absent));
-    assert_eq!(parsed(&result.text)["hooks"]["SessionStart"].as_array().unwrap().len(), 5);
+    assert_eq!(
+        parsed(&result.text)["hooks"]["SessionStart"]
+            .as_array()
+            .unwrap()
+            .len(),
+        5
+    );
 }
