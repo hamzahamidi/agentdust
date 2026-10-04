@@ -70,7 +70,11 @@ pub fn open_dir_as(path: &Path, owner: u32) -> Result<File, SafeOpenError> {
 pub fn ensure_dir(path: &Path) -> Result<(), SafeOpenError> {
     match check_dir(path) {
         Err(SafeOpenError::Io(err)) if err.kind() == io::ErrorKind::NotFound => {
-            DirBuilder::new().recursive(true).mode(DIR_MODE).create(path)?;
+            match DirBuilder::new().mode(DIR_MODE).create(path) {
+                Ok(()) => {}
+                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(err) => return Err(err.into()),
+            }
             check_dir(path)
         }
         checked => checked,
