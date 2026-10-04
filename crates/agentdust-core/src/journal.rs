@@ -9,8 +9,10 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 mod fields;
+pub mod volume;
 
 pub use fields::{CwdKey, ExeBase, FieldError, MAX_CWD_KEY_LEN, MAX_EXE_BASE_LEN};
+pub use volume::{FixedVolume, FsFacts, SystemVolume, VolumeProbe};
 
 pub const SCHEMA_VERSION: u32 = 1;
 pub const LOCK_BUDGET: Duration = Duration::from_millis(20);
