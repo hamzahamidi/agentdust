@@ -424,8 +424,9 @@ impl Plan {
         let manifest_old = manifest::load(&env.data_dir)?;
         let base = manifest_old.clone().unwrap_or_default();
         let command = hook_command(&env.exe);
-        let hooks = plan_hooks(env, &base.entries, &command);
+        // The first claude command can rewrite settings.json, so the lookup runs before the file is read.
         let mcp = plan_mcp(env, &exe, &base.entries);
+        let hooks = plan_hooks(env, &base.entries, &command);
         let target = env.target();
         let config_target = env.config_target();
         let mut entries: Vec<Entry> = base
@@ -886,8 +887,8 @@ fn plan_mcp_removal(env: &SetupEnv, manifest: &Manifest) -> McpRemoval {
 
 impl RemovePlan {
     fn build(env: &SetupEnv, manifest_old: Manifest) -> Self {
-        let hooks = plan_hook_removal(env, &manifest_old);
         let mcp = plan_mcp_removal(env, &manifest_old);
+        let hooks = plan_hook_removal(env, &manifest_old);
         let target = env.target();
         let config_target = env.config_target();
         let mut problems = Vec::new();
