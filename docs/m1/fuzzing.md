@@ -6,7 +6,7 @@ Spec 9.2 lists the journal decoder and the hook payload parsers as fuzz targets,
 
 | Target | Input | What runs |
 | --- | --- | --- |
-| `procargs` | `KERN_PROCARGS2` bytes | the parser and one variable read |
+| `procargs` | `KERN_PROCARGS2` bytes | the parser, one variable read, and the script argument parser, which must fail with the error `parse` gives and return one of the arguments after the program name |
 | `journal_decode` | journal bytes | `journal::decode` |
 | `journal_read` | up to four files, split at byte `0x1C` | `journal::read` over a 0700 directory of 0600 files |
 | `claude_payload` | hook stdin | `claude::parse_event` |
@@ -58,7 +58,7 @@ Peaks measured with the same allocator on release builds, `uptime` load 6.36 to 
 
 ## Seeds
 
-`fuzz/seeds/<target>/` holds one file per behaviour class: 5 files for `procargs`, 37 for `journal_decode`, 18 for `journal_read` and 24 for `claude_payload`. The largest file is 70,358 bytes, a `journal_read` seed. A reproducer that a fuzz run finds is added to the seed directory under a name that says what it is.
+`fuzz/seeds/<target>/` holds one file per behaviour class: 9 files for `procargs`, 37 for `journal_decode`, 18 for `journal_read` and 24 for `claude_payload`. The largest file is 70,358 bytes, a `journal_read` seed. A reproducer that a fuzz run finds is added to the seed directory under a name that says what it is.
 
 The journal seeds are in the frame format and group like this:
 

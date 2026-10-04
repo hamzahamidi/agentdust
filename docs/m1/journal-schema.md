@@ -13,16 +13,18 @@ One JSON object per frame. Fields are written in this order, and an absent optio
 | `agent` | string | `claude`, `codex`, `cursor` |
 | `session_id` | string | |
 | `subagent_id` | string, optional | |
+| `agent_identity` | object, optional | The agent process: `pid`, `start_time_us`, `uid` and `exe_base`, at most 160 bytes encoded. No path and no boot. See [provenance.md](../m2/provenance.md) |
 | `tool_use_id` | string, optional | |
 | `wall_ts` | unsigned 64-bit | Milliseconds since the Unix epoch, for display |
 | `mono_ts` | unsigned 64-bit | Nanoseconds of `CLOCK_MONOTONIC`. It orders events within one boot only |
 | `boot` | string | Boot session UUID |
+| `session_tag_key` | string, optional | Lowercase hex, exactly 64 characters. The keyed digest of the session tag |
 | `cwd_key` | string, optional | Lowercase hex, 1 to 64 characters |
 | `exe_base` | string, optional | At most 64 bytes, no C0, C1 or bidi control characters |
 
-The keys are listed once, in `journal::RECORD_KEYS`. The [privacy test](privacy-test.md) fails on a key in a journal file that is not in the list, so adding a field means editing the list.
+The keys are listed once, in `journal::RECORD_KEYS`, and the keys of the nested identity in `journal::AGENT_IDENTITY_KEYS`. The [privacy test](privacy-test.md) fails on a key in a journal file that is not in the lists, so adding a field means editing a list.
 
-`agent_identity`, `session_tag_key` and `procs` are not part of the record. A `null` optional field reads as absent, and a field this build does not know is ignored on a version 1 line. `ExeBase` and `CwdKey` check their rule in the constructor and in `Deserialize`, so a line that breaks it is malformed on read and no writer can produce it. The hook writes `cwd_key`, an HMAC under the install secret ([install-secret.md](install-secret.md)), and leaves `exe_base` empty.
+`procs` is not part of the record. A `null` optional field reads as absent, and a field this build does not know is ignored on a version 1 line. `ExeBase`, `CwdKey`, `SessionTagKey` and `AgentIdentity` check their rules in the constructor and in `Deserialize`, so a line that breaks one is malformed on read and no writer can produce it. An identity needs a positive `pid` that fits an `i32`. The hook writes `agent_identity` on every record it journals when it finds an agent above it, `session_tag_key` on a `session_start`, and `cwd_key`, an HMAC under the install secret ([install-secret.md](install-secret.md)). It leaves `exe_base` empty. [provenance.md](../m2/provenance.md) describes how the first two are found and used.
 
 ## Frame
 
@@ -165,7 +167,7 @@ The whole hook is measured with `cargo test --release -p agentdust --test hook_l
 
 - Sections 3.2 and 4.4 describe a lock. [ADR-1](adr-journal-format.md) lists the edits.
 - Section 7.3 says a wrong directory mode "is corrected". The journal functions refuse a data directory looser than 0700 and do not change it. The startup validation that corrects the mode is not part of the journal.
-- Section 3.2 lists `cwd_key` and `exe_base` without limits. The limits above are new.
+- Section 3.2 lists `cwd_key`, `exe_base` and `session_tag_key` without limits, and `agent_identity` without a shape. The limits above and the four keys of the identity are defined here, and [provenance.md](../m2/provenance.md) lists the other differences.
 - A file mode is refused when it has any bit outside 0600, which includes an owner execute bit.
 
 ## Not built yet
