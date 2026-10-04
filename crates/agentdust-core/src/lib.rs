@@ -2,6 +2,7 @@ pub mod ancestry;
 pub mod class;
 pub mod classifier;
 pub mod clock;
+pub mod code;
 pub mod cwd;
 pub mod digest;
 pub mod doctor;

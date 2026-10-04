@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, Read};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
+use agentdust_core::code::{self, Check};
 use rmcp::model::{
     CacheScope, CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ElicitRequest,
     ElicitRequestParams, ElicitResult, ElicitationAction, ElicitationSchema, Implementation, InputRequest,
@@ -17,9 +18,9 @@ use serde::{Deserialize, Serialize};
 
 pub const TOOL_NAME: &str = "agentdust_probe_approval";
 pub const INPUT_KEY: &str = "approval";
-pub const CODE_ALPHABET: &[u8; 25] = b"ACDEFGHJKMNPQRTUVWXY34679";
-pub const CODE_LEN: usize = 4;
-const CODE_TTL: Duration = Duration::from_secs(120);
+pub const CODE_ALPHABET: &[u8; 25] = code::ALPHABET;
+pub const CODE_LEN: usize = code::LEN;
+const CODE_TTL: std::time::Duration = code::TTL;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
@@ -206,10 +207,10 @@ fn outcome_of(response: &ElicitResult, expected: &str) -> Outcome {
 }
 
 pub fn check_code(answer: Option<&str>, expected: &str) -> Outcome {
-    match answer {
-        None | Some("") => Outcome::Empty,
-        Some(answer) if answer == expected => Outcome::Approved,
-        Some(_) => Outcome::WrongCode,
+    match code::check(answer, expected) {
+        Check::Approved => Outcome::Approved,
+        Check::Wrong => Outcome::WrongCode,
+        Check::Empty => Outcome::Empty,
     }
 }
 
@@ -237,15 +238,7 @@ fn probe_tool() -> Tool {
 }
 
 pub fn new_code() -> io::Result<String> {
-    let mut code = String::with_capacity(CODE_LEN);
-    while code.len() < CODE_LEN {
-        for byte in random_bytes::<8>()? {
-            if code.len() < CODE_LEN && byte < 250 {
-                code.push(CODE_ALPHABET[usize::from(byte) % CODE_ALPHABET.len()] as char);
-            }
-        }
-    }
-    Ok(code)
+    code::generate()
 }
 
 fn random_bytes<const N: usize>() -> io::Result<[u8; N]> {
