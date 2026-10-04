@@ -3,6 +3,7 @@ mod common;
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::DirBuilderExt;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -165,7 +166,7 @@ fn concurrent_hooks_never_interleave_records() {
         assert!(handle.join().unwrap().status.success());
     }
     let report = journal::read(&dir).unwrap();
-    assert_eq!(report.skipped_lines, 0);
+    assert_eq!(report.skipped_lines(), 0);
     let mut ids: Vec<&str> = report.records.iter().map(|r| r.session_id.as_str()).collect();
     ids.sort_unstable();
     ids.dedup();
@@ -178,7 +179,7 @@ fn concurrent_hooks_never_interleave_records() {
 #[test]
 fn a_busy_journal_lock_drops_the_record_without_noise() {
     let dir = scratch_dir("busy-lock");
-    fs::create_dir_all(&dir).unwrap();
+    fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
     let lock = fs::OpenOptions::new()
         .create(true)
         .write(true)

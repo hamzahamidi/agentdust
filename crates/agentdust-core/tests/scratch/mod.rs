@@ -2,6 +2,7 @@
 
 use std::ffi::CString;
 use std::fs::{self, DirBuilder};
+use std::ops::Deref;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
@@ -47,4 +48,34 @@ pub fn returns_promptly<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'st
     receiver
         .recv_timeout(HANG_GUARD)
         .expect("the call blocked on a FIFO")
+}
+
+pub struct TempDir(PathBuf);
+
+impl TempDir {
+    pub fn private(name: &str) -> Self {
+        Self(private_dir(name))
+    }
+
+    pub fn absent(name: &str) -> Self {
+        Self(scratch_dir(name))
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Deref for TempDir {
+    type Target = Path;
+
+    fn deref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
 }
