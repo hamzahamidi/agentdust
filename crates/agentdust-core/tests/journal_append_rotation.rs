@@ -3,6 +3,7 @@ mod scratch;
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
@@ -20,7 +21,7 @@ fn every_acknowledged_record_is_present_exactly_once_while_the_active_file_is_ro
     journal(&dir).append(&padded_to_frame_len(200, "seed-")).unwrap();
     let stop = AtomicBool::new(false);
     let mut acknowledged: Vec<String> = Vec::new();
-    let mut stale = 0usize;
+    let mut unacknowledged = 0usize;
 
     thread::scope(|scope| {
         let rotator = scope.spawn(|| {
@@ -62,7 +63,10 @@ fn every_acknowledged_record_is_present_exactly_once_while_the_active_file_is_ro
             for (session, outcome) in writer.join().unwrap() {
                 match outcome {
                     Ok(_) => acknowledged.push(session),
-                    Err(JournalError::Stale { .. }) => stale += 1,
+                    Err(JournalError::Stale { .. }) => unacknowledged += 1,
+                    Err(JournalError::Io(err)) if err.kind() == io::ErrorKind::NotFound => {
+                        unacknowledged += 1
+                    }
                     Err(other) => panic!("{other:?}"),
                 }
             }
@@ -82,5 +86,5 @@ fn every_acknowledged_record_is_present_exactly_once_while_the_active_file_is_ro
     for session in &acknowledged {
         assert!(seen.contains_key(session.as_str()), "lost {session}");
     }
-    assert_eq!(acknowledged.len() + stale, WRITERS * PER_WRITER);
+    assert_eq!(acknowledged.len() + unacknowledged, WRITERS * PER_WRITER);
 }
