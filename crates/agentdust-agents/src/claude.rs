@@ -8,6 +8,7 @@ use thiserror::Error;
 
 use crate::budget::{Budget, Metered};
 
+pub const ENV_FILE_VAR: &str = "CLAUDE_ENV_FILE";
 pub const MAX_ID_LEN: usize = 256;
 pub const MAX_CWD_LEN: usize = 4096;
 const ESCAPED_BYTE_LEN: usize = 6;
