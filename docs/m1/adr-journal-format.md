@@ -62,7 +62,7 @@ Its price is that a record can exist twice. When a rotation lands between the wr
 5. Compare `fstat` of the descriptor with `lstat` of the path. They match when `st_dev` and `st_ino` are equal and `st_nlink` is not 0. If they do not match, close the descriptor and go to step 3. After 3 attempts the append fails with `Stale`.
 6. Return. There is no `fsync`.
 
-A record is acknowledged by its last successful data-bearing `write(2)`. The earlier ones, if any, wrote into files that are no longer the active file, and those copies are what the readers and retention collapse.
+A record is acknowledged by its last successful data-bearing `write(2)`. The earlier ones, if any, wrote into files that are no longer the active file, and those copies are what the readers and retention collapse. An append that fails with `Stale` is counted as dropped, yet its copies sit in generations and the record may still be read. That only adds evidence.
 
 The atomicity of step 4 is a reliance on POSIX append semantics for local regular files, a write on an `O_APPEND` descriptor lands whole at the end of the file while other processes append. It is not an APFS guarantee and it does not hold on network file systems. It was stress tested on APFS with 3 and 16 writer processes and no torn or interleaved line appeared. [tests/frame.rs](../../crates/agentdust-bench/tests/frame.rs) pins the byte layout, and `sixteen_writer_processes_with_4000_byte_records_tear_nothing` in [tests/harness.rs](../../crates/agentdust-bench/tests/harness.rs) pins the concurrency.
 
@@ -308,7 +308,7 @@ Grouped by concern.
 
 ## Open questions
 
-- **What does `statfs` cost per append?** One call is in the design. It is a few microseconds on this machine, and that was not measured.
+- **What does `statfs` cost per append?** One call is in the design, and its cost was not measured.
 - **Is 64 KiB the right cap for a real `sample`?** It rests on latency. The M2 sampler decides the byte budget.
 - **Should `fsync(2)` be added?** It costs 0.044 ms at p50 and promises survival of an OS crash only. The contract promises neither today.
 - **Does the benchmark pass on Linux?** The tests are platform independent and have not run there.
