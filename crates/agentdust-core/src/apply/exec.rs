@@ -11,7 +11,7 @@ use crate::apply::signal::{SignalResult, Signaller};
 use crate::apply::timer::Timer;
 use crate::classifier::Finding;
 use crate::code;
-use crate::config::{self, ApplySwitch};
+use crate::config::{self, ApplySwitch, Disabled};
 use crate::plan::PlanItem;
 use crate::provider::ProcessProvider;
 use crate::revalidate::{Field, Revalidation, revalidate};
@@ -29,6 +29,13 @@ pub enum Outcome {
     AuditUnavailable,
     LockUnavailable,
     Disabled,
+    Declined,
+    Cancelled,
+    TimedOut,
+    Empty,
+    WrongCode,
+    Expired,
+    PlanExpired,
 }
 
 impl Outcome {
@@ -43,6 +50,13 @@ impl Outcome {
             Outcome::AuditUnavailable => "audit_unavailable",
             Outcome::LockUnavailable => "lock_unavailable",
             Outcome::Disabled => "disabled",
+            Outcome::Declined => "declined",
+            Outcome::Cancelled => "cancelled",
+            Outcome::TimedOut => "timed_out",
+            Outcome::Empty => "empty",
+            Outcome::WrongCode => "wrong_code",
+            Outcome::Expired => "expired",
+            Outcome::PlanExpired => "plan_expired",
         }
     }
 }
@@ -146,6 +160,19 @@ impl Executor {
 
     pub fn settings(&self) -> &Settings {
         &self.settings
+    }
+
+    pub fn enabled(&self) -> Result<(), Disabled> {
+        match config::apply_switch(&self.deps.data_dir) {
+            ApplySwitch::Enabled => Ok(()),
+            ApplySwitch::Disabled(reason) => Err(reason),
+        }
+    }
+
+    pub fn note(&self, plan_id: &str, item: &PlanItem, verdict: Verdict) {
+        if verdict.outcome != Outcome::Disabled {
+            self.record(plan_id, item, verdict);
+        }
     }
 
     pub fn execute(&self, plan_id: &str, item: &PlanItem) -> Verdict {
