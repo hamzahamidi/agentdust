@@ -10,6 +10,7 @@ mod append;
 mod fields;
 mod frame;
 mod generations;
+mod maintenance;
 pub mod retention;
 mod store;
 pub mod volume;
@@ -18,6 +19,9 @@ pub use append::{Appended, FrameWriter, MAX_ATTEMPTS, SystemWriter};
 pub use fields::{CwdKey, ExeBase, FieldError, MAX_CWD_KEY_LEN, MAX_EXE_BASE_LEN};
 pub use frame::{Class, MAX_FRAME_LEN, RS, decode, encode, scan};
 pub use generations::{Generation, generation_path, generation_stamp, list_generations};
+pub use maintenance::{
+    MAINT_FILE, MaintenanceError, MaintenancePoint, MaintenanceProbe, NoMaintenanceProbe, Rotation,
+};
 pub use volume::{FixedVolume, FsFacts, SystemVolume, VolumeProbe};
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -134,6 +138,7 @@ impl ReadProbe for NoProbe {
 pub struct Journal<'a> {
     dir: &'a Path,
     volume: &'a dyn VolumeProbe,
+    probe: &'a dyn MaintenanceProbe,
 }
 
 impl<'a> Journal<'a> {
@@ -142,7 +147,15 @@ impl<'a> Journal<'a> {
     }
 
     pub fn with_volume(dir: &'a Path, volume: &'a dyn VolumeProbe) -> Self {
-        Self { dir, volume }
+        Self {
+            dir,
+            volume,
+            probe: &NoMaintenanceProbe,
+        }
+    }
+
+    pub fn with_probe(self, probe: &'a dyn MaintenanceProbe) -> Self {
+        Self { probe, ..self }
     }
 
     pub fn append(&self, record: &Record) -> Result<Appended, JournalError> {
@@ -165,6 +178,10 @@ impl<'a> Journal<'a> {
         store::read(self.dir, self.volume, probe)
     }
 
+    pub fn rotate(&self, now_ms: u64) -> Result<Rotation, MaintenanceError> {
+        maintenance::rotate(self.dir, self.volume, self.probe, now_ms)
+    }
+
     pub fn status(&self) -> io::Result<FsFacts> {
         volume::locate(self.volume, self.dir)
     }
@@ -180,4 +197,8 @@ pub fn append(dir: &Path, record: &Record) -> Result<Appended, JournalError> {
 
 pub fn read(dir: &Path) -> Result<ReadReport, JournalError> {
     Journal::new(dir).read()
+}
+
+pub fn rotate(dir: &Path, now_ms: u64) -> Result<Rotation, MaintenanceError> {
+    Journal::new(dir).rotate(now_ms)
 }
