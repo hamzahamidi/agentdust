@@ -6,14 +6,14 @@ const MARKER_PREFIX: &str = "expired-";
 const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 pub fn wall(record: &Record) -> u64 {
-    record.wall_ts_ms
+    record.wall_ts
 }
 
 pub fn mono(record: &Record) -> u64 {
-    record.mono_ns
+    record.mono_ts
 }
 
-fn base(session_id: String, kind: Kind, wall_ms: u64, mono_ns: u64) -> Record {
+fn base(session_id: String, kind: Kind, wall_ms: u64, mono_ts: u64) -> Record {
     Record {
         v: SCHEMA_VERSION,
         kind,
@@ -21,14 +21,16 @@ fn base(session_id: String, kind: Kind, wall_ms: u64, mono_ns: u64) -> Record {
         session_id,
         subagent_id: None,
         tool_use_id: None,
-        wall_ts_ms: wall_ms,
-        mono_ns,
+        wall_ts: wall_ms,
+        mono_ts,
         boot: BOOT.to_owned(),
+        cwd_key: None,
+        exe_base: None,
     }
 }
 
-pub fn record_with(writer: u32, seq: u64, size: usize, wall_ms: u64, mono_ns: u64) -> Record {
-    let mut record = base(format!("w{writer}-{seq}"), Kind::ShellStart, wall_ms, mono_ns);
+pub fn record_with(writer: u32, seq: u64, size: usize, wall_ms: u64, mono_ts: u64) -> Record {
+    let mut record = base(format!("w{writer}-{seq}"), Kind::ShellStart, wall_ms, mono_ts);
     let floor = line_len(&record);
     if size > floor {
         record.session_id.push('-');
@@ -37,8 +39,8 @@ pub fn record_with(writer: u32, seq: u64, size: usize, wall_ms: u64, mono_ns: u6
     record
 }
 
-pub fn marker(n: u64, wall_ms: u64, mono_ns: u64) -> Record {
-    base(format!("{MARKER_PREFIX}{n}"), Kind::ShellEnd, wall_ms, mono_ns)
+pub fn marker(n: u64, wall_ms: u64, mono_ts: u64) -> Record {
+    base(format!("{MARKER_PREFIX}{n}"), Kind::ShellEnd, wall_ms, mono_ts)
 }
 
 pub fn is_marker(record: &Record) -> bool {
