@@ -134,7 +134,7 @@ The mutation checks below were run once each, and each makes the named tests fai
 
 - Nothing calls `prune` yet. The CLI and the server decide the cadence, and each run that finds bytes in the active file adds one generation.
 - The whole journal is read into memory. At the default limit that is about 20 MB of frames and the same again for their records. A journal of that size was not measured.
-- `degraded` is returned and not stored. The M2 doctor has to carry it.
+- `degraded` is returned and not stored. `doctor` does not read it: it derives degraded sessions from records that carry no agent identity and counts tags that no session explains ([doctor](../m2/doctor.md)).
 - Copies are never deleted by retention.
 - A session ends for retention only with a `session_end` record. A session whose agent died without one stays pinned until the size limit drops it. Spec 3.3 also ends a session when its agent identity is gone, and retention has no view of processes.
 - A line of an unknown kind is kept for ever, because retention cannot tell its session or its age.
