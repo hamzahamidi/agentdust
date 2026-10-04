@@ -247,9 +247,9 @@ Applied to [the spec](../superpowers/specs/2026-10-03-agentdust-design.md):
 - Section 9.1, the rows S22 (frame and atomic write), S23 (an acknowledged record is present exactly once), S24 (local APFS only) and S25 (the order of a read), each mapped to named tests, and the additions to the tests of S13, S16 and S18.
 - The ROADMAP: open decision 1 is removed, the decisions table has a Journal row, and the M1 bullet and the latency risk name the 3 and 16 writer benchmark.
 
-Not applied. The spec still says in section 4.4 that a journal writer takes a lock with a 20 ms budget, in section 7.2 that the journal files are `journal.jsonl` and `journal.lock`, and in section 9.2 that the stress layer has three journal writers. A person applies these edits.
+Applied: the remaining edits below are in the spec too, so the spec, this record and the code agree.
 
-Section 4.4, journal write budget. Replace:
+Section 4.4, journal write budget. Replaced:
 
 ```text
 - Journal write budget: the lock is taken without blocking, with retries for at most 20 ms. On failure the record is dropped and hook health is updated. The health update follows the same budget and is best effort.

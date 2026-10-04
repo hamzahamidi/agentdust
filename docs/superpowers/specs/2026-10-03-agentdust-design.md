@@ -151,11 +151,11 @@ Timing has three separate limits:
 
 - Service level for normal input: p50 under 10 ms and p95 under 20 ms.
 - Host timeout: the hook configuration written by `setup` sets a 10 second timeout, the hard bound on how long an agent can wait.
-- Journal write budget: the lock is taken without blocking, with retries for at most 20 ms. On failure the record is dropped and hook health is updated. The health update follows the same budget and is best effort.
+- Journal write budget: an append is a few system calls and takes no lock, so it waits for no other process. The record is dropped when the frame is longer than 65,536 bytes, when the volume is not a local APFS volume, when a write returns fewer bytes than the frame, or when the active file was replaced in 3 attempts in a row. The M1 hook drops it silently, and the health update, which is best effort, is planned for M2.
 
 Benchmarks with 1, 10 and 100 MB payloads assert latency and that each host handles the hook normally.
 
-A hook always exits 0 and prints nothing. Each agent has a health record (last success, last error, error count, error kind) updated under the journal lock. `doctor` and `status` report each agent as healthy, degraded or unavailable, and a provenance failure only lowers confidence.
+A hook always exits 0 and prints nothing. Each agent has a health record (last success, last error, error count, error kind) kept in `health.json`, which is replaced by writing a temporary file and renaming it over the old one. The last writer wins, so a count can miss an update. `doctor` and `status` report each agent as healthy, degraded or unavailable, and a provenance failure only lowers confidence.
 
 ## 5. MCP tools
 
@@ -238,7 +238,7 @@ The data directory is 0700 and every file in it is 0600.
 | File | Content | Retention |
 | --- | --- | --- |
 | `install.secret` | 32 random bytes, created atomically with exclusive, no-follow semantics | until purge |
-| `journal.jsonl`, `journal.lock` | section 3.2 fields only | section 3.2 |
+| `journal.jsonl`, `journal.<stamp>.jsonl`, `journal.compact.tmp`, `journal.jsonl.corrupt-<n>`, `journal.maint` | section 3.2 fields only. `journal.maint` is empty and only rotation and retention take it. A `corrupt` file is a copy of a generation that held a line that did not parse | section 3.2 |
 | `health.json` | per-agent hook health, no input snippets | overwritten |
 | `audit.log` | plan ID, item, identity, class, evidence kinds, result | rotates at 5 MB |
 | `inspection/` | sanitised plan reports | deleted at plan expiry |
@@ -253,6 +253,8 @@ A test plants fake API keys, user names and repository names in commands, paths,
 Every command that reads trusted state first checks the data directory: it must be a real directory owned by the current UID, and the secret must have no group or world access. A wrong mode on the directory is corrected. Anything else makes the command refuse with a specific message.
 
 Every file the tool writes (secret, journal, lock files, health, audit log, inspection reports, manifest, config) is opened with no-follow semantics and must be a regular file with a single link. New files are created exclusively. A symlink, hard link or non-regular file in their place makes the command refuse.
+
+The journal directory must be on a local APFS volume: `statfs` reports `f_fstypename` equal to `apfs` and `MNT_LOCAL` in `f_flags`. On any other volume the hook writes nothing and drops the record silently. Hook health, which records `unsupported_filesystem` and the file system name, and `agentdust status`, which prints the file system name, whether it is local and whether it is supported, are planned for M2. `Journal::status()` returns the same facts.
 
 `agentdust setup --remove --purge-data` removes the agent integrations first and verifies the removal. Only then does it delete the data directory. If removal fails, the manifest and secret stay so the user can retry.
 
@@ -356,7 +358,7 @@ Every normative "never", "must" or "refuse" in this document maps to a row above
 | Fuzz | `KERN_PROCARGS2` parser, journal decoder, hook payload parsers, sanitiser, config patchers |
 | Recorded fixtures | ground-truth labels: `true_owned_ended`, `true_live_owned`, `true_detached`, `true_managed`, `true_unknown` |
 | Live harness | spawns real process trees and signals only PIDs it created, including SIGTERM-ignoring and detaching children |
-| Stress | three concurrent journal writers, rotation under load, PID churn |
+| Stress | 3 and 16 concurrent journal writer processes with a rotator, a reader and retention running, PID churn |
 | Release | two-job reproducibility check, clean-account install checklist |
 
 Every pull request compiles all fuzz targets and runs their regression corpora. Before each release, the procargs, payload and config parsers are fuzzed for at least 10 minutes each. PID reuse is tested deterministically through a simulated process provider, because a live churn test can pass without any reuse happening.
@@ -374,5 +376,5 @@ CI on every pull request runs one Linux job (fmt, clippy, unit and property test
 | How each client renders and answers the typed-code form | M0 client matrix |
 | Which process anchors a Cursor conversation | M0 experiment |
 | Whether Cursor `sessionStart` env reaches shell processes | M0 experiment |
-| Journal format | M1 contention benchmark |
+| Journal format | M1 contention benchmark: one `O_APPEND` file, no lock for appenders and readers, an append recheck (docs/m1/adr-journal-format.md) |
 | Suspect age and idleness thresholds | M1 fixture corpus |
