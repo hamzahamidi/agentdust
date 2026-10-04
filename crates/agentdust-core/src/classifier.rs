@@ -32,7 +32,7 @@ pub enum Evidence {
     ManagedAgent,
     ManagedSystemPath,
     ManagedLaunchd,
-    ManagedLaunchdDescendant,
+    ManagedLaunchdChild,
     OwnedTag,
     OwnedAgentAlive,
     OwnedAgentUnverified,
@@ -57,7 +57,7 @@ impl Evidence {
         Evidence::ManagedAgent,
         Evidence::ManagedSystemPath,
         Evidence::ManagedLaunchd,
-        Evidence::ManagedLaunchdDescendant,
+        Evidence::ManagedLaunchdChild,
         Evidence::OwnedTag,
         Evidence::OwnedAgentAlive,
         Evidence::OwnedAgentUnverified,
@@ -82,7 +82,7 @@ impl Evidence {
             Evidence::ManagedAgent => "managed.deny.agent",
             Evidence::ManagedSystemPath => "managed.deny.system_path",
             Evidence::ManagedLaunchd => "managed.launchd",
-            Evidence::ManagedLaunchdDescendant => "managed.launchd_descendant",
+            Evidence::ManagedLaunchdChild => "managed.launchd_child",
             Evidence::OwnedTag => "owned.tag",
             Evidence::OwnedAgentAlive => "owned.agent_alive",
             Evidence::OwnedAgentUnverified => "owned.agent_unverified",
@@ -245,31 +245,17 @@ impl<'a> Context<'a> {
         }
         if self.launchd.is_some_and(|pids| pids.contains(&kernel.pid)) {
             evidence.push(Evidence::ManagedLaunchd);
-        } else if self.under_launchd_job(kernel.pid) {
-            evidence.push(Evidence::ManagedLaunchdDescendant);
+        } else if self.child_of_launchd_job(kernel.pid) {
+            evidence.push(Evidence::ManagedLaunchdChild);
         }
         evidence
     }
 
-    fn under_launchd_job(&self, pid: i32) -> bool {
-        let Some(jobs) = self.launchd else {
-            return false;
-        };
-        let mut seen = HashSet::new();
-        let mut current = pid;
-        for _ in 0..ANCESTOR_LIMIT {
-            let Some(&parent) = self.parents.get(&current) else {
-                return false;
-            };
-            if jobs.contains(&parent) {
-                return true;
-            }
-            if parent <= 1 || !seen.insert(parent) {
-                return false;
-            }
-            current = parent;
+    fn child_of_launchd_job(&self, pid: i32) -> bool {
+        match (self.launchd, self.parents.get(&pid)) {
+            (Some(jobs), Some(parent)) => jobs.contains(parent),
+            _ => false,
         }
-        false
     }
 
     fn is_agent(&self, process: &RawProcess) -> bool {
