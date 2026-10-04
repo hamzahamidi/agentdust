@@ -23,6 +23,7 @@ Release 0.1 adds the analysis and the approved cleanup for Claude Code. The Code
 | MCP approval probe: a typed-code form that changes nothing | Built |
 | Reproducible release pipeline | Proven in a dry run: two identical binaries, a deterministic tarball, a verified attestation ([report](docs/m0/report.md)) |
 | Homebrew distribution | Proven with a local tap in the dry run. No public tap or release yet |
+| `agentdust setup` for Claude Code (hooks in `settings.json`, the MCP server through the `claude` CLI, a diff and consent, `--check`, `--remove`) and `agentdust status` | Built ([setup](docs/m3/setup.md)) |
 | `doctor` (analysis), plan and apply (cleanup with approval) | Planned for 0.1 |
 
 ## How cleanup will work
@@ -45,6 +46,7 @@ True of the code today:
 
 - The release binary imports no socket calls, and the dependency tree has no networking crates.
 - The journal holds event kinds, session and tool identifiers, timestamps, the boot session and a keyed digest of the working directory, never the path. The digest is an HMAC under a random secret that stays in the data directory. A [privacy test](docs/m1/privacy-test.md) runs the hook for four events whose payloads carry sentinels in the command, a 5 MB response, the working directory, a transcript path, an unknown field and the environment, then reads every byte of every file in the data directory (secret, maintenance lock, journal and rotated copies) and every file the run left in the system temp directory. Only the session id may appear, and a journal key outside one list in the code fails the test. Another test sends a 9 MB tool response through the hook and checks that neither the output nor the command reaches the journal.
+- `setup` never edits a symlinked, hard-linked or non-regular `settings.json`, writes the file by rename with its mode kept and no backup copy, removes only entries its manifest says it created and whose value still matches, and trusts the `claude` CLI only after `claude mcp get` shows the exact registration.
 - The hook exits 0 and prints nothing, including on malformed input, an unwritable data directory and a data directory on a volume that is not local APFS, where it records nothing.
 - The journal decoder, the journal reader and the hook payload parser are [fuzzed](docs/m1/fuzzing.md) beside the `KERN_PROCARGS2` parser. Each target runs under a counting allocator and fails when memory is not bounded by the input or by what the call kept, and the decoder target checks that a record appended after any bytes is read. The seeds are replayed by the test suite and by the Linux CI job, and property tests check that a short write costs the record it cut and no other.
 - The live tests start real processes (some ignore SIGTERM, some detach into their own session, some outlive their parent) through a [harness](docs/m1/live-harness.md) that can only signal processes it started. It revalidates each one's identity before every signal and logs each signal sent.
@@ -57,6 +59,15 @@ Design for 0.1, not implemented yet:
 - The only action is `SIGTERM` to one PID.
 
 Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
+
+## Setting up Claude Code
+
+```bash
+agentdust setup
+agentdust status
+```
+
+`setup` prints a diff of `settings.json` and the `claude mcp add` command it will run, then asks before it writes anything (`--yes` approves without asking). It adds four hook entries (`SessionStart`, `SessionEnd`, and `PreToolUse` and `PostToolUse` for `Bash`) and registers the MCP server `agentdust`. It records what it added in a manifest, so `agentdust setup --remove` deletes only that, and `agentdust setup --check` exits 1 when the installation is missing or was modified. It does not edit a symlinked `settings.json`. A failed step is rolled back and the report says what was undone. The details are in [docs/m3/setup.md](docs/m3/setup.md).
 
 ## Running the development probe
 
