@@ -19,6 +19,7 @@ use crate::wait_until;
 static NEXT_HARNESS: AtomicU64 = AtomicU64::new(1);
 const READY: Duration = Duration::from_secs(60);
 const GONE: Duration = Duration::from_secs(60);
+const REPARENTED: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +50,12 @@ pub struct ProcHandle {
     index: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Tree {
+    pub parent: ProcHandle,
+    pub children: Vec<ProcHandle>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
@@ -73,6 +80,16 @@ pub enum Error {
     Signal { pid: i32, source: io::Error },
     #[error("spawn starts one process, use spawn_tree for a spec with children")]
     TreeRequested,
+    #[error("pid {child} is not a child of pid {parent} that this harness started: {reason}")]
+    UnexpectedChild {
+        parent: i32,
+        child: i32,
+        reason: &'static str,
+    },
+    #[error("pid {0} was not started by this harness as its own child, so it cannot be orphaned")]
+    NotADirectChild(i32),
+    #[error("the children of pid {0} were not reparented to launchd in time")]
+    NotReparented(i32),
     #[error("processes survived teardown: {0:?}")]
     Survivors(Vec<i32>),
 }
@@ -82,6 +99,7 @@ struct Entry {
     identity: ProcessIdentity,
     report: Report,
     child: Option<Child>,
+    parent: Option<usize>,
 }
 
 impl Entry {
@@ -91,6 +109,17 @@ impl Entry {
             identity,
             report,
             child: Some(child),
+            parent: None,
+        }
+    }
+
+    fn adopted(pid: i32, identity: ProcessIdentity, report: Report, parent: usize) -> Self {
+        Self {
+            pid,
+            identity,
+            report,
+            child: None,
+            parent: Some(parent),
         }
     }
 }
@@ -157,13 +186,65 @@ impl Harness {
         if spec.spawn > 0 {
             return Err(Error::TreeRequested);
         }
+        Ok(self.spawn_tree(spec)?.parent)
+    }
+
+    pub fn spawn_tree(&mut self, spec: &ProcSpec) -> Result<Tree, Error> {
         let mut launched = self.launch(spec)?;
         let report = self.await_report(&mut launched)?;
         let pid = launched.child().id() as i32;
         let identity = self.identify(pid)?;
+        let spec = spec.clone().report_file(&launched.report_path);
         self.entries
             .push(Entry::direct(pid, identity, report, launched.into_child()));
-        Ok(self.handle(self.entries.len() - 1))
+        let parent = self.entries.len() - 1;
+        let mut children = Vec::with_capacity(spec.spawn);
+        for index in 1..=spec.spawn {
+            let path = spec.child(index).report_file.unwrap_or_default();
+            let report = report::read(&path)?.ok_or(ReportError::Malformed(
+                "the parent reported before one of its children",
+            ))?;
+            children.push(self.adopt(parent, report)?);
+        }
+        Ok(Tree {
+            parent: self.handle(parent),
+            children,
+        })
+    }
+
+    pub fn orphan(&mut self, handle: ProcHandle) -> Result<(), Error> {
+        let index = handle.index;
+        let pid = self.entry(handle)?.pid;
+        if self.entries[index].child.is_none() {
+            return Err(Error::NotADirectChild(pid));
+        }
+        self.deliver(pid, Signal::Kill)?;
+        if let Some(child) = self.entries[index].child.as_mut() {
+            child.wait()?;
+        }
+        let orphans: Vec<&Entry> = self
+            .entries
+            .iter()
+            .filter(|entry| entry.parent == Some(index))
+            .collect();
+        let reparented = wait_until(
+            || {
+                orphans.iter().all(|entry| {
+                    let boot = &entry.identity.kernel.boot_session_uuid;
+                    match darwin::process_info(entry.pid, boot) {
+                        Ok(Some(info)) => info.ppid == 1,
+                        Ok(None) => true,
+                        Err(_) => false,
+                    }
+                })
+            },
+            REPARENTED,
+        );
+        if reparented {
+            Ok(())
+        } else {
+            Err(Error::NotReparented(pid))
+        }
     }
 
     pub fn signal(&mut self, handle: ProcHandle, signal: Signal) -> Result<(), Error> {
@@ -281,6 +362,30 @@ impl Harness {
             ProcessRead::Present(identity) => Ok(identity),
             read => Err(Error::Unidentified { pid, read }),
         }
+    }
+
+    fn adopt(&mut self, parent: usize, report: Report) -> Result<ProcHandle, Error> {
+        let parent_pid = self.entries[parent].pid;
+        let pid = report.pid;
+        let unexpected = |reason| Error::UnexpectedChild {
+            parent: parent_pid,
+            child: pid,
+            reason,
+        };
+        if report.ppid != parent_pid {
+            return Err(unexpected("its report names another parent"));
+        }
+        let identity = self.identify(pid)?;
+        if identity.evidence.exe_path.canonicalize().ok().as_deref() != Some(self.fixture.as_path()) {
+            return Err(unexpected("it is not running the fixture binary"));
+        }
+        let boot = &identity.kernel.boot_session_uuid;
+        match darwin::process_info(pid, boot)? {
+            Some(info) if info.ppid == parent_pid => {}
+            _ => return Err(unexpected("its live parent is not the registered parent")),
+        }
+        self.entries.push(Entry::adopted(pid, identity, report, parent));
+        Ok(self.handle(self.entries.len() - 1))
     }
 
     fn require_same_process(&self, pid: i32, identity: &ProcessIdentity) -> Result<(), Error> {
