@@ -7,6 +7,7 @@ use std::str::FromStr;
 use std::time::Instant;
 
 use crate::candidates::Candidate;
+use crate::durability::{DurabilityReport, Mode, measure, render_durability};
 use crate::fsinfo;
 use crate::harness::{Cell, measure_reader_cost, run_cell};
 use crate::report::{CellRuns, RunReport, load_average, render_markdown, to_compact_json};
@@ -17,6 +18,7 @@ const USAGE: &str = "usage: journal-bench run [--repeats N] [--records N] [--rea
                          [--rotate-period-ms N] [--grace-ms N] [--sync on|off]
        journal-bench render PATH
        journal-bench fs PATH
+       journal-bench durability [--samples N] [--size N] [--root DIR] [--json PATH]
        journal-bench writer --candidate A|C|C2|D --dir DIR --writer N --records N --size N [--pace-us N]
        journal-bench reader --candidate A|C|C2|D --dir DIR --size N --stop-file PATH [--interval-ms N]
        journal-bench rotator --candidate A|C|C2|D --dir DIR --stop-file PATH [--period-ms N] [--grace-ms N]
@@ -56,6 +58,7 @@ fn dispatch(args: &[String]) -> Result<(), CliError> {
         "run" => run_all(&Flags::parse(rest, &RUN_FLAGS)?),
         "render" => render(rest),
         "fs" => facts(rest),
+        "durability" => durability(&Flags::parse(rest, &DURABILITY_FLAGS)?),
         "writer" => writer(&Flags::parse(rest, &WRITER_FLAGS)?),
         "reader" => reader(&Flags::parse(rest, &READER_FLAGS)?),
         "rotator" => rotator(&Flags::parse(rest, &ROTATOR_FLAGS)?),
@@ -78,6 +81,7 @@ const RUN_FLAGS: [&str; 13] = [
     "--grace-ms",
     "--sync",
 ];
+const DURABILITY_FLAGS: [&str; 4] = ["--samples", "--size", "--root", "--json"];
 const WRITER_FLAGS: [&str; 6] = [
     "--candidate",
     "--dir",
@@ -335,4 +339,43 @@ fn rotator(flags: &Flags) -> Result<(), CliError> {
         return Ok(());
     }
     print_json(&run_rotator(&plan))
+}
+
+fn durability(flags: &Flags) -> Result<(), CliError> {
+    let samples: u64 = flags.number("--samples", Some(200))?;
+    let size: usize = flags.number("--size", Some(150))?;
+    if samples == 0 {
+        return Err(CliError::Usage);
+    }
+    let root = match flags.0.get("--root") {
+        Some(root) => PathBuf::from(root),
+        None => std::env::temp_dir().join(format!("agentdust-durability-{}", std::process::id())),
+    };
+    let started = Instant::now();
+    let load_before = load_average();
+    fs::create_dir_all(&root)?;
+    let filesystem = fsinfo::probe(&root)
+        .map(|facts| facts.describe())
+        .unwrap_or_else(|_| "unavailable".to_owned());
+    let mut rows = Vec::new();
+    for mode in Mode::ALL {
+        let dir = root.join(mode.label());
+        let row = measure(&dir, mode, samples, size);
+        let _ = fs::remove_dir_all(&dir);
+        rows.push(row?);
+    }
+    let _ = fs::remove_dir(&root);
+    let report = DurabilityReport {
+        load_before,
+        load_after: load_average(),
+        filesystem,
+        elapsed_secs: (started.elapsed().as_secs_f64() * 10.0).round() / 10.0,
+        rows,
+    };
+    print_text(&render_durability(&report))?;
+    if let Some(path) = flags.0.get("--json") {
+        let json = serde_json::to_string_pretty(&report).map_err(io::Error::other)?;
+        fs::write(path, format!("{json}\n"))?;
+    }
+    Ok(())
 }
