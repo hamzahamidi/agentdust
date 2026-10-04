@@ -1,0 +1,3 @@
+{"v":1,"kind":"session_start","agent":"claude","session_id":"a","wall_ts":1800000000000,"mono_ts":100,"boot":"boot-a"}
+{"v":1,"kind":"shell_sta{"v":1,"kind":"shell_end","agent":"claude","session_id":"a","tool_use_id":"toolu_1","wall_ts":1800000000020,"mono_ts":120,"boot":"boot-a","cwd_key":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+{"v":1,"kind":"session_end","agent":"claude","session_id":"a","wall_ts":1800000000030,"mono_ts":130,"boot":"boot-a"}

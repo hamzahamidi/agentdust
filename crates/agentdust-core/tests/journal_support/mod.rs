@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -374,4 +374,48 @@ impl FrameWriter for RemoveAfterWrite<'_> {
         }
         Ok(written)
     }
+}
+
+pub struct Dribble<'a> {
+    pub rest: &'a [u8],
+    pub chunk: usize,
+}
+
+impl Read for Dribble<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.chunk.min(buf.len()).min(self.rest.len());
+        buf[..n].copy_from_slice(&self.rest[..n]);
+        self.rest = &self.rest[n..];
+        Ok(n)
+    }
+}
+
+pub fn non_empty_segments(bytes: &[u8]) -> usize {
+    bytes
+        .split(|byte| *byte == 0x1e || *byte == b'\n')
+        .filter(|segment| !segment.is_empty())
+        .count()
+}
+
+pub fn presentation_order_violation(records: &[Record]) -> Option<String> {
+    let mut first_wall: HashMap<&str, u64> = HashMap::new();
+    for record in records {
+        first_wall
+            .entry(record.boot.as_str())
+            .and_modify(|first| *first = (*first).min(record.wall_ts))
+            .or_insert(record.wall_ts);
+    }
+    let mut boots: Vec<(u64, &str)> = first_wall.into_iter().map(|(boot, wall)| (wall, boot)).collect();
+    boots.sort_unstable();
+    let rank: HashMap<&str, usize> = boots
+        .iter()
+        .enumerate()
+        .map(|(position, (_, boot))| (*boot, position))
+        .collect();
+    let key = |record: &Record| (rank[record.boot.as_str()], record.mono_ts, record.wall_ts);
+    records.windows(2).enumerate().find_map(|(at, pair)| {
+        let before = (key(&pair[0]), &pair[0]);
+        let after = (key(&pair[1]), &pair[1]);
+        (before >= after).then(|| format!("records {at} and {} are not in strictly increasing order", at + 1))
+    })
 }

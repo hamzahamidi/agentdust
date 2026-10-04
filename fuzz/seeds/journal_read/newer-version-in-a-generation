@@ -1,0 +1,3 @@
+{"v":2,"kind":"future"}
+{"v":1,"kind":"session_start","agent":"claude","session_id":"a","wall_ts":1800000000000,"mono_ts":100,"boot":"boot-a"}
+{"v":1,"kind":"shell_start","agent":"claude","session_id":"a","tool_use_id":"toolu_1","wall_ts":1800000000010,"mono_ts":110,"boot":"boot-a","cwd_key":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}

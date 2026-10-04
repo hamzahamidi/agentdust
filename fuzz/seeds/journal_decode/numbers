@@ -1,0 +1,7 @@
+{"v":1,"kind":"session_start","agent":"claude","session_id":"n","wall_ts":18446744073709551615,"mono_ts":2,"boot":"b"}
+{"v":1,"kind":"session_start","agent":"claude","session_id":"n","wall_ts":18446744073709551616,"mono_ts":2,"boot":"b"}
+{"v":1,"kind":"session_start","agent":"claude","session_id":"n","wall_ts":-1,"mono_ts":2,"boot":"b"}
+{"v":1,"kind":"session_start","agent":"claude","session_id":"n","wall_ts":1.5,"mono_ts":2,"boot":"b"}
+{"v":1,"kind":"session_start","agent":"claude","session_id":"n","wall_ts":1e3,"mono_ts":2,"boot":"b"}
+{"v":1,"kind":"session_start","agent":"claude","session_id":"n","wall_ts":01,"mono_ts":2,"boot":"b"}
+{"v":1,"kind":"session_start","agent":"claude","session_id":"n","wall_ts":1,"mono_ts":2,"boot":"b"}
