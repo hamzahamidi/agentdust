@@ -5,6 +5,7 @@ pub mod cwd;
 pub mod digest;
 mod entropy;
 pub mod identity;
+pub mod inventory;
 pub mod journal;
 pub mod paths;
 pub mod procargs;

@@ -37,13 +37,13 @@ impl SessionTag {
     }
 
     pub fn key(&self, secret: &Secret) -> SessionTagKey {
-        SessionTagKey::try_from(keyed_digest(
-            secret.as_bytes(),
-            Domain::Session,
-            self.0.as_bytes(),
-        ))
-        .expect("a keyed digest is 64 lowercase hexadecimal characters")
+        key_of(secret, self.0.as_bytes())
     }
+}
+
+pub fn key_of(secret: &Secret, raw: &[u8]) -> SessionTagKey {
+    SessionTagKey::try_from(keyed_digest(secret.as_bytes(), Domain::Session, raw))
+        .expect("a keyed digest is 64 lowercase hexadecimal characters")
 }
 
 impl fmt::Debug for SessionTag {
