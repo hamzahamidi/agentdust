@@ -1,4 +1,4 @@
-use agentdust_core::digest::{Domain, hmac_sha256, keyed_digest};
+use agentdust_core::digest::{Domain, hmac_sha256, keyed_digest, sha256_hex};
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -202,4 +202,20 @@ fn the_digest_does_not_contain_the_data_or_the_secret() {
     let digest = keyed_digest(&key(), Domain::Cwd, b"sentinel-project-name");
     assert!(!digest.contains("sentinel"));
     assert!(!digest.contains(&hex(&key())));
+}
+
+#[test]
+fn sha256_hex_matches_the_fips_180_vectors() {
+    assert_eq!(
+        sha256_hex(b""),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+    assert_eq!(
+        sha256_hex(b"abc"),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    assert_eq!(
+        sha256_hex(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
+        "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+    );
 }
