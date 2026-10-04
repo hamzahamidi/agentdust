@@ -222,6 +222,7 @@ fn secret_shaped(run: &str) -> bool {
         .iter()
         .any(|prefix| run.starts_with(prefix) && run.len() >= prefix.len() + PREFIXED_TAIL_MIN);
     let long = run.len() >= LONG_TOKEN_MIN
+        && run.bytes().all(|byte| byte.is_ascii_alphanumeric())
         && run.bytes().any(|byte| byte.is_ascii_digit())
         && run.bytes().any(|byte| byte.is_ascii_alphabetic());
     prefixed || long
