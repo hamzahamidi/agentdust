@@ -9,7 +9,7 @@ AgentDust is a macOS tool in development. It will find the processes that AI cod
 
 Agents start dev servers, MCP servers and helpers. When a session ends or crashes, some of them keep running under `launchd`, holding memory, ports and sometimes CPU. The upstream reports are open: [anthropics/claude-code#1935](https://github.com/anthropics/claude-code/issues/1935) and [openai/codex#21008](https://github.com/openai/codex/issues/21008).
 
-Security and privacy: [SECURITY.md](SECURITY.md) and the [section below](#security-and-privacy).
+Security and privacy: [SECURITY.md](SECURITY.md), the [threat model](docs/threat-model.md) and the [section below](#security-and-privacy).
 
 ## Status
 
