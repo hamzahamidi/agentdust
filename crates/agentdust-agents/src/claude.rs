@@ -5,11 +5,14 @@ use serde::Deserialize;
 use thiserror::Error;
 
 pub const MAX_ID_LEN: usize = 256;
+const SHELL_TOOL: &str = "Bash";
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct HookEvent {
     pub session_id: String,
     pub hook_event_name: String,
+    #[serde(default)]
+    pub tool_name: Option<String>,
     #[serde(default)]
     pub tool_use_id: Option<String>,
     #[serde(default)]
@@ -38,11 +41,12 @@ pub fn parse_event(reader: impl Read) -> Result<HookEvent, EventError> {
 }
 
 pub fn journal_kind(event: &HookEvent) -> Option<Kind> {
+    let shell = event.tool_name.as_deref() == Some(SHELL_TOOL);
     match event.hook_event_name.as_str() {
         "SessionStart" => Some(Kind::SessionStart),
         "SessionEnd" => Some(Kind::SessionEnd),
-        "PreToolUse" => Some(Kind::ShellStart),
-        "PostToolUse" => Some(Kind::ShellEnd),
+        "PreToolUse" if shell => Some(Kind::ShellStart),
+        "PostToolUse" if shell => Some(Kind::ShellEnd),
         _ => None,
     }
 }
