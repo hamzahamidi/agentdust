@@ -115,11 +115,11 @@ fn a_result_entry_is_one_json_line_with_the_fixed_keys() {
 }
 
 #[test]
-fn a_signal_entry_has_no_result_yet_and_a_reason_is_recorded() {
+fn an_attempt_entry_has_no_result_yet_and_a_reason_is_recorded() {
     let dir = TempDir::absent("audit-two");
     let log = AuditLog::new(&dir, AUDIT_MAX_BYTES);
     let item = owned(7);
-    log.append(&Entry::signalling(PLAN, &item, &kernel(7))).unwrap();
+    log.append(&Entry::attempt(PLAN, &item, &kernel(7))).unwrap();
     log.append(&Entry::result(
         PLAN,
         &item,
@@ -129,7 +129,7 @@ fn a_signal_entry_has_no_result_yet_and_a_reason_is_recorded() {
     ))
     .unwrap();
     let entries = parsed(&dir.join(AUDIT_FILE));
-    assert_eq!(entries[0]["phase"], "signal");
+    assert_eq!(entries[0]["phase"], "attempt");
     assert_eq!(entries[0]["result"], Value::Null);
     assert_eq!(entries[1]["phase"], "result");
     assert_eq!(entries[1]["result"], "revalidation_failed");
@@ -161,7 +161,7 @@ fn the_directory_and_file_are_created_private_and_entries_append() {
     let dir = TempDir::absent("audit-modes");
     let log = AuditLog::new(&dir, AUDIT_MAX_BYTES);
     for pid in 1..=3 {
-        log.append(&Entry::signalling(PLAN, &owned(pid + 100), &kernel(pid + 100)))
+        log.append(&Entry::attempt(PLAN, &owned(pid + 100), &kernel(pid + 100)))
             .unwrap();
     }
     assert_eq!(mode_of(&dir), 0o700);
@@ -279,7 +279,7 @@ fn writers_that_rotate_together_leave_only_whole_lines_within_the_bound() {
 fn unsafe_files_make_the_append_refuse_and_write_nothing() {
     let dir = TempDir::private("audit-unsafe");
     let log = AuditLog::new(&dir, AUDIT_MAX_BYTES);
-    let entry = Entry::signalling(PLAN, &owned(1), &kernel(1));
+    let entry = Entry::attempt(PLAN, &owned(1), &kernel(1));
 
     let elsewhere = dir.join("elsewhere");
     fs::write(&elsewhere, b"keep").unwrap();
@@ -314,7 +314,7 @@ fn a_data_directory_that_is_a_link_or_loose_makes_the_append_refuse() {
     let parent = TempDir::private("audit-parent");
     let link = parent.join("data");
     symlink(real.path(), &link).unwrap();
-    let entry = Entry::signalling(PLAN, &owned(1), &kernel(1));
+    let entry = Entry::attempt(PLAN, &owned(1), &kernel(1));
     assert!(matches!(
         AuditLog::new(&link, AUDIT_MAX_BYTES).append(&entry),
         Err(AuditError::Refused(_))
