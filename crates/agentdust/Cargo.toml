@@ -10,6 +10,8 @@ publish.workspace = true
 agentdust-core.workspace = true
 agentdust-agents.workspace = true
 agentdust-mcp.workspace = true
+libc.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]

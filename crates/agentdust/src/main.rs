@@ -1,3 +1,4 @@
+mod apply;
 mod doctor;
 mod hook;
 
@@ -14,13 +15,14 @@ fn main() -> ExitCode {
         ["mcp"] => mcp(),
         ["doctor"] => doctor::run(false),
         ["doctor", "--json"] => doctor::run(true),
+        ["apply"] => apply::run(),
         ["version"] => {
             println!("agentdust {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         _ => {
             eprintln!(
-                "usage: agentdust hook claude | agentdust mcp | agentdust doctor [--json] | agentdust version"
+                "usage: agentdust hook claude | agentdust mcp | agentdust doctor [--json] | agentdust apply | agentdust version"
             );
             ExitCode::from(2)
         }
