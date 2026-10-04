@@ -269,6 +269,29 @@ fn the_json_never_holds_the_command_the_directory_or_a_path() {
     }
 }
 
+#[test]
+fn the_raw_session_tag_and_its_key_are_in_no_output_and_no_file_of_the_data_directory() {
+    let world = World::new("doctor-tag");
+    let mut agent = world.agent();
+    world.record_session(&agent);
+    agent.end();
+    let leftover = world.leftover(true, &[]);
+    let json = String::from_utf8(world.doctor(&["--json"]).stdout).unwrap();
+    let text = String::from_utf8(world.doctor(&[]).stdout).unwrap();
+    let tag = world.tag.as_str().to_owned();
+    let key = world.tag.key(&world.secret).as_str().to_owned();
+    assert!(json.contains("owned-ended") && text.contains("owned-ended"));
+    for (name, output) in [("json", &json), ("text", &text)] {
+        assert!(!output.contains(&tag), "the tag is in the {name} output");
+        assert!(!output.contains(&key), "the key is in the {name} output");
+    }
+    for entry in fs::read_dir(&world.data).unwrap() {
+        let bytes = fs::read(entry.unwrap().path()).unwrap();
+        assert!(!bytes.windows(tag.len()).any(|window| window == tag.as_bytes()));
+    }
+    assert!(leftover.alive());
+}
+
 struct Cleanup(PathBuf);
 
 impl Drop for Cleanup {
