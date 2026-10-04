@@ -140,6 +140,32 @@ class CheckerTest(unittest.TestCase):
         found = self.problems(build_model(rows=rows))
         self.assertEqual(len(found), 2, found)
 
+    def test_an_id_that_prose_mentions_but_no_row_claims_is_not_covered(self):
+        rows = [GOOD_ROWS[0], ("Typed code", "none", "planned M3", "a planned test")]
+        problem = self.only_problem(build_model(rows=rows, extra="S2 is the rule about typed codes."))
+        self.assertIn("S2", problem)
+
+    def test_an_id_in_the_tests_cell_of_a_row_is_not_covered(self):
+        rows = [GOOD_ROWS[0], ("Typed code", "none", "planned M3", "the S2 contract test")]
+        problem = self.only_problem(build_model(rows=rows))
+        self.assertIn("S2", problem)
+
+    def test_an_id_in_a_table_without_a_status_column_is_not_covered(self):
+        rows = [GOOD_ROWS[0], ("Typed code", "none", "planned M3", "a planned test")]
+        extra = "| Name | Requirement |\n| --- | --- |\n| Typed code | S2 |"
+        problem = self.only_problem(build_model(rows=rows, extra=extra))
+        self.assertIn("S2", problem)
+
+    def test_an_id_in_the_requirement_cell_of_a_planned_row_is_covered(self):
+        rows = [("Refuse symlinks", "none", "implemented", f"`{TEST_FILE}`"), ("Typed codes", "S1, S2", "planned M3", "x")]
+        self.assertEqual(self.problems(build_model(rows=rows)), [])
+
+    def test_an_unknown_id_in_a_requirement_cell_is_reported_once_as_unknown(self):
+        rows = [("Refuse symlinks", "S1, S99", "implemented", f"`{TEST_FILE}`"), ("Typed code", "S2", "planned M3", "x")]
+        found = self.problems(build_model(rows=rows))
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("S99", found[0])
+
     def test_a_spec_without_requirement_ids_is_a_problem_and_not_a_pass(self):
         found = self.problems(build_model(), spec="# Design\n\n### 9.1 Safety\n\nnothing here\n")
         self.assertTrue(any("9.1" in p for p in found), found)
