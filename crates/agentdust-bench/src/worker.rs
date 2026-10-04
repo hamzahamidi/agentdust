@@ -140,6 +140,7 @@ pub struct RotatorPlan {
     pub grace_ms: u64,
     pub budget_ms: u64,
     pub final_budget_ms: u64,
+    pub sync: bool,
     pub stop_file: PathBuf,
 }
 
@@ -190,6 +191,7 @@ pub fn run_rotator_with(plan: &RotatorPlan, mut on_cycle: impl FnMut(u64)) -> Ro
             &plan.dir,
             Options {
                 maintenance_budget: Duration::from_millis(budget),
+                sync: plan.sync,
             },
         );
         let _ = journal.append(&marker(outcome.cycles, clock::wall_ms(), clock::monotonic_ns()));

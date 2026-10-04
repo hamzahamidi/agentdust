@@ -643,7 +643,12 @@ fn turning_the_syncs_off_changes_no_file_the_maintenance_leaves_behind() {
         let state = |sync: bool| {
             let scratch = Scratch::new("sync");
             let dir = scratch.path();
-            plant(dir, "journal.10.jsonl", candidate, &[named("a", 1), expired(1)]);
+            plant(
+                dir,
+                "journal.10.jsonl",
+                candidate,
+                &[named("a", 1), expired(1), named("a2", 4), named("a3", 5)],
+            );
             plant(
                 dir,
                 "journal.20.jsonl",

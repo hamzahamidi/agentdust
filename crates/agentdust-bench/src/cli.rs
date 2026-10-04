@@ -14,13 +14,13 @@ use crate::worker::{ReaderPlan, RotatorPlan, WriterPlan, run_reader, run_rotator
 
 const USAGE: &str = "usage: journal-bench run [--repeats N] [--records N] [--reader-records N] [--budget-secs N] [--json PATH] [--root DIR]
                          [--sizes N,N] [--writers N,N] [--candidates A,C,C2,D] [--rotator on|off]
-                         [--rotate-period-ms N] [--grace-ms N]
+                         [--rotate-period-ms N] [--grace-ms N] [--sync on|off]
        journal-bench render PATH
        journal-bench fs PATH
        journal-bench writer --candidate A|C|C2|D --dir DIR --writer N --records N --size N [--pace-us N]
        journal-bench reader --candidate A|C|C2|D --dir DIR --size N --stop-file PATH [--interval-ms N]
        journal-bench rotator --candidate A|C|C2|D --dir DIR --stop-file PATH [--period-ms N] [--grace-ms N]
-                         [--budget-ms N] [--final-budget-ms N]";
+                         [--budget-ms N] [--final-budget-ms N] [--sync on|off]";
 
 const DEFAULT_SIZES: [usize; 2] = [150, 4000];
 const DEFAULT_WRITER_COUNTS: [u32; 2] = [3, 16];
@@ -63,7 +63,7 @@ fn dispatch(args: &[String]) -> Result<(), CliError> {
     }
 }
 
-const RUN_FLAGS: [&str; 12] = [
+const RUN_FLAGS: [&str; 13] = [
     "--repeats",
     "--records",
     "--reader-records",
@@ -76,6 +76,7 @@ const RUN_FLAGS: [&str; 12] = [
     "--rotator",
     "--rotate-period-ms",
     "--grace-ms",
+    "--sync",
 ];
 const WRITER_FLAGS: [&str; 6] = [
     "--candidate",
@@ -86,7 +87,7 @@ const WRITER_FLAGS: [&str; 6] = [
     "--pace-us",
 ];
 const READER_FLAGS: [&str; 5] = ["--candidate", "--dir", "--size", "--stop-file", "--interval-ms"];
-const ROTATOR_FLAGS: [&str; 7] = [
+const ROTATOR_FLAGS: [&str; 8] = [
     "--candidate",
     "--dir",
     "--stop-file",
@@ -94,6 +95,7 @@ const ROTATOR_FLAGS: [&str; 7] = [
     "--grace-ms",
     "--budget-ms",
     "--final-budget-ms",
+    "--sync",
 ];
 
 struct Flags(HashMap<String, String>);
@@ -160,6 +162,7 @@ fn run_all(flags: &Flags) -> Result<(), CliError> {
     let rotate_period_ms: u64 = flags.number("--rotate-period-ms", Some(10))?;
     let grace_ms: u64 = flags.number("--grace-ms", Some(0))?;
     let rotator = flags.switch("--rotator", true)?;
+    let sync = flags.switch("--sync", true)?;
     let sizes = flags.items("--sizes", DEFAULT_SIZES.to_vec(), |item| item.parse().ok())?;
     let writer_counts = flags.items("--writers", DEFAULT_WRITER_COUNTS.to_vec(), |item| {
         item.parse().ok().filter(|count| *count >= 1)
@@ -212,6 +215,7 @@ fn run_all(flags: &Flags) -> Result<(), CliError> {
                 pace_us: 0,
                 rotate_period_ms,
                 grace_ms,
+                sync,
             };
             runs.runs.push(run_cell(&exe, &root, &cell)?);
         }
@@ -236,6 +240,7 @@ fn run_all(flags: &Flags) -> Result<(), CliError> {
         load_before,
         load_after: load_average(),
         filesystem,
+        maintenance_sync: sync,
         repeats,
         elapsed_secs: (started.elapsed().as_secs_f64() * 10.0).round() / 10.0,
         cells,
@@ -323,6 +328,7 @@ fn rotator(flags: &Flags) -> Result<(), CliError> {
         grace_ms: flags.number("--grace-ms", Some(0))?,
         budget_ms: flags.number("--budget-ms", Some(50))?,
         final_budget_ms: flags.number("--final-budget-ms", Some(10_000))?,
+        sync: flags.switch("--sync", true)?,
         stop_file: PathBuf::from(flags.text("--stop-file")?),
     };
     if !wait_for_go()? {

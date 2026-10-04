@@ -33,6 +33,7 @@ pub struct Cell {
     pub pace_us: u64,
     pub rotate_period_ms: u64,
     pub grace_ms: u64,
+    pub sync: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -198,6 +199,7 @@ fn run_cell_in(exe: &Path, data: &Path, stop: &Path, cell: &Cell) -> io::Result<
                     ("--grace-ms", text(cell.grace_ms)),
                     ("--budget-ms", text(ROTATOR_BUDGET_MS)),
                     ("--final-budget-ms", text(ROTATOR_FINAL_BUDGET_MS)),
+                    ("--sync", text(if cell.sync { "on" } else { "off" })),
                 ],
             ),
         )?)
