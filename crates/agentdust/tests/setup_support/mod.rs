@@ -1,10 +1,13 @@
 #![allow(dead_code)]
 
-use std::fs::{self, DirBuilder};
+use std::fs::{self, DirBuilder, File};
+use std::io::{ErrorKind, Read, Write};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 pub const BIN: &str = env!("CARGO_BIN_EXE_agentdust");
 
@@ -170,4 +173,67 @@ pub fn hook_command() -> String {
 
 pub fn read(path: &Path) -> String {
     fs::read_to_string(path).unwrap()
+}
+
+pub const PROMPT: &str = "Apply these changes? [y/N] ";
+const TERMINAL_GUARD: Duration = Duration::from_secs(60);
+
+fn open_pty() -> (File, OwnedFd) {
+    let (mut master, mut slave) = (0, 0);
+    // SAFETY: both out pointers are valid for the call and the remaining arguments may be null.
+    let status = unsafe {
+        libc::openpty(
+            &mut master,
+            &mut slave,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(status, 0);
+    // SAFETY: openpty returned two new descriptors that nothing else owns.
+    let (master, slave) = unsafe { (OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
+    // SAFETY: the descriptor is open and F_SETFL with O_NONBLOCK changes only its own flags.
+    assert_eq!(
+        unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK) },
+        0
+    );
+    (File::from(master), slave)
+}
+
+pub fn run_on_terminal(sandbox: &Sandbox, args: &[&str], answer: &str) -> (ExitStatus, String) {
+    let (mut master, slave) = open_pty();
+    let mut command = sandbox.command(args, "honest");
+    command
+        .stdin(Stdio::from(slave.try_clone().unwrap()))
+        .stdout(Stdio::from(slave.try_clone().unwrap()))
+        .stderr(Stdio::from(slave.try_clone().unwrap()));
+    let mut child = command.spawn().unwrap();
+    drop(command);
+    drop(slave);
+    let deadline = Instant::now() + TERMINAL_GUARD;
+    let mut seen = Vec::new();
+    let mut answered = false;
+    let mut chunk = [0u8; 4096];
+    loop {
+        match master.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(count) => seen.extend_from_slice(&chunk[..count]),
+            Err(err) if err.kind() == ErrorKind::WouldBlock => std::thread::sleep(Duration::from_millis(10)),
+            Err(_) => break,
+        }
+        if !answered && String::from_utf8_lossy(&seen).contains(PROMPT) {
+            master.write_all(answer.as_bytes()).unwrap();
+            answered = true;
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            panic!(
+                "the command did not finish on the terminal:\n{}",
+                String::from_utf8_lossy(&seen)
+            );
+        }
+    }
+    let status = child.wait().unwrap();
+    (status, String::from_utf8_lossy(&seen).into_owned())
 }

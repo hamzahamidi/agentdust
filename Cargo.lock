@@ -9,6 +9,7 @@ dependencies = [
  "agentdust-agents",
  "agentdust-core",
  "agentdust-mcp",
+ "libc",
  "serde_json",
  "tokio",
 ]

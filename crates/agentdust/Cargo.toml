@@ -13,4 +13,5 @@ agentdust-mcp.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+libc.workspace = true
 serde_json.workspace = true
