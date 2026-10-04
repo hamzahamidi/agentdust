@@ -36,6 +36,7 @@ pub enum SafeOpenError {
 
 enum Shape {
     File,
+    SharedFile,
     Dir,
 }
 
@@ -46,6 +47,22 @@ pub fn open_file(path: &Path, access: Access) -> Result<File, SafeOpenError> {
 pub fn open_file_as(path: &Path, access: Access, owner: u32) -> Result<File, SafeOpenError> {
     let file = open_without_following(path, access)?;
     verify(&file.metadata()?, Shape::File, owner)?;
+    Ok(file)
+}
+
+pub fn open_shared_append(path: &Path) -> Result<File, SafeOpenError> {
+    open_shared_append_as(path, current_uid())
+}
+
+pub fn open_shared_append_as(path: &Path, owner: u32) -> Result<File, SafeOpenError> {
+    let file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .mode(FILE_MODE)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_NOCTTY)
+        .open(path)
+        .map_err(refusal)?;
+    verify(&file.metadata()?, Shape::SharedFile, owner)?;
     Ok(file)
 }
 
@@ -85,16 +102,20 @@ fn open_without_following(path: &Path, access: Access) -> Result<File, SafeOpenE
         Access::Append => options.append(true),
         Access::Create => options.write(true).create_new(true).mode(FILE_MODE),
     };
-    options.open(path).map_err(|err| match err.raw_os_error() {
+    options.open(path).map_err(refusal)
+}
+
+fn refusal(err: io::Error) -> SafeOpenError {
+    match err.raw_os_error() {
         Some(libc::ELOOP) => SafeOpenError::Symlink,
         Some(libc::ENXIO | libc::EISDIR) => SafeOpenError::NotRegular,
         _ => SafeOpenError::Io(err),
-    })
+    }
 }
 
 fn verify(metadata: &Metadata, shape: Shape, owner: u32) -> Result<(), SafeOpenError> {
     let allowed = match shape {
-        Shape::File => {
+        Shape::File | Shape::SharedFile => {
             if !metadata.file_type().is_file() {
                 return Err(SafeOpenError::NotRegular);
             }
@@ -103,7 +124,10 @@ fn verify(metadata: &Metadata, shape: Shape, owner: u32) -> Result<(), SafeOpenE
                     links: metadata.nlink(),
                 });
             }
-            FILE_MODE
+            match shape {
+                Shape::SharedFile => PERMISSION_BITS,
+                _ => FILE_MODE,
+            }
         }
         Shape::Dir => {
             if !metadata.file_type().is_dir() {
