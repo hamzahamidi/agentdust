@@ -220,7 +220,7 @@ Spec 3.2 and 4.4 describe a `flock` taken by every journal writer. The code foll
 | The inspection report (0600) holds sanitised display data and no approval state, cannot be passed back to `apply`, is deleted at expiry, and stale copies are removed at startup | 6.1 | none | planned M3 | Contract tests: a report passed to `apply` is refused, and startup removes stale reports |
 | After approval each item is reclassified from scratch, including managed detection, and a change to a less certain class aborts the item | 6.4 | S6 | planned M3 | Live tests: a process becomes managed, and a process loses its evidence, during approval |
 | `apply = false`, or a configuration file that exists and cannot be read or parsed, refuses everything for both MCP and terminal apply. The setting is read when `apply` runs | 6.5 | S21 | planned M3 | Contract and PTY tests with the switch set and with a malformed configuration |
-| Evidence for an active session is pinned when the journal is trimmed, and the loss of such evidence is listed in the `prune` report as degraded provenance | 3.2 | none | implemented | `crates/agentdust-core/tests/journal_retention.rs`, `crates/agentdust-core/tests/journal_retain_rules.rs` |
+| Evidence for an active session is pinned when the journal is trimmed, and the loss of such evidence is listed in the `prune` report as degraded provenance. A session is active unless its last lifecycle record is a `session_end`, so a session resumed after its end is pinned again | 3.2 | none | implemented | `crates/agentdust-core/tests/journal_retention.rs`, `crates/agentdust-core/tests/journal_retain_rules.rs` |
 | `doctor` shows degraded provenance and owned classes follow it | 3.2, 6.5 | none | planned M2 | Doctor output for a journal trimmed under its cap |
 
 The identity check right before the signal (section 5) is what catches an exit and PID reuse since the plan was made.
@@ -229,6 +229,7 @@ The identity check right before the signal (section 5) is what catches an exit a
 
 - The person approves what was displayed, using live data read at display time (3.5). A plan can still be 10 minutes old when it is applied, and a code stays valid for 2 minutes.
 - Revalidation compares five identity fields and the class. It cannot see that the user started to rely on a process after the plan was made, when nothing it compares has changed.
+- Retention knows a session by agent, session id and boot, because M1 records carry no agent identity. Every `session_start` after an end reopens the session, so a late or duplicate start pins evidence that spec 3.3 would treat as ended. That errs toward keeping evidence. The M2 agent identity allows the finer scope.
 - `degraded` is a list in the `prune` report. It is not written to the journal, so something has to carry it to `doctor`.
 
 ## 8. Compromised release artifact
