@@ -2,6 +2,7 @@ mod common;
 
 use std::ffi::OsStr;
 use std::fs;
+use std::os::unix::ffi::OsStrExt;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -213,6 +214,41 @@ fn an_unknown_agent_hook_exits_zero_silently() {
     assert_eq!(journal::read(&dir).unwrap().records.len(), 0);
 }
 
+fn run_with_a_non_utf8_argument(dir: &std::path::Path, input: &[u8]) -> std::process::Output {
+    let args = [
+        OsStr::new("hook"),
+        OsStr::new("claude"),
+        OsStr::from_bytes(&[0xff]),
+    ];
+    run_hook_with(args, &[("AGENTDUST_DATA_DIR", dir.as_os_str())], None, input)
+}
+
+#[test]
+fn a_non_utf8_argument_exits_zero_silently() {
+    let dir = scratch_dir("non-utf8-arg");
+    let output = run_with_a_non_utf8_argument(&dir, &pre_tool_use("s1", "toolu_1"));
+    assert!(output.status.success(), "{:?}", output.status);
+    assert!(output.stdout.is_empty());
+    assert!(
+        output.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(journal::read(&dir).unwrap().records.len(), 0);
+}
+
+#[test]
+fn a_non_utf8_argument_still_lets_the_host_finish_writing() {
+    let dir = scratch_dir("non-utf8-arg-large");
+    let padding = "x".repeat(1_000_000);
+    let input = format!(
+        r#"{{"session_id":"s1","hook_event_name":"PreToolUse","tool_name":"Bash","tool_response":"{padding}"}}"#
+    );
+    let output = run_with_a_non_utf8_argument(&dir, input.as_bytes());
+    assert!(output.status.success(), "{:?}", output.status);
+    assert!(output.stderr.is_empty());
+}
+
 #[test]
 fn an_empty_data_dir_override_writes_under_home_not_the_working_directory() {
     let root = scratch_dir("empty-override");
@@ -220,7 +256,7 @@ fn an_empty_data_dir_override_writes_under_home_not_the_working_directory() {
     fs::create_dir_all(&home).unwrap();
     fs::create_dir_all(&cwd).unwrap();
     let output = run_hook_with(
-        &["hook", "claude"],
+        ["hook", "claude"],
         &[("AGENTDUST_DATA_DIR", OsStr::new("")), ("HOME", home.as_os_str())],
         Some(&cwd),
         &pre_tool_use("s1", "toolu_1"),
@@ -239,7 +275,7 @@ fn a_relative_data_dir_override_records_nothing() {
     fs::create_dir_all(&home).unwrap();
     fs::create_dir_all(&cwd).unwrap();
     let output = run_hook_with(
-        &["hook", "claude"],
+        ["hook", "claude"],
         &[
             ("AGENTDUST_DATA_DIR", OsStr::new("rel")),
             ("HOME", home.as_os_str()),

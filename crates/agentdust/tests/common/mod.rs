@@ -18,14 +18,19 @@ pub fn scratch_dir(name: &str) -> PathBuf {
 
 pub fn run_hook(data_dir: &Path, input: &[u8]) -> Output {
     run_hook_with(
-        &["hook", "claude"],
+        ["hook", "claude"],
         &[("AGENTDUST_DATA_DIR", data_dir.as_os_str())],
         None,
         input,
     )
 }
 
-pub fn run_hook_with(args: &[&str], envs: &[(&str, &OsStr)], cwd: Option<&Path>, input: &[u8]) -> Output {
+pub fn run_hook_with<A: AsRef<OsStr>>(
+    args: impl IntoIterator<Item = A>,
+    envs: &[(&str, &OsStr)],
+    cwd: Option<&Path>,
+    input: &[u8],
+) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_agentdust"));
     command
         .args(args)
