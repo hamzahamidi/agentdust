@@ -47,7 +47,7 @@ A segment over the limit is held only up to 65,535 bytes. Its version comes from
 1. Encode the frame. `WrongVersion` when `v` is not 1, `TooLarge` when the frame is over 65,536 bytes. Nothing is opened or created before this check.
 2. Ask the volume probe about the directory, or about its nearest existing ancestor when it does not exist yet. A volume that is not local APFS returns `UnsupportedFilesystem` with the facts, and nothing is created.
 3. Create the data directory with mode 0700 when it is missing, then check it: a real directory, owned by the current user, with no bit outside 0700.
-4. Open `journal.jsonl` with `O_APPEND` and `O_NOFOLLOW`. A missing file is created exclusively with mode 0600 and then reopened, and is never written through the creating descriptor.
+4. Open `journal.jsonl` with `O_APPEND` and `O_NOFOLLOW`. A missing file is created exclusively with mode 0600 and then reopened, and is never written through the creating descriptor. When a rotation takes the file between the creation and the reopen, the open is repeated, up to 3 rounds, and then fails with `NotFound`.
 5. Write the whole frame with one `write(2)`. A call that fails with `EINTR` has transferred nothing and is restarted. Fewer bytes than the frame, zero included, is `ShortWrite` and is never completed by a second call. Any other error is returned.
 6. Compare `fstat` of the descriptor with `lstat` of the path. They match when `st_dev` and `st_ino` are equal and `st_nlink` is not 0. Otherwise close and go to step 4. After 3 attempts the result is `Stale`.
 
