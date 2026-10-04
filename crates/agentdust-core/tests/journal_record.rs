@@ -1,4 +1,7 @@
-use agentdust_core::journal::{Agent, CwdKey, ExeBase, FieldError, Kind, Record, SCHEMA_VERSION};
+use agentdust_core::journal::{
+    Agent, AgentIdentity, CwdKey, ExeBase, FieldError, Kind, Record, SCHEMA_VERSION, SESSION_TAG_KEY_LEN,
+    SessionTagKey,
+};
 use serde_json::json;
 
 const KEY: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -15,6 +18,8 @@ fn minimal() -> Record {
         mono_ts: 42,
         boot: "b".to_owned(),
         cwd_key: None,
+        agent_identity: None,
+        session_tag_key: None,
         exe_base: None,
     }
 }
@@ -24,6 +29,16 @@ fn full() -> Record {
         kind: Kind::ShellStart,
         subagent_id: Some("agent-7".to_owned()),
         tool_use_id: Some("toolu_1".to_owned()),
+        agent_identity: Some(
+            AgentIdentity::new(
+                4242,
+                1_800_000_000_000_000,
+                501,
+                Some(ExeBase::try_from("claude").unwrap()),
+            )
+            .unwrap(),
+        ),
+        session_tag_key: Some(SessionTagKey::try_from(KEY).unwrap()),
         cwd_key: Some(CwdKey::try_from(KEY).unwrap()),
         exe_base: Some(ExeBase::try_from("node").unwrap()),
         ..minimal()
@@ -48,7 +63,7 @@ fn a_full_record_serialises_in_spec_order() {
     assert_eq!(
         serde_json::to_string(&full()).unwrap(),
         format!(
-            r#"{{"v":1,"kind":"shell_start","agent":"claude","session_id":"s1","subagent_id":"agent-7","tool_use_id":"toolu_1","wall_ts":1800000000123,"mono_ts":42,"boot":"b","cwd_key":"{KEY}","exe_base":"node"}}"#
+            r#"{{"v":1,"kind":"shell_start","agent":"claude","session_id":"s1","subagent_id":"agent-7","agent_identity":{{"pid":4242,"start_time_us":1800000000000000,"uid":501,"exe_base":"claude"}},"tool_use_id":"toolu_1","wall_ts":1800000000123,"mono_ts":42,"boot":"b","session_tag_key":"{KEY}","cwd_key":"{KEY}","exe_base":"node"}}"#
         )
     );
 }
@@ -196,5 +211,67 @@ fn a_record_with_an_invalid_working_directory_key_does_not_deserialise() {
         let mut value = serde_json::to_value(minimal()).unwrap();
         value["cwd_key"] = json!(bad);
         assert!(serde_json::from_value::<Record>(value).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn a_null_identity_and_a_null_session_tag_key_read_as_absent() {
+    let mut value = serde_json::to_value(minimal()).unwrap();
+    value["agent_identity"] = json!(null);
+    value["session_tag_key"] = json!(null);
+    assert_eq!(serde_json::from_value::<Record>(value).unwrap(), minimal());
+}
+
+#[test]
+fn a_record_written_before_these_fields_existed_reads_without_them() {
+    let old = r#"{"v":1,"kind":"shell_start","agent":"claude","session_id":"s1","wall_ts":1,"mono_ts":2,"boot":"b","cwd_key":"ab"}"#;
+    let record: Record = serde_json::from_str(old).unwrap();
+    assert_eq!(record.agent_identity, None);
+    assert_eq!(record.session_tag_key, None);
+}
+
+#[test]
+fn a_session_tag_key_is_exactly_64_lowercase_hex_characters() {
+    assert_eq!(SessionTagKey::try_from(KEY).unwrap().as_str(), KEY);
+    assert_eq!(
+        SessionTagKey::try_from("a".repeat(63)).unwrap_err(),
+        FieldError::WrongLength {
+            len: 63,
+            expected: 64
+        }
+    );
+    assert_eq!(
+        SessionTagKey::try_from("a".repeat(65)).unwrap_err(),
+        FieldError::WrongLength {
+            len: 65,
+            expected: 64
+        }
+    );
+    assert_eq!(
+        SessionTagKey::try_from("").unwrap_err(),
+        FieldError::WrongLength { len: 0, expected: 64 }
+    );
+    for bad in ["A", "g", " ", "\n", "\u{661}"] {
+        let padded = format!("{}{bad}", "a".repeat(SESSION_TAG_KEY_LEN - bad.len()));
+        assert_eq!(
+            SessionTagKey::try_from(padded).unwrap_err(),
+            FieldError::NotHex,
+            "{bad:?}"
+        );
+    }
+}
+
+#[test]
+fn a_record_with_an_invalid_session_tag_key_does_not_deserialise() {
+    for bad in [
+        json!(""),
+        json!("ZZ"),
+        json!("a".repeat(65)),
+        json!(7),
+        json!(["ab"]),
+    ] {
+        let mut value = serde_json::to_value(minimal()).unwrap();
+        value["session_tag_key"] = bad.clone();
+        assert!(serde_json::from_value::<Record>(value).is_err(), "{bad}");
     }
 }

@@ -130,6 +130,8 @@ fn earlier_boot_marker() -> Record {
         mono_ts: 1,
         boot: EARLIER_BOOT.to_owned(),
         cwd_key: None,
+        agent_identity: None,
+        session_tag_key: None,
         exe_base: None,
     }
 }

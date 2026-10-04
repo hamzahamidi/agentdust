@@ -62,6 +62,8 @@ fn row() -> impl Strategy<Value = Row> {
                     mono_ts: wall_ts,
                     boot: if old_boot { "old" } else { CURRENT }.to_owned(),
                     cwd_key: None,
+                    agent_identity: None,
+                    session_tag_key: None,
                     exe_base: None,
                 },
                 bytes,

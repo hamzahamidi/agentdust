@@ -26,6 +26,8 @@ fn row(kind: Kind, session: &str, wall_ts: u64) -> Row {
             mono_ts: wall_ts,
             boot: CURRENT.to_owned(),
             cwd_key: None,
+            agent_identity: None,
+            session_tag_key: None,
             exe_base: None,
         },
         bytes: 100,

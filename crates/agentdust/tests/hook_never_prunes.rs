@@ -23,6 +23,8 @@ fn old_record(kind: Kind, session: &str, wall_ts: u64) -> Record {
         mono_ts: wall_ts,
         boot: EARLIER_BOOT.to_owned(),
         cwd_key: None,
+        agent_identity: None,
+        session_tag_key: None,
         exe_base: None,
     }
 }

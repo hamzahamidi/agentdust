@@ -35,6 +35,8 @@ pub fn record(session: &str, boot: &str, wall_ts: u64, mono_ts: u64) -> Record {
         mono_ts,
         boot: boot.to_owned(),
         cwd_key: None,
+        agent_identity: None,
+        session_tag_key: None,
         exe_base: None,
     }
 }
