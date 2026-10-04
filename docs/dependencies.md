@@ -9,4 +9,5 @@ Every direct dependency has one line here. A pull request that adds a dependency
 | `thiserror` | agentdust-core, agentdust-agents | error types |
 | `rmcp` | agentdust-mcp | official MCP SDK (Tier 1), elicitation for both protocol generations |
 | `tokio` | agentdust-mcp, agentdust | runtime for the `mcp` subcommand only |
+| `proptest` | agentdust-core (tests only) | property tests for identity revalidation. Default features are off, so the fork and timeout support crates are not built |
 | `libfuzzer-sys` | fuzz (not shipped) | fuzz targets |
