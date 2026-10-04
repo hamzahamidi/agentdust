@@ -9,11 +9,34 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+serde_json = "1.0.151"
 agentdust-core = { path = "../crates/agentdust-core" }
+agentdust-agents = { path = "../crates/agentdust-agents" }
 
 [[bin]]
 name = "procargs"
 path = "fuzz_targets/procargs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "journal_decode"
+path = "fuzz_targets/journal_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "journal_read"
+path = "fuzz_targets/journal_read.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "claude_payload"
+path = "fuzz_targets/claude_payload.rs"
 test = false
 doc = false
 bench = false
