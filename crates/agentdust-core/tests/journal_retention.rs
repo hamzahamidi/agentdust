@@ -404,3 +404,86 @@ fn a_cap_of_zero_drops_everything_that_can_be_dropped() {
     let result = run(&rows, &policy(LIMIT, 0));
     assert_eq!(result.keep, [false, false, true]);
 }
+
+#[test]
+fn a_session_started_again_after_its_end_is_not_ended_and_is_not_aged_out() {
+    let rows = [
+        row(Kind::SessionStart, "a", NOW - 5_000),
+        row(Kind::SessionEnd, "a", NOW - 4_000),
+        row(Kind::SessionStart, "a", NOW - 3_000),
+        row(Kind::ShellStart, "a", NOW - 2_000),
+    ];
+    let result = run(&rows, &roomy());
+    assert_eq!(result.keep, [true, true, true, true]);
+    assert_eq!(result.dropped_aged, 0);
+}
+
+#[test]
+fn a_session_that_ends_again_after_its_resumed_start_is_ended() {
+    let rows = [
+        row(Kind::SessionStart, "a", NOW - 5_000),
+        row(Kind::SessionEnd, "a", NOW - 4_000),
+        row(Kind::SessionStart, "a", NOW - 3_000),
+        row(Kind::SessionEnd, "a", NOW - 2_000),
+    ];
+    let result = run(&rows, &roomy());
+    assert_eq!(result.keep, [false, false, false, false]);
+    assert_eq!(result.dropped_aged, 4);
+}
+
+#[test]
+fn the_last_lifecycle_record_by_time_decides_and_not_the_order_it_was_read_in() {
+    let rows = [
+        row(Kind::SessionStart, "a", NOW - 5_000),
+        row(Kind::SessionStart, "a", NOW - 3_000),
+        row(Kind::SessionEnd, "a", NOW - 4_000),
+    ];
+    let result = run(&rows, &roomy());
+    assert_eq!(result.keep, [true, true, true]);
+    let reversed = [
+        row(Kind::SessionEnd, "a", NOW - 4_000),
+        row(Kind::SessionStart, "a", NOW - 3_000),
+        row(Kind::SessionStart, "a", NOW - 5_000),
+    ];
+    assert_eq!(run(&reversed, &roomy()).keep, [true, true, true]);
+}
+
+#[test]
+fn records_with_equal_timestamps_are_ordered_as_they_were_read() {
+    let ended_last = [
+        row(Kind::SessionStart, "a", NOW - 5_000),
+        row(Kind::SessionEnd, "a", NOW - 5_000),
+    ];
+    assert_eq!(run(&ended_last, &roomy()).keep, [false, false]);
+    let started_last = [
+        row(Kind::SessionEnd, "a", NOW - 5_000),
+        row(Kind::SessionStart, "a", NOW - 5_000),
+    ];
+    assert_eq!(run(&started_last, &roomy()).keep, [true, true]);
+}
+
+#[test]
+fn a_resumed_session_under_cap_pressure_is_reported_and_never_dropped_as_ended() {
+    let rows = [
+        row(Kind::SessionStart, "a", NOW - 5_000),
+        row(Kind::SessionEnd, "a", NOW - 4_000),
+        row(Kind::SessionStart, "a", NOW - 3_000),
+        row(Kind::ShellStart, "a", NOW - 2_000),
+        row(Kind::SessionStart, "b", NOW - 2_500),
+        row(Kind::SessionEnd, "b", NOW - 2_400),
+    ];
+    let ended_goes_first = run(&rows, &policy(10_000, 450));
+    assert_eq!(ended_goes_first.keep, [true, true, true, true, false, false]);
+    assert_eq!(ended_goes_first.dropped_over_cap, 2);
+    assert!(ended_goes_first.degraded.is_empty());
+
+    let tighter = run(&rows, &policy(10_000, 300));
+    assert_eq!(tighter.dropped_over_cap, 2);
+    assert_eq!(tighter.dropped_pinned, 1);
+    assert_eq!(tighter.keep, [true, false, true, true, false, false]);
+    assert_eq!(tighter.degraded, [degraded(Agent::Claude, "a", 1)]);
+
+    let none = run(&rows, &policy(10_000, 0));
+    assert_eq!(none.keep, [false; 6]);
+    assert_eq!(none.degraded, [degraded(Agent::Claude, "a", 4)]);
+}

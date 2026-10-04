@@ -55,6 +55,56 @@ fn an_ended_session_past_the_age_limit_goes_and_a_pinned_one_stays() {
     assert_eq!(present(&dir), ["live"]);
 }
 
+fn resumed(session: &str, wall_ts: u64, mono_ts: u64) -> [Record; 2] {
+    let mut start = pinned(session, wall_ts, mono_ts);
+    start.kind = Kind::SessionStart;
+    let activity = pinned(session, wall_ts + 1, mono_ts + 1);
+    [start, activity]
+}
+
+#[test]
+fn a_session_resumed_after_its_end_is_not_aged_out() {
+    let dir = TempDir::private("rules-resumed-aged");
+    plant_generation(&dir, 100, &ended("again", T - 9_000, 1));
+    plant_generation(&dir, 200, &resumed("again", T - 8_000, 5));
+
+    let report = retain_with(&dir, u64::MAX).unwrap();
+
+    assert_eq!((report.dropped_aged, report.kept_records), (0, 4));
+    assert!(report.degraded.is_empty());
+    assert_eq!(present(&dir), ["again"; 4]);
+}
+
+#[test]
+fn a_resumed_session_loses_evidence_only_as_pinned_evidence_and_reports_it() {
+    let dir = TempDir::private("rules-resumed-cap");
+    let mut all = ended("again", T - 500, 1).to_vec();
+    all.extend(resumed("again", T - 400, 5));
+    plant_generation(&dir, 100, &all[..2]);
+    plant_generation(&dir, 200, &all[2..]);
+    plant_generation(&dir, 300, &ended("done", T - 300, 10));
+    let done: u64 = frames(&ended("done", T - 300, 10)).len() as u64;
+    let total: u64 = frames(&all).len() as u64 + done;
+
+    let ended_goes_first = retain_with(&dir, total - done).unwrap();
+    assert_eq!(ended_goes_first.dropped_over_cap, 2);
+    assert!(ended_goes_first.degraded.is_empty());
+    assert_eq!(present(&dir), ["again"; 4]);
+
+    let tighter = retain_with(&dir, frames(&all).len() as u64 - 1).unwrap();
+    assert_eq!(tighter.dropped_over_cap, 0);
+    assert_eq!(tighter.dropped_pinned, 1);
+    assert_eq!(
+        tighter.degraded,
+        [Degraded {
+            agent: Agent::Claude,
+            session_id: "again".to_owned(),
+            dropped_records: 1
+        }]
+    );
+    assert_eq!(present(&dir), ["again"; 3]);
+}
+
 #[test]
 fn a_young_ended_session_is_kept() {
     let dir = TempDir::private("rules-young");

@@ -119,12 +119,22 @@ fn scopes(rows: &[Row]) -> Scopes {
         ended: HashSet::new(),
         newest: HashMap::new(),
     };
-    for row in rows {
-        if row.record.kind == Kind::SessionEnd {
-            found.ended.insert(scope(row));
-        }
+    let mut last: HashMap<ScopeKey, ((u64, u64, usize), Kind)> = HashMap::new();
+    for (index, row) in rows.iter().enumerate() {
         let newest = found.newest.entry(scope(row)).or_default();
         *newest = (*newest).max(row.record.wall_ts);
+        if matches!(row.record.kind, Kind::SessionStart | Kind::SessionEnd) {
+            let key = (row.record.mono_ts, row.record.wall_ts, index);
+            let entry = last.entry(scope(row)).or_insert((key, row.record.kind));
+            if key > entry.0 {
+                *entry = (key, row.record.kind);
+            }
+        }
+    }
+    for (key, (_, kind)) in last {
+        if kind == Kind::SessionEnd {
+            found.ended.insert(key);
+        }
     }
     found
 }

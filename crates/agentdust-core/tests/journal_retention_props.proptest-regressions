@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 78863ad3490fc75b0b6d172bcdfd2020be3e06ffd4805b6d3bec35a8be2dd04b # shrinks to case = Case { rows: [Row { record: Record { v: 1, kind: SessionStart, agent: Codex, session_id: "s0", subagent_id: None, tool_use_id: None, wall_ts: 1863, mono_ts: 1863, boot: "current", cwd_key: None, exe_base: None }, bytes: 1, droppable: true }, Row { record: Record { v: 1, kind: SessionEnd, agent: Codex, session_id: "s0", subagent_id: None, tool_use_id: None, wall_ts: 0, mono_ts: 0, boot: "current", cwd_key: None, exe_base: None }, bytes: 1, droppable: false }], now: 2049, max_age: 0, max_bytes: 0 }
