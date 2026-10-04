@@ -138,6 +138,20 @@ fn an_oversized_session_id_is_not_recorded() {
 }
 
 #[test]
+fn an_oversized_session_id_still_lets_the_host_finish_writing() {
+    let dir = scratch_dir("oversized-large");
+    let long = "s".repeat(1_000_000);
+    let trailing = "x".repeat(1_000_000);
+    let input = format!(
+        r#"{{"session_id":"{long}","hook_event_name":"PreToolUse","tool_name":"Bash","tool_response":"{trailing}"}}"#
+    );
+    let output = run_hook(&dir, input.as_bytes());
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert_eq!(journal::read(&dir).unwrap().records.len(), 0);
+}
+
+#[test]
 fn concurrent_hooks_never_interleave_records() {
     let dir = scratch_dir("concurrent");
     let handles: Vec<_> = (0..16)
