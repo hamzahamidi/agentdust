@@ -270,6 +270,30 @@ fn long_mixed_tokens_are_removed_and_long_words_and_paths_are_kept() {
 }
 
 #[test]
+fn hyphenated_or_underscored_names_with_digits_are_not_taken_for_secrets() {
+    for name in [
+        "agentdust-bin-doctor-text-9432-0",
+        "my-long-project-name-2024-v2-final-build",
+        "some_long_directory_name_with_digits_2024",
+        "release-2024.10.04-arm64-apple-darwin-build",
+    ] {
+        assert_eq!(redact(&["x", name]), format!("x {name}"), "{name}");
+    }
+}
+
+#[test]
+fn a_long_run_of_letters_and_digits_without_separators_is_a_secret() {
+    for secret in [
+        "aB3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW",
+        "ABCDEF0123456789ABCDEF0123456789ABCDEF01",
+        "zz9plural9alpha9beta9gamma9delta9epsilon9",
+    ] {
+        let found = redact(&["x", secret]);
+        assert!(!found.contains(secret), "{found}");
+    }
+}
+
+#[test]
 fn non_utf8_arguments_are_shown_with_replacement_characters() {
     let found = redact_command([b"a".as_slice(), b"\xff\xfe".as_slice()]);
     assert_eq!(found, "a \u{fffd}\u{fffd}");
