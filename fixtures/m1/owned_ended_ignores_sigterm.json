@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "name": "owned_ended_ignores_sigterm",
+  "description": "Same shape as the background server, but the leftover ignores SIGTERM. It is owned-ended, and an apply that sends SIGTERM can only report it as a survivor.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "agent",
+      "flags": [
+        "--ignore-term"
+      ],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      }
+    },
+    {
+      "role": "stubborn_server",
+      "parent_role": "agent",
+      "flags": [
+        "--ignore-term"
+      ],
+      "expected": {
+        "label": "true_owned_ended",
+        "class": "owned-ended",
+        "must_never_signal": false
+      }
+    }
+  ],
+  "journal": [
+    {
+      "kind": "session_start",
+      "session_id": "s1"
+    },
+    {
+      "kind": "shell_start",
+      "session_id": "s1",
+      "tool_use_id": "t1",
+      "exe_base": "node"
+    },
+    {
+      "kind": "sample",
+      "session_id": "s1",
+      "roles": [
+        "stubborn_server"
+      ]
+    },
+    {
+      "kind": "session_end",
+      "session_id": "s1"
+    }
+  ],
+  "session_ended": true
+}

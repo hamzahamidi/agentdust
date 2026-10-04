@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "name": "detached_ignores_sigterm",
+  "description": "A detached listener in its own session that also ignores SIGTERM. It can be a suspect with its own code, and a SIGTERM leaves it running.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "agent",
+      "flags": [
+        "--setsid",
+        "--ignore-term"
+      ],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      }
+    },
+    {
+      "role": "listener",
+      "parent_role": "agent",
+      "flags": [
+        "--setsid",
+        "--ignore-term"
+      ],
+      "expected": {
+        "label": "true_detached",
+        "class": "suspect",
+        "must_never_signal": false
+      }
+    }
+  ],
+  "journal": [
+    {
+      "kind": "session_start",
+      "session_id": "s1"
+    },
+    {
+      "kind": "shell_start",
+      "session_id": "s1",
+      "tool_use_id": "t1",
+      "exe_base": "nohup"
+    },
+    {
+      "kind": "session_end",
+      "session_id": "s1"
+    }
+  ],
+  "session_ended": true
+}

@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "name": "detached_tunnel",
+  "description": "A tunnel the agent started in its own session with setsid, before the session ended. Nothing sampled it as a descendant, so it is only a detached process: a suspect that needs its own typed code.",
+  "agent": "claude",
+  "processes": [
+    {
+      "role": "agent",
+      "flags": [
+        "--setsid"
+      ],
+      "expected": {
+        "label": "true_managed",
+        "class": "managed",
+        "must_never_signal": true
+      }
+    },
+    {
+      "role": "tunnel",
+      "parent_role": "agent",
+      "flags": [
+        "--setsid"
+      ],
+      "expected": {
+        "label": "true_detached",
+        "class": "suspect",
+        "must_never_signal": false
+      }
+    }
+  ],
+  "journal": [
+    {
+      "kind": "session_start",
+      "session_id": "s1"
+    },
+    {
+      "kind": "shell_start",
+      "session_id": "s1",
+      "tool_use_id": "t1",
+      "exe_base": "ssh"
+    },
+    {
+      "kind": "session_end",
+      "session_id": "s1"
+    }
+  ],
+  "session_ended": true
+}
