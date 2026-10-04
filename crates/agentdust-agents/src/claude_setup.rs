@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 
 use agentdust_core::manifest::{self, Entry, MANIFEST_FILE, Manifest, ManifestError, Origin, Resource};
@@ -750,8 +751,10 @@ impl InstallReport {
                     out.push_str("Some changes could not be undone. Check the steps above by hand.\n");
                 }
             }
-        } else {
+        } else if self.problems.is_empty() {
             out.push_str("Setup finished.\n");
+        } else {
+            out.push_str("Setup is incomplete.\n");
         }
         for problem in &self.problems {
             out.push_str(&format!("Not done: {problem}\n"));
@@ -1071,4 +1074,12 @@ pub fn remove(env: &SetupEnv, ask: &mut dyn FnMut(&str) -> bool) -> Result<Remov
         return Ok(RemoveOutcome::Declined);
     }
     Ok(RemoveOutcome::Applied(plan.apply(env)))
+}
+
+pub fn ask_yes_no(input: &mut dyn BufRead, output: &mut dyn Write, prompt: &str) -> io::Result<bool> {
+    output.write_all(prompt.as_bytes())?;
+    output.flush()?;
+    let mut line = String::new();
+    input.read_line(&mut line)?;
+    Ok(matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
 }

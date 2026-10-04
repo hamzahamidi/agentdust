@@ -1,4 +1,6 @@
 mod hook;
+mod setup;
+mod status;
 
 use std::process::ExitCode;
 
@@ -11,12 +13,20 @@ fn main() -> ExitCode {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
         ["mcp"] => mcp(),
+        ["setup", rest @ ..] => setup::run(rest),
+        ["status"] => status::run(),
+        ["status", ..] => {
+            eprintln!("usage: agentdust status");
+            ExitCode::from(2)
+        }
         ["version"] => {
             println!("agentdust {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         _ => {
-            eprintln!("usage: agentdust hook claude | agentdust mcp | agentdust version");
+            eprintln!(
+                "usage: agentdust hook claude | agentdust mcp | agentdust setup [--check | --remove] [--yes] | agentdust status | agentdust version"
+            );
             ExitCode::from(2)
         }
     }
