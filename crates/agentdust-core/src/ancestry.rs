@@ -10,6 +10,8 @@ pub const MAX_DEPTH: usize = 64;
 const AGENT_EXE: &[u8] = b"claude";
 const NODE_EXE: &[u8] = b"node";
 const SCRIPT_MARK: &[u8] = b"claude";
+const NATIVE_DIR: &[u8] = b"claude";
+const NATIVE_VERSIONS: &[u8] = b"versions";
 
 pub trait AncestryProvider: ProcessProvider {
     fn parent(&self, identity: &KernelIdentity) -> io::Result<Option<i32>>;
@@ -54,19 +56,35 @@ pub fn find_agent<P: AncestryProvider + ?Sized>(provider: &P, start: i32) -> Opt
     None
 }
 
-fn anchor<P: AncestryProvider + ?Sized>(provider: &P, identity: &ProcessIdentity) -> Option<Anchor> {
-    let base = basename(&identity.evidence.exe_path);
-    if base == AGENT_EXE {
-        return Some(Anchor::Executable);
+pub fn agent_exe(path: &Path) -> bool {
+    let mut parts = path.as_os_str().as_bytes().rsplit(|byte| *byte == b'/');
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(AGENT_EXE), _, _) => true,
+        (Some(version), Some(NATIVE_VERSIONS), Some(NATIVE_DIR)) => !version.is_empty(),
+        _ => false,
     }
-    if base != NODE_EXE {
-        return None;
-    }
-    let script = provider.script_argument(identity.kernel.pid).ok().flatten()?;
+}
+
+pub fn is_node(path: &Path) -> bool {
+    basename(path) == NODE_EXE
+}
+
+pub fn script_names_agent(script: &[u8]) -> bool {
     script
         .windows(SCRIPT_MARK.len())
         .any(|window| window == SCRIPT_MARK)
-        .then_some(Anchor::NodeScript)
+}
+
+fn anchor<P: AncestryProvider + ?Sized>(provider: &P, identity: &ProcessIdentity) -> Option<Anchor> {
+    let path = &identity.evidence.exe_path;
+    if agent_exe(path) {
+        return Some(Anchor::Executable);
+    }
+    if !is_node(path) {
+        return None;
+    }
+    let script = provider.script_argument(identity.kernel.pid).ok().flatten()?;
+    script_names_agent(&script).then_some(Anchor::NodeScript)
 }
 
 fn basename(path: &Path) -> &[u8] {
