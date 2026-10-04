@@ -62,6 +62,8 @@ version = "0.0.0"
 dependencies = [
  "agentdust-core",
  "libc",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
