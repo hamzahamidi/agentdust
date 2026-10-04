@@ -21,16 +21,16 @@ fn run_with(
 }
 
 #[test]
-fn a_helper_of_a_launchd_job_is_managed() {
+fn a_helper_that_a_launchd_job_started_is_managed() {
     let found = run_with(vec![old(300), old(301).ppid(300)], &[300]);
     assert_eq!(class_of(&found, 300), Class::Managed);
     assert_eq!(evidence_of(&found, 300), [Evidence::ManagedLaunchd]);
     assert_eq!(class_of(&found, 301), Class::Managed);
-    assert_eq!(evidence_of(&found, 301), [Evidence::ManagedLaunchdDescendant]);
+    assert_eq!(evidence_of(&found, 301), [Evidence::ManagedLaunchdChild]);
 }
 
 #[test]
-fn every_descendant_of_a_launchd_job_is_managed() {
+fn only_a_direct_child_of_a_launchd_job_is_managed_by_it() {
     let processes = vec![
         old(300),
         raw(301).ppid(300),
@@ -38,8 +38,9 @@ fn every_descendant_of_a_launchd_job_is_managed() {
         raw(303).ppid(302),
     ];
     let found = run_with(processes, &[300]);
-    for pid in [301, 302, 303] {
-        assert_eq!(class_of(&found, pid), Class::Managed, "{pid}");
+    assert_eq!(class_of(&found, 301), Class::Managed);
+    for pid in [302, 303] {
+        assert_eq!(class_of(&found, pid), Class::Unknown, "{pid}");
     }
 }
 
@@ -87,32 +88,21 @@ fn without_the_launchd_list_the_rule_cannot_apply() {
 }
 
 #[test]
-fn a_cycle_in_the_parent_links_ends_the_walk() {
-    let found = run_with(
-        vec![raw(300).ppid(301), raw(301).ppid(300), raw(302).ppid(300)],
-        &[999],
-    );
-    assert_eq!(class_of(&found, 302), Class::Unknown);
-}
-
-#[test]
-fn a_parent_missing_from_the_snapshot_ends_the_walk() {
+fn the_parent_need_not_be_in_the_snapshot_to_be_a_job() {
     let found = run_with(vec![raw(300).ppid(4242), raw(301).ppid(300)], &[4242]);
     assert_eq!(class_of(&found, 300), Class::Managed);
-    assert_eq!(class_of(&found, 301), Class::Managed);
-    let found = run_with(vec![raw(300).ppid(4242), raw(301).ppid(300)], &[7]);
     assert_eq!(class_of(&found, 301), Class::Unknown);
 }
 
 #[test]
-fn the_walk_is_bounded() {
-    let mut processes = vec![raw(1000)];
-    for pid in 1001..1100 {
-        processes.push(raw(pid).ppid(pid - 1));
+fn a_cycle_in_the_parent_links_changes_nothing() {
+    let found = run_with(
+        vec![raw(300).ppid(301), raw(301).ppid(300), raw(302).ppid(300)],
+        &[999],
+    );
+    for pid in [300, 301, 302] {
+        assert_eq!(class_of(&found, pid), Class::Unknown, "{pid}");
     }
-    let found = run_with(processes, &[1000]);
-    assert_eq!(class_of(&found, 1010), Class::Managed);
-    assert_eq!(class_of(&found, 1099), Class::Unknown);
 }
 
 #[test]

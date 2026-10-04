@@ -432,7 +432,7 @@ fn a_launchd_helper_and_an_app_helper_are_managed_by_their_own_evidence() {
     );
     assert_eq!(
         find("launchd_job_lookalike", "job_helper").evidence,
-        [Evidence::ManagedLaunchdDescendant]
+        [Evidence::ManagedLaunchdChild]
     );
     assert_eq!(
         find("homebrew_service_lookalike", "brew_service").evidence,
