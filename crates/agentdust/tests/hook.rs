@@ -196,15 +196,16 @@ fn a_held_journal_lock_does_not_stop_the_hook() {
 }
 
 #[test]
-fn the_hook_creates_the_journal_only_and_writes_one_framed_record() {
+fn the_hook_creates_the_journal_and_the_secret_only_and_writes_one_framed_record() {
     let dir = scratch_dir("framed");
     let output = run_hook(&dir, &pre_tool_use("s1", "toolu_1"));
     assert!(output.status.success());
-    let names: Vec<_> = fs::read_dir(&dir)
+    let mut names: Vec<_> = fs::read_dir(&dir)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().into_string().unwrap())
         .collect();
-    assert_eq!(names, ["journal.jsonl"]);
+    names.sort();
+    assert_eq!(names, ["install.secret", "journal.jsonl"]);
     let stored = fs::read(dir.join("journal.jsonl")).unwrap();
     assert_eq!(stored.first(), Some(&0x1e));
     assert_eq!(stored.last(), Some(&b'\n'));
