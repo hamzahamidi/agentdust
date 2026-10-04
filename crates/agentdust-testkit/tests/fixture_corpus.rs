@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use agentdust_core::class::{Actionability, Class, actionable_as};
 use agentdust_core::journal::Kind;
@@ -10,6 +11,7 @@ use agentdust_testkit::spec::ProcSpec;
 const MINIMUM_FIXTURES: usize = 14;
 const MINIMUM_PER_LABEL: usize = 2;
 const MINIMUM_EXIT_AFTER_MS: u64 = 5_000;
+const LONGEST_WAIT: Duration = Duration::from_secs(60);
 
 const PROTECTED: [(&str, bool); 6] = [
     ("system_process_pid_one", true),
@@ -348,6 +350,26 @@ fn a_process_that_exits_by_itself_keeps_a_margin_of_five_seconds() {
         }
     }
     assert!(checked >= 2, "{checked} processes exit by themselves");
+}
+
+#[test]
+fn no_process_of_the_corpus_can_pass_a_wait_by_running_out_of_time() {
+    let mut members = 0;
+    for item in corpus() {
+        let plan = item.fixture.plan().unwrap();
+        for group in &plan.groups {
+            for member in std::iter::once(&group.parent).chain(&group.children) {
+                assert!(
+                    member.spec.exit_after_ms.is_some() || member.spec.lifetime() > LONGEST_WAIT,
+                    "{}/{}",
+                    item.fixture.name,
+                    member.role
+                );
+                members += 1;
+            }
+        }
+    }
+    assert!(members >= 20, "{members} members");
 }
 
 #[test]

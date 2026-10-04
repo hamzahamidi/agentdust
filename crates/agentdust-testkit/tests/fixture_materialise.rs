@@ -319,27 +319,6 @@ fn the_lifetime_excuse_only_covers_a_process_that_is_gone() {
 }
 
 #[test]
-fn no_process_of_the_corpus_can_pass_a_wait_by_running_out_of_time() {
-    let loaded = load_dir(&corpus_dir()).expect("the corpus loads");
-    let mut members = 0;
-    for item in loaded {
-        let plan = item.fixture.plan().unwrap();
-        for group in &plan.groups {
-            for member in std::iter::once(&group.parent).chain(&group.children) {
-                assert!(
-                    member.spec.exit_after_ms.is_some() || member.spec.lifetime() > HANG_GUARD,
-                    "{}/{}",
-                    item.fixture.name,
-                    member.role
-                );
-                members += 1;
-            }
-        }
-    }
-    assert!(members >= 20, "{members} members");
-}
-
-#[test]
 fn a_fixture_that_cannot_be_planned_starts_nothing_and_says_why() {
     let value = json!({
         "schema_version": 1,
