@@ -62,6 +62,7 @@ version = "0.0.0"
 dependencies = [
  "agentdust-core",
  "libc",
+ "thiserror",
 ]
 
 [[package]]
