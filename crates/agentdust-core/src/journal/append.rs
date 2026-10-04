@@ -8,6 +8,7 @@ use super::{ACTIVE_FILE, JournalError, Record, frame};
 use crate::safe_open::{self, Access, SafeOpenError};
 
 pub const MAX_ATTEMPTS: u32 = 3;
+const OPEN_ROUNDS: u32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Appended {
@@ -16,6 +17,8 @@ pub struct Appended {
 
 pub trait FrameWriter {
     fn write(&mut self, file: &File, frame: &[u8]) -> io::Result<usize>;
+
+    fn created(&mut self, _path: &Path) {}
 }
 
 pub struct SystemWriter;
@@ -40,7 +43,7 @@ pub(super) fn append(
     safe_open::ensure_dir(dir)?;
     let path = dir.join(ACTIVE_FILE);
     for attempt in 1..=MAX_ATTEMPTS {
-        let file = open_for_append(&path)?;
+        let file = open_for_append(&path, writer)?;
         write_once(writer, &file, &frame)?;
         if still_active(&file, &path)? {
             return Ok(Appended { attempts: attempt });
@@ -51,18 +54,20 @@ pub(super) fn append(
     })
 }
 
-fn open_for_append(path: &Path) -> Result<File, SafeOpenError> {
-    match safe_open::open_file(path, Access::Append) {
-        Err(SafeOpenError::Io(err)) if err.kind() == io::ErrorKind::NotFound => {
-            match safe_open::open_file(path, Access::Create) {
-                Ok(_) => {}
-                Err(SafeOpenError::Io(err)) if err.kind() == io::ErrorKind::AlreadyExists => {}
-                Err(err) => return Err(err),
+fn open_for_append(path: &Path, writer: &mut dyn FrameWriter) -> Result<File, SafeOpenError> {
+    for _ in 0..OPEN_ROUNDS {
+        match safe_open::open_file(path, Access::Append) {
+            Err(SafeOpenError::Io(err)) if err.kind() == io::ErrorKind::NotFound => {
+                match safe_open::open_file(path, Access::Create) {
+                    Ok(_) => writer.created(path),
+                    Err(SafeOpenError::Io(err)) if err.kind() == io::ErrorKind::AlreadyExists => {}
+                    Err(err) => return Err(err),
+                }
             }
-            safe_open::open_file(path, Access::Append)
+            opened => return opened,
         }
-        opened => opened,
     }
+    safe_open::open_file(path, Access::Append)
 }
 
 fn write_once(writer: &mut dyn FrameWriter, file: &File, frame: &[u8]) -> Result<(), JournalError> {
