@@ -79,6 +79,12 @@ pub trait LaunchdSource {
     fn pids(&self) -> io::Result<BTreeSet<i32>>;
 }
 
+pub trait LiveDetails {
+    fn command(&self, identity: &KernelIdentity) -> Option<Vec<Vec<u8>>>;
+
+    fn cwd(&self, identity: &KernelIdentity) -> Option<PathBuf>;
+}
+
 pub trait Clock {
     fn now_us(&self) -> u64;
 
