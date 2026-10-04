@@ -120,7 +120,7 @@ One algorithm, stated here once and implemented once, in [retain.rs](../../crate
 
 A run takes the exclusive lock on `journal.maint` without blocking and reports `Busy` when another run holds it. Only rotation and retention take that lock. Then it:
 
-1. Opens the active file and every generation with the safe open rules. When any of them is refused, the run changes nothing.
+1. Opens the active file and every generation with the safe open rules. When any of them is refused, the run changes nothing, except that `journal.maint` may have been created.
 2. Removes a stale `journal.compact.tmp`.
 3. Reads every file into memory and decodes it. The records of all files are judged together by the rules of spec 3.2, which say for each record whether it is kept. A record that cannot be dropped, because it sits in the active file or in a generation that holds a newer schema version, still counts toward the size limit.
 4. Visits each closed generation `journal.<stamp>.jsonl`, oldest stamp first. It never visits the active file. The table gives the outcome.

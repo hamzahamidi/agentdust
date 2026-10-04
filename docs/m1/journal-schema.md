@@ -84,7 +84,7 @@ A sweep over every cut length from 0 to N minus 1 reads the record before and th
 5. A file that is the same inode as one already held is read once.
 6. Decode every file, add the counters, order the records and collapse exact duplicates.
 
-Opening the active file before the listing makes the set coherent. A rotation that lands after the open moves the file under a generation name, and the listing then names the inode the reader already holds. A compaction that lands after the listing leaves the reader the original or the replacement, and each holds the record. A deletion after the listing removes only records that a retention rule dropped. Records acknowledged while the read runs may or may not appear. `crates/agentdust-core/tests/journal_snapshot.rs` pauses a reader after its open and after its listing and runs a rotation, a compaction and a deletion in the gap.
+Opening the active file before the listing makes the set coherent. A rotation that lands after the open moves the file under a generation name, and the listing then names the inode the reader already holds. A compaction that lands after the listing leaves the reader the original or the replacement, and each holds the record. A deletion after the listing removes only records that a retention rule dropped. Records acknowledged while the read runs may or may not appear. `crates/agentdust-core/tests/journal_snapshot.rs` pauses a reader after its open and after its listing and runs a rotation, a compaction and a deletion in the gap, and `journal_rotate_interleave.rs` and `journal_retain_interleave.rs` do the same with the real rotation and retention of [journal-retention.md](journal-retention.md).
 
 | `ReadReport` field | Meaning |
 | --- | --- |
@@ -168,4 +168,4 @@ The whole hook is measured with `cargo test --release -p agentdust --test hook_l
 
 ## Not built yet
 
-Rotation, retention and the recovery of a damaged generation, which [ADR-1](adr-journal-format.md) specifies and which are not in `agentdust-core`. The hook health counters for each kind of drop. The `exe_base` value in the hook.
+The hook health counters for each kind of drop. The `exe_base` value in the hook. A command or a server call that runs `prune`: rotation, retention and the recovery of a damaged generation are in `agentdust-core` and [journal-retention.md](journal-retention.md) describes them.
