@@ -32,6 +32,7 @@ pub enum Evidence {
     ManagedAgent,
     ManagedSystemPath,
     ManagedLaunchd,
+    ManagedLaunchdDescendant,
     OwnedTag,
     OwnedAgentAlive,
     OwnedAgentUnverified,
@@ -48,7 +49,7 @@ pub enum Evidence {
 }
 
 impl Evidence {
-    pub const ALL: [Evidence; 20] = [
+    pub const ALL: [Evidence; 21] = [
         Evidence::ManagedInit,
         Evidence::ManagedOtherUser,
         Evidence::ManagedSelf,
@@ -56,6 +57,7 @@ impl Evidence {
         Evidence::ManagedAgent,
         Evidence::ManagedSystemPath,
         Evidence::ManagedLaunchd,
+        Evidence::ManagedLaunchdDescendant,
         Evidence::OwnedTag,
         Evidence::OwnedAgentAlive,
         Evidence::OwnedAgentUnverified,
@@ -80,6 +82,7 @@ impl Evidence {
             Evidence::ManagedAgent => "managed.deny.agent",
             Evidence::ManagedSystemPath => "managed.deny.system_path",
             Evidence::ManagedLaunchd => "managed.launchd",
+            Evidence::ManagedLaunchdDescendant => "managed.launchd_descendant",
             Evidence::OwnedTag => "owned.tag",
             Evidence::OwnedAgentAlive => "owned.agent_alive",
             Evidence::OwnedAgentUnverified => "owned.agent_unverified",
@@ -162,6 +165,7 @@ struct Context<'a> {
     policy: &'a Policy,
     launchd: Option<&'a BTreeSet<i32>>,
     scopes: Option<&'a [Scope]>,
+    parents: HashMap<i32, i32>,
     ancestors: HashSet<i32>,
     agents: HashSet<&'a KernelIdentity>,
     by_key: HashMap<&'a SessionTagKey, Vec<&'a Scope>>,
@@ -181,6 +185,11 @@ impl<'a> Context<'a> {
                 by_key.entry(key).or_default().push(scope);
             }
         }
+        let parents: HashMap<i32, i32> = snapshot
+            .processes
+            .iter()
+            .map(|process| (process.identity.kernel.pid, process.identity.ppid))
+            .collect();
         Self {
             taken_at_us: snapshot.taken_at_us,
             policy,
@@ -189,7 +198,8 @@ impl<'a> Context<'a> {
                 Launchd::Unavailable => None,
             },
             scopes,
-            ancestors: ancestors(&snapshot.processes, policy.self_pid),
+            ancestors: ancestors(&parents, policy.self_pid),
+            parents,
             agents,
             by_key,
         }
@@ -235,8 +245,31 @@ impl<'a> Context<'a> {
         }
         if self.launchd.is_some_and(|pids| pids.contains(&kernel.pid)) {
             evidence.push(Evidence::ManagedLaunchd);
+        } else if self.under_launchd_job(kernel.pid) {
+            evidence.push(Evidence::ManagedLaunchdDescendant);
         }
         evidence
+    }
+
+    fn under_launchd_job(&self, pid: i32) -> bool {
+        let Some(jobs) = self.launchd else {
+            return false;
+        };
+        let mut seen = HashSet::new();
+        let mut current = pid;
+        for _ in 0..ANCESTOR_LIMIT {
+            let Some(&parent) = self.parents.get(&current) else {
+                return false;
+            };
+            if jobs.contains(&parent) {
+                return true;
+            }
+            if parent <= 1 || !seen.insert(parent) {
+                return false;
+            }
+            current = parent;
+        }
+        false
     }
 
     fn is_agent(&self, process: &RawProcess) -> bool {
@@ -323,11 +356,7 @@ impl<'a> Context<'a> {
     }
 }
 
-fn ancestors(processes: &[RawProcess], self_pid: i32) -> HashSet<i32> {
-    let parents: HashMap<i32, i32> = processes
-        .iter()
-        .map(|process| (process.identity.kernel.pid, process.identity.ppid))
-        .collect();
+fn ancestors(parents: &HashMap<i32, i32>, self_pid: i32) -> HashSet<i32> {
     let mut found = HashSet::new();
     let mut pid = self_pid;
     for _ in 0..ANCESTOR_LIMIT {
