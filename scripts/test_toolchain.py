@@ -125,6 +125,25 @@ class ToolchainTest(unittest.TestCase):
         (self.path / "Cargo.lock").unlink()
         self.assertNotEqual(self.run_script("record").returncode, 0)
 
+    def test_a_tool_that_is_not_installed_is_recorded_as_unavailable(self):
+        empty = self.path / "empty"
+        empty.mkdir()
+        result = self.run_script("record", PATH=str(empty))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = json.loads(result.stdout)
+        for key in ("rustc", "cargo", "developer_dir", "xcode", "sdk_version", "sdk_path"):
+            with self.subTest(key=key):
+                self.assertEqual(record[key], "unavailable")
+
+    def test_a_tool_that_is_missing_is_drift_against_a_record_that_had_it(self):
+        empty = self.path / "empty"
+        empty.mkdir()
+        self.write_expected(xcode="Xcode 16.4\nBuild version 16F6")
+        result = self.check(PATH=str(empty))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("toolchain drift in xcode", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
