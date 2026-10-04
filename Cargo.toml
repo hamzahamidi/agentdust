@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 exclude = ["fuzz"]
-members = ["crates/agentdust-core", "crates/agentdust-agents", "crates/agentdust-mcp", "crates/agentdust", "crates/agentdust-testkit"]
+members = ["crates/agentdust-core", "crates/agentdust-agents", "crates/agentdust-mcp", "crates/agentdust", "crates/agentdust-testkit", "crates/agentdust-bench"]
 
 [workspace.package]
 version = "0.0.0"
