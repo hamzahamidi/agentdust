@@ -76,3 +76,17 @@ fn every_seed_directory_holds_enough_small_seeds() {
         );
     }
 }
+
+#[test]
+fn the_linux_job_replays_the_seeds_of_every_target_the_fuzz_crate_lists() {
+    let ci = fs::read_to_string(repository().join(".github/workflows/ci.yml")).unwrap();
+    for needle in [
+        "fuzz list",
+        "for target in",
+        "test -d \"fuzz/seeds/$target\"",
+        "fuzz run \"$target\" \"fuzz/seeds/$target\"",
+        "-runs=0",
+    ] {
+        assert!(ci.contains(needle), "ci.yml lacks {needle}");
+    }
+}
