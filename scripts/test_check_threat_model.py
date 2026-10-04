@@ -15,7 +15,7 @@ SPEC_PATH = "docs/superpowers/specs/2026-10-03-agentdust-design.md"
 MODEL_PATH = "docs/threat-model.md"
 TEST_FILE = "crates/core/tests/safe_open.rs"
 
-ADVERSARIES = [
+ROADMAP_ADVERSARIES = [
     "Malicious model",
     "Malicious process metadata",
     "Buggy MCP client",
@@ -25,6 +25,13 @@ ADVERSARIES = [
     "Stale plans",
     "Compromised release artifact",
 ]
+STORAGE_ADVERSARIES = [
+    "Unsupported filesystem",
+    "Journal poisoning and short writes",
+    "Stale writers and rotation",
+    "Durability limits",
+]
+ADVERSARIES = ROADMAP_ADVERSARIES + STORAGE_ADVERSARIES
 
 SPEC = """# Design
 
@@ -54,7 +61,10 @@ def table(rows):
     return "\n".join(lines)
 
 
-def build_model(drop=(), rows=GOOD_ROWS, extra=""):
+RESIDUAL = "**Residual risk.**\n\n- A risk that stays."
+
+
+def build_model(drop=(), rows=GOOD_ROWS, extra="", residual=None):
     parts = ["# Threat model", ""]
     for index, title in enumerate(ADVERSARIES, 1):
         if title in drop:
@@ -62,6 +72,7 @@ def build_model(drop=(), rows=GOOD_ROWS, extra=""):
         parts += [f"## {index}. {title}", ""]
         if index == 1:
             parts += [table(rows), "", extra, ""]
+        parts += [(residual or {}).get(title, RESIDUAL), ""]
     return "\n".join(parts)
 
 
@@ -179,6 +190,91 @@ class CheckerTest(unittest.TestCase):
         rows = [("Refuse symlinks", "S1", "Implemented", f"`{TEST_FILE}`"), ("Typed code", "S2", "Planned M3", "x")]
         self.assertEqual(self.problems(build_model(rows=rows)), [])
 
+    def test_the_checker_requires_exactly_the_headings_these_tests_list(self):
+        self.assertEqual(list(check_threat_model.ADVERSARIES), ADVERSARIES)
+
+    def test_each_storage_heading_is_required_on_its_own(self):
+        for title in STORAGE_ADVERSARIES:
+            with self.subTest(title=title):
+                problem = self.only_problem(build_model(drop=[title]))
+                self.assertIn(title, problem)
+
+    def test_a_model_without_any_storage_heading_reports_all_four(self):
+        found = self.problems(build_model(drop=STORAGE_ADVERSARIES))
+        self.assertEqual(len(found), 4, found)
+        for title in STORAGE_ADVERSARIES:
+            self.assertTrue(any(title in p for p in found), (title, found))
+
+    def test_a_storage_heading_at_the_wrong_level_does_not_count(self):
+        model = build_model().replace("## 10. Journal poisoning and short writes", "### 10. Journal poisoning and short writes")
+        self.assertIn("Journal poisoning and short writes", self.only_problem(model))
+
+    def test_a_storage_heading_without_a_number_counts(self):
+        model = build_model().replace("## 12. Durability limits", "## Durability limits")
+        self.assertEqual(self.problems(model), [])
+
+    def test_a_requirement_cell_may_be_none_or_a_list_of_ids(self):
+        for cell in ["none", "None", "S1", "S1, S2", "S1,S2", "S1 S2", "S2, S1"]:
+            with self.subTest(cell=cell):
+                rows = [("Refuse symlinks", cell, "implemented", f"`{TEST_FILE}`"), ("Typed code", "S1, S2", "planned M3", "x")]
+                self.assertEqual(self.problems(build_model(rows=rows)), [])
+
+    def test_a_requirement_cell_that_is_not_none_or_ids_is_reported(self):
+        for cell in ["", "S", "s1", "S1x", "S 1", "S1 (proposed)", "S1; S2", "n/a", "see ADR-1"]:
+            with self.subTest(cell=cell):
+                rows = [("Refuse symlinks", cell, "implemented", f"`{TEST_FILE}`"), ("Typed code", "S1, S2", "planned M3", "x")]
+                found = self.problems(build_model(rows=rows))
+                self.assertTrue(any("requirement" in p.lower() for p in found), found)
+
+    def test_a_row_too_short_to_hold_a_requirement_cell_is_reported(self):
+        model = build_model(extra="\n".join([HEADER, "| Short row | 6.3 |"]))
+        found = self.problems(model)
+        self.assertTrue(any("requirement" in p.lower() for p in found), found)
+
+    def test_the_requirement_cell_is_read_under_its_header_wherever_the_column_is(self):
+        extra = "| Status | Requirement | Control |\n| --- | --- | --- |\n| planned M3 | S2, S1 | Typed code |"
+        self.assertEqual(self.problems(build_model(extra=extra)), [])
+        extra = "| Status | Requirement | Control |\n| --- | --- | --- |\n| planned M3 | typed code | S1 |"
+        found = self.problems(build_model(extra=extra))
+        self.assertTrue(any("requirement" in p.lower() for p in found), found)
+
+    def test_a_table_with_a_status_column_and_no_requirement_column_is_not_checked_for_one(self):
+        extra = "| Name | Status |\n| --- | --- |\n| x | planned M2 |"
+        self.assertEqual(self.problems(build_model(extra=extra)), [])
+
+    def test_a_section_without_a_residual_risk_part_is_reported(self):
+        for title in ["PID reuse", "Durability limits"]:
+            with self.subTest(title=title):
+                problem = self.only_problem(build_model(residual={title: ""}))
+                self.assertIn(title, problem)
+                self.assertIn("Residual risk", problem)
+
+    def test_a_residual_risk_part_with_nothing_listed_is_reported(self):
+        problem = self.only_problem(build_model(residual={"Same-user tampering": "**Residual risk.**"}))
+        self.assertIn("Same-user tampering", problem)
+
+    def test_a_bullet_before_the_marker_or_in_another_section_does_not_count(self):
+        residual = {"PID reuse": "- A bullet above the marker.\n\n**Residual risk.**"}
+        problem = self.only_problem(build_model(residual=residual))
+        self.assertIn("PID reuse", problem)
+
+    def test_a_marker_inside_a_code_fence_does_not_count(self):
+        residual = {"PID reuse": "```\n**Residual risk.**\n\n- fenced\n```"}
+        problem = self.only_problem(build_model(residual=residual))
+        self.assertIn("PID reuse", problem)
+
+    def test_a_star_bullet_counts_as_a_listed_risk(self):
+        residual = {"PID reuse": "**Residual risk.**\n\n* A starred bullet."}
+        self.assertEqual(self.problems(build_model(residual=residual)), [])
+
+    def test_a_missing_heading_is_not_also_reported_as_a_missing_residual_part(self):
+        problem = self.only_problem(build_model(drop=["PID reuse"]))
+        self.assertNotIn("Residual", problem)
+
+    def test_every_missing_residual_part_is_reported_at_once(self):
+        found = self.problems(build_model(residual={"PID reuse": "", "Stale plans": "**Residual risk.**"}))
+        self.assertEqual(len(found), 2, found)
+
     def test_every_problem_is_listed_at_once(self):
         rows = [("Refuse symlinks", "S1 S99", "implemented", "`crates/core/tests/gone.rs`")]
         found = self.problems(build_model(drop=["Stale plans"], rows=rows))
@@ -228,6 +324,23 @@ class MainTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn(MODEL_PATH, result.stderr)
         self.assertNotIn("Traceback", result.stderr)
+
+    def test_a_missing_residual_risk_part_is_reported_with_the_file_name(self):
+        self.write_model(build_model(residual={"PID reuse": ""}))
+        result = self.run_script()
+        self.assertEqual(result.returncode, 1)
+        lines = [line for line in result.stderr.splitlines() if line]
+        self.assertEqual(len(lines), 1, result.stderr)
+        self.assertIn(MODEL_PATH, lines[0])
+        self.assertIn("PID reuse", lines[0])
+
+    def test_a_bad_requirement_cell_is_reported_with_the_file_name(self):
+        rows = [("Refuse symlinks", "S1 (proposed)", "implemented", f"`{TEST_FILE}`"), ("Typed code", "S1, S2", "planned M3", "x")]
+        self.write_model(build_model(rows=rows))
+        result = self.run_script()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(MODEL_PATH, result.stderr)
+        self.assertIn("S1 (proposed)", result.stderr)
 
     def test_a_missing_spec_file_is_a_problem_and_not_a_traceback(self):
         self.write_model(build_model())
