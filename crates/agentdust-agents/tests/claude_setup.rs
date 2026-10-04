@@ -828,3 +828,77 @@ fn the_asked_plan_is_only_requested_once_and_only_when_something_changes() {
     .unwrap();
     assert_eq!(asked.get(), 1);
 }
+
+struct RewritesSettingsOnFirstCall<'a> {
+    inner: &'a FakeClaude,
+    settings: PathBuf,
+    rewrite: Box<dyn Fn(&str) -> String + 'a>,
+    done: Cell<bool>,
+}
+
+impl CliRunner for RewritesSettingsOnFirstCall<'_> {
+    fn run(
+        &self,
+        args: &[&str],
+    ) -> Result<agentdust_agents::native_cli::CliOutput, agentdust_agents::native_cli::CliError> {
+        if !self.done.replace(true) {
+            let current = fs::read_to_string(&self.settings).unwrap();
+            fs::write(&self.settings, (self.rewrite)(&current)).unwrap();
+        }
+        self.inner.run(args)
+    }
+}
+
+#[test]
+fn a_cli_that_rewrites_settings_on_its_first_call_does_not_break_the_install() {
+    let world = world("cs-migrate-install");
+    world.write_settings("{\"model\":\"opus\",\"env\":{\"A\":\"1\"}}", 0o644);
+    let fake = FakeClaude::new(Mode::Honest);
+    let migrating = RewritesSettingsOnFirstCall {
+        inner: &fake,
+        settings: world.settings(),
+        rewrite: Box::new(|_| {
+            "{\n  \"env\": {\n    \"A\": \"1\"\n  },\n  \"model\": \"opus[1m]\"\n}\n".to_owned()
+        }),
+        done: Cell::new(false),
+    };
+    let report = applied(install(&world.env(Some(&migrating)), &mut approve).unwrap());
+    assert!(report.succeeded(), "{}", report.render());
+    let settings = world.settings_json();
+    assert_eq!(settings["model"], json!("opus[1m]"));
+    assert_eq!(settings["env"], json!({"A": "1"}));
+    assert_eq!(
+        settings["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+        json!(CMD)
+    );
+}
+
+#[test]
+fn a_cli_that_rewrites_settings_on_its_first_call_does_not_break_the_removal() {
+    let world = world("cs-migrate-remove");
+    world.write_settings(SETTINGS, 0o644);
+    let fake = FakeClaude::new(Mode::Honest);
+    installed(&world, &fake);
+    let migrating = RewritesSettingsOnFirstCall {
+        inner: &fake,
+        settings: world.settings(),
+        rewrite: Box::new(|current| {
+            let value: Value = serde_json::from_str(current).unwrap();
+            serde_json::to_string_pretty(&value)
+                .unwrap()
+                .replace("  ", "    ")
+        }),
+        done: Cell::new(false),
+    };
+    let outcome = remove(&world.env(Some(&migrating)), &mut approve).unwrap();
+    match outcome {
+        RemoveOutcome::Applied(report) => assert!(report.complete, "{}", report.text),
+        other => panic!("{other:?}"),
+    }
+    let after = world.settings_json();
+    for spec in HOOK_SPECS {
+        assert!(after["hooks"].get(spec.event).is_none(), "{}", spec.event);
+    }
+    assert_eq!(after["model"], json!("opus"));
+    assert!(fake.state.borrow().is_none());
+}
