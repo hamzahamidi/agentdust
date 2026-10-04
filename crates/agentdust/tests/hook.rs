@@ -3,6 +3,7 @@ mod common;
 use std::ffi::OsStr;
 use std::fs;
 use std::thread;
+use std::time::{Duration, Instant};
 
 use agentdust_core::journal::{self, Agent, Kind};
 use common::{pre_tool_use, run_hook, run_hook_with, scratch_dir};
@@ -91,7 +92,7 @@ fn an_oversized_session_id_is_not_recorded() {
 }
 
 #[test]
-fn concurrent_hooks_append_complete_records() {
+fn concurrent_hooks_never_interleave_records() {
     let dir = scratch_dir("concurrent");
     let handles: Vec<_> = (0..16)
         .map(|i| {
@@ -104,7 +105,34 @@ fn concurrent_hooks_append_complete_records() {
     }
     let report = journal::read(&dir).unwrap();
     assert_eq!(report.skipped_lines, 0);
-    assert_eq!(report.records.len(), 16);
+    let mut ids: Vec<&str> = report.records.iter().map(|r| r.session_id.as_str()).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), report.records.len());
+    assert!(!ids.is_empty());
+    assert!(ids.iter().all(|id| (0..16).any(|i| *id == format!("s{i}"))));
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_busy_journal_lock_drops_the_record_without_noise() {
+    let dir = scratch_dir("busy-lock");
+    fs::create_dir_all(&dir).unwrap();
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(dir.join("journal.lock"))
+        .unwrap();
+    lock.lock().unwrap();
+    let started = Instant::now();
+    let output = run_hook(&dir, &pre_tool_use("s1", "toolu_1"));
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+    assert_eq!(journal::read(&dir).unwrap().records.len(), 0);
+    drop(lock);
     fs::remove_dir_all(&dir).unwrap();
 }
 
