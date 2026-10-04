@@ -39,6 +39,7 @@ pub fn parse_event(reader: impl Read) -> Result<HookEvent, EventError> {
         Err(_) if budget.tripped() => return Err(EventError::FieldTooLong),
         Err(err) => return Err(err.into()),
     };
+    deserializer.end()?;
     let strings = [
         Some(&event.session_id),
         Some(&event.hook_event_name),
