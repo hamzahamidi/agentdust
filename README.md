@@ -43,7 +43,7 @@ Related tools exist. [tidewake](https://github.com/berkkorkmaz/tidewake) is a re
 True of the code today:
 
 - The release binary imports no socket calls, and the dependency tree has no networking crates.
-- The journal holds event kinds, session and tool identifiers, timestamps and the boot session. A test sends a 9 MB tool response through the hook and checks that neither the output nor the command reaches the journal.
+- The journal holds event kinds, session and tool identifiers, timestamps, the boot session and a keyed digest of the working directory, never the path. The digest is an HMAC under a random secret that stays in the data directory. A test sends a 9 MB tool response through the hook and checks that neither the output nor the command reaches the journal. Another plants sentinel paths, commands, outputs and session tags and checks that none appears in any file of the data directory.
 - The hook exits 0 and prints nothing, including on malformed input, an unwritable data directory and a data directory on a volume that is not local APFS, where it records nothing.
 
 Design for 0.1, not implemented yet:
