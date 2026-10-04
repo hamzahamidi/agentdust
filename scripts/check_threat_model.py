@@ -125,17 +125,24 @@ def check_residual(model_text):
     return problems
 
 
+def claimed_requirements(model_text):
+    claimed = set()
+    for _, row, columns in control_rows(model_text):
+        column = columns.get("requirement")
+        if column is not None and column < len(row):
+            claimed.update(CITATION.findall(row[column]))
+    return claimed
+
+
 def check_citations(model_text, known):
     problems = []
-    cited = set()
     for number, line in prose_lines(model_text):
         for requirement in dict.fromkeys(CITATION.findall(line)):
-            cited.add(requirement)
             if known and requirement not in known:
                 problems.append(f"line {number}: {requirement} is not a requirement in spec section 9.1")
     problems += [
-        f"{requirement} of spec section 9.1 is not cited anywhere"
-        for requirement in sorted(known - cited, key=lambda item: int(item[1:]))
+        f"{requirement} of spec section 9.1 is in the Requirement cell of no control"
+        for requirement in sorted(known - claimed_requirements(model_text), key=lambda item: int(item[1:]))
     ]
     return problems
 
