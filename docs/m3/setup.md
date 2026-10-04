@@ -60,7 +60,7 @@ A settings file that cannot be edited blocks only the hooks. Setup prints the JS
 
 `manifest.json` has `version` (1), `entries` and `agent_executables` (the resolved path of the `claude` CLI found on `PATH`). Each entry records `resource` (`hook` or `mcp_server`), `target` (the settings file, or the config directory for the server), `key` (the event, or the server name), `origin` (`created` or `pre_existing`), the exact `command` and `args`, and `hash`. The hash is SHA-256 over the installed value: the hook group as JSON with sorted keys and no whitespace, or the server name, command and arguments. Hook entries also record `created_hooks_key` and `created_event_key`, which say whether setup had to create the `hooks` object or the event array.
 
-An entry that equals what setup would write and was already there is recorded as `pre_existing` and is never changed or removed.
+An entry that equals what setup would write and was already there is recorded as `pre_existing` and is never changed or removed. Entries are matched on the settings file path, and the server entry on the config directory, so `--check` and `--remove` act on the config directory that `CLAUDE_CONFIG_DIR` selects and leave entries recorded for another one alone.
 
 | State | Meaning | `setup` | `--remove` |
 | --- | --- | --- | --- |
