@@ -33,7 +33,7 @@ pub fn kernel(pid: i32) -> KernelIdentity {
     KernelIdentity {
         boot_session_uuid: "boot-1".to_owned(),
         pid,
-        start_time_us: START + pid as u64,
+        start_time_us: START.wrapping_add(pid as i64 as u64),
         uid: 501,
     }
 }
@@ -145,6 +145,27 @@ pub struct ScriptedSurveyor {
     calls: Arc<AtomicUsize>,
     events: Events,
     audit_dir: PathBuf,
+    described: Arc<AtomicUsize>,
+}
+
+impl ScriptedSurveyor {
+    pub fn fixed(findings: Vec<Finding>) -> Self {
+        Self::scripted(move |_| Ok(findings.clone()))
+    }
+
+    pub fn scripted(script: impl Fn(usize) -> io::Result<Vec<Finding>> + Send + Sync + 'static) -> Self {
+        Self {
+            script: Box::new(script),
+            calls: Arc::default(),
+            events: Events::default(),
+            audit_dir: PathBuf::new(),
+            described: Arc::default(),
+        }
+    }
+
+    pub fn described(&self) -> usize {
+        self.described.load(Ordering::SeqCst)
+    }
 }
 
 impl Surveyor for ScriptedSurveyor {
@@ -156,6 +177,7 @@ impl Surveyor for ScriptedSurveyor {
     }
 
     fn describe(&self, found: &Finding) -> ModelFinding {
+        self.described.fetch_add(1, Ordering::SeqCst);
         describe(found)
     }
 }
@@ -334,6 +356,7 @@ impl RigBuilder {
                     calls: Arc::clone(&surveys),
                     events: events.clone(),
                     audit_dir: dir.path().to_path_buf(),
+                    described: Arc::default(),
                 }),
                 provider: Box::new(ScriptedProvider {
                     script: self.read,
