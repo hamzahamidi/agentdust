@@ -5,12 +5,16 @@ use agentdust_core::apply::exec::{Deps, Settings};
 use agentdust_core::apply::server::{ApplyError, Call, Challenge, Response, Server, Step};
 use agentdust_core::apply::signal::KillSignaller;
 use agentdust_core::apply::timer::SystemTimer;
-use agentdust_core::class::Class;
-use agentdust_core::darwin::DarwinProvider;
+use agentdust_core::classifier::Policy;
+use agentdust_core::cwd::RelationContext;
+use agentdust_core::darwin::{self, DarwinLive, DarwinProvider, DarwinSource};
+use agentdust_core::doctor::{Components, run as diagnose};
 use agentdust_core::finding::ModelFinding;
-use agentdust_core::live::LiveSurveyor;
+use agentdust_core::inventory::{LaunchctlList, SystemClock};
+use agentdust_core::journal::volume::SystemVolume;
 use agentdust_core::paths;
-use agentdust_core::survey::Surveyor;
+use agentdust_core::secret;
+use agentdust_core::session::ProviderLiveness;
 use rmcp::model::{
     CacheScope, CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ElicitRequest,
     ElicitRequestParams, ElicitResult, ElicitationAction, ElicitationSchema, Implementation, InputRequest,
@@ -49,22 +53,6 @@ struct ApprovalCode {
 }
 
 #[derive(Serialize)]
-struct DoctorResult {
-    findings: Vec<ModelFinding>,
-    counts: Counts,
-}
-
-#[derive(Default, Serialize)]
-struct Counts {
-    managed: usize,
-    owned_live: usize,
-    owned_ended: usize,
-    likely_owned: usize,
-    suspect: usize,
-    unknown: usize,
-}
-
-#[derive(Serialize)]
 struct PlanResult {
     plan_id: String,
     expires_in_seconds: u64,
@@ -81,13 +69,12 @@ struct ErrorResult {
 #[derive(Clone)]
 pub struct AgentDustServer {
     apply: Arc<Server>,
-    surveyor: Arc<LiveSurveyor>,
 }
 
 impl AgentDustServer {
     pub fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let data_dir = paths::data_dir()?;
-        let surveyor = Arc::new(LiveSurveyor::new(&data_dir));
+        let surveyor = Arc::new(agentdust_core::live::LiveSurveyor::new(&data_dir));
         let provider = DarwinProvider::new()?;
         let apply = Server::new(
             Deps {
@@ -101,7 +88,6 @@ impl AgentDustServer {
         );
         Ok(Self {
             apply: Arc::new(apply),
-            surveyor,
         })
     }
 }
@@ -143,27 +129,27 @@ impl ServerHandler for AgentDustServer {
 
 impl AgentDustServer {
     fn doctor(&self) -> Result<CallToolResponse, ErrorData> {
-        let findings = self.surveyor.survey().map_err(internal)?;
-        let mut counts = Counts::default();
-        let items = findings
-            .iter()
-            .map(|finding| {
-                match finding.class {
-                    Class::Managed => counts.managed += 1,
-                    Class::OwnedLive => counts.owned_live += 1,
-                    Class::OwnedEnded => counts.owned_ended += 1,
-                    Class::LikelyOwned => counts.likely_owned += 1,
-                    Class::Suspect => counts.suspect += 1,
-                    Class::Unknown => counts.unknown += 1,
-                }
-                self.surveyor.describe(finding)
-            })
-            .collect();
-        let value = DoctorResult {
-            findings: items,
-            counts,
-        };
-        success(&value)
+        let data_dir = paths::data_dir().map_err(internal)?;
+        let install_secret = secret::load_existing(&data_dir).ok();
+        let source = DarwinSource::new(install_secret.as_ref()).map_err(internal)?;
+        let provider = DarwinProvider::new().map_err(internal)?;
+        let live = DarwinLive::new().map_err(internal)?;
+        let relation = RelationContext::system();
+        let diagnosis = diagnose(&Components {
+            data_dir: &data_dir,
+            volume: &SystemVolume,
+            secret_available: install_secret.is_some(),
+            processes: &source,
+            launchd: &LaunchctlList,
+            clock: &SystemClock,
+            liveness: &ProviderLiveness(&provider),
+            live: &live,
+            relation: &relation,
+            policy: Policy::new(darwin::current_uid(), std::process::id() as i32),
+        })
+        .map_err(internal)?;
+        let result = diagnosis.to_json();
+        Ok(CallToolResult::success(vec![ContentBlock::text(result)]).into())
     }
 
     fn plan(&self) -> Result<CallToolResponse, ErrorData> {

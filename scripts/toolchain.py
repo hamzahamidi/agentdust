@@ -8,7 +8,10 @@ from pathlib import Path
 
 
 def output(*command: str) -> str:
-    result = subprocess.run(command, capture_output=True, text=True)
+    try:
+        result = subprocess.run(command, capture_output=True, text=True)
+    except OSError:
+        return "unavailable"
     return result.stdout.strip() if result.returncode == 0 else "unavailable"
 
 
@@ -31,6 +34,7 @@ def main() -> None:
     parser.add_argument("mode", choices=["record", "check"])
     parser.add_argument("--expected", type=Path, default=Path("release/toolchain.json"))
     parser.add_argument("--allow-missing", action="store_true")
+    parser.add_argument("--include-lock", action="store_true")
     args = parser.parse_args()
 
     current = record()
@@ -41,10 +45,13 @@ def main() -> None:
         print(f"no expected toolchain at {args.expected}; nothing to compare")
         return
     expected = json.loads(args.expected.read_text())
-    keys = sorted(set(expected) - {"cargo_lock_sha256"})
-    drift = [key for key in keys if expected[key] != current.get(key)]
+    keys = set(expected) - {"cargo_lock_sha256"}
+    if args.include_lock:
+        keys.add("cargo_lock_sha256")
+    keys = sorted(keys)
+    drift = [key for key in keys if expected.get(key) != current.get(key)]
     for key in drift:
-        print(f"toolchain drift in {key}:\n  expected: {expected[key]}\n  current:  {current.get(key)}", file=sys.stderr)
+        print(f"toolchain drift in {key}:\n  expected: {expected.get(key)}\n  current:  {current.get(key)}", file=sys.stderr)
     sys.exit(1 if drift else 0)
 
 

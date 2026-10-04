@@ -38,6 +38,7 @@ pub enum SafeOpenError {
 enum Shape {
     File,
     SharedFile,
+    UserFile,
     Dir,
 }
 
@@ -100,6 +101,16 @@ pub fn open_private_append_as(path: &Path, owner: u32) -> Result<File, SafeOpenE
     Ok(file)
 }
 
+pub fn open_user_file(path: &Path) -> Result<File, SafeOpenError> {
+    open_user_file_as(path, current_uid())
+}
+
+pub fn open_user_file_as(path: &Path, owner: u32) -> Result<File, SafeOpenError> {
+    let file = open_without_following(path, Access::Read)?;
+    verify(&file.metadata()?, Shape::UserFile, owner)?;
+    Ok(file)
+}
+
 pub fn check_dir(path: &Path) -> Result<(), SafeOpenError> {
     check_dir_as(path, current_uid())
 }
@@ -149,7 +160,7 @@ fn refusal(err: io::Error) -> SafeOpenError {
 
 fn verify(metadata: &Metadata, shape: Shape, owner: u32) -> Result<(), SafeOpenError> {
     let allowed = match shape {
-        Shape::File | Shape::SharedFile => {
+        Shape::File | Shape::SharedFile | Shape::UserFile => {
             if !metadata.file_type().is_file() {
                 return Err(SafeOpenError::NotRegular);
             }
@@ -160,7 +171,9 @@ fn verify(metadata: &Metadata, shape: Shape, owner: u32) -> Result<(), SafeOpenE
             }
             match shape {
                 Shape::SharedFile => PERMISSION_BITS,
-                _ => FILE_MODE,
+                Shape::UserFile => PERMISSION_BITS,
+                Shape::File => FILE_MODE,
+                Shape::Dir => unreachable!(),
             }
         }
         Shape::Dir => {

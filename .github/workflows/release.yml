@@ -1,0 +1,205 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RUST_TOOLCHAIN: "1.99.0"
+  TAP_REPOSITORY: hamzahamidi/homebrew-agentdust
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      commit: ${{ steps.main.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: tag
+        name: The tag names the crate version
+        run: |
+          version="$(python3 scripts/check_release.py tag --tag "$GITHUB_REF_NAME")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - id: main
+        name: Main contains the tag commit
+        run: |
+          commit="$(python3 scripts/check_release.py reachable --tag "$GITHUB_REF_NAME" --main-ref origin/main)"
+          test "$(git rev-parse HEAD)" = "$commit"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: CI passed on the tag commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ steps.main.outputs.commit }}
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$COMMIT/check-runs?per_page=100" > check-runs.json
+          python3 scripts/check_release.py checks --commit "$COMMIT" --runs check-runs.json
+
+  audit:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+          persist-credentials: false
+      - run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+      - uses: taiki-e/install-action@861a07ce7084f55488e375df125cdc99bba60eb7 # v2.87.23
+        with:
+          tool: cargo-audit
+      - run: cargo audit
+
+  build:
+    needs: verify
+    strategy:
+      matrix:
+        copy: [a, b]
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      SDKROOT: /Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+          persist-credentials: false
+      - run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+      - run: python3 scripts/toolchain.py check --include-lock
+      - run: python3 scripts/toolchain.py record > toolchain.json
+      - run: cargo build --release --locked -p agentdust
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: build-${{ matrix.copy }}
+          path: |
+            target/release/agentdust
+            toolchain.json
+          retention-days: 3
+
+  package:
+    needs: [verify, build]
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: builds
+      - run: python3 scripts/compare_builds.py builds/build-a builds/build-b
+      - run: |
+          chmod +x builds/build-a/target/release/agentdust builds/build-b/target/release/agentdust
+          test "$(builds/build-a/target/release/agentdust version)" = "agentdust $VERSION"
+      - run: |
+          epoch="$(git log -1 --format=%ct)"
+          SOURCE_DATE_EPOCH="$epoch" python3 scripts/package.py --binary builds/build-a/target/release/agentdust --version "$VERSION" --out-dir dist
+          SOURCE_DATE_EPOCH="$epoch" python3 scripts/package.py --binary builds/build-b/target/release/agentdust --version "$VERSION" --out-dir second
+          cmp "dist/agentdust-$VERSION-darwin-arm64.tar.gz" "second/agentdust-$VERSION-darwin-arm64.tar.gz"
+      - run: |
+          cd dist
+          shasum -a 256 *.tar.gz > SHA256SUMS
+          shasum -a 256 -c SHA256SUMS
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            builds/build-a/target/release/agentdust
+            dist/*.tar.gz
+      - run: |
+          python3 scripts/formula.py --tarball "dist/agentdust-$VERSION-darwin-arm64.tar.gz" --version "$VERSION" --url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/agentdust-$VERSION-darwin-arm64.tar.gz" --out formula/agentdust.rb
+          ruby -c formula/agentdust.rb
+      - run: |
+          python3 scripts/formula.py --tarball "dist/agentdust-$VERSION-darwin-arm64.tar.gz" --version "$VERSION" --url "file://$PWD/dist/agentdust-$VERSION-darwin-arm64.tar.gz" --out smoke/agentdust.rb
+          python3 scripts/brew_smoke.py smoke/agentdust.rb "$VERSION"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-files
+          path: dist
+          retention-days: 3
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: homebrew-formula
+          path: formula/agentdust.rb
+          retention-days: 3
+
+  release:
+    needs: [verify, audit, package]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-files
+          path: dist
+      - run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "agentdust $VERSION" --generate-notes dist/*
+
+  tap-pr:
+    needs: [verify, package, release]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      TAP_ENABLED: ${{ secrets.TAP_TOKEN != '' }}
+    steps:
+      - if: env.TAP_ENABLED != 'true'
+        run: echo "TAP_TOKEN is not set, so no tap pull request is opened"
+      - if: env.TAP_ENABLED == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+          persist-credentials: false
+      - if: env.TAP_ENABLED == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: homebrew-formula
+          path: formula
+      - if: env.TAP_ENABLED == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.TAP_REPOSITORY }}
+          token: ${{ secrets.TAP_TOKEN }}
+          path: tap
+          persist-credentials: false
+      - if: env.TAP_ENABLED == 'true'
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          python3 scripts/tap_update.py --tap tap --formula formula/agentdust.rb --version "$VERSION"
+          branch="agentdust-$VERSION"
+          base="$(git -C tap rev-parse --abbrev-ref HEAD)"
+          git -C tap checkout -b "$branch"
+          git -C tap add Formula
+          git -C tap -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "agentdust $VERSION"
+          git -C tap push "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPOSITORY}.git" "$branch"
+          gh pr create --repo "$TAP_REPOSITORY" --base "$base" --head "$branch" --title "agentdust $VERSION" --body "Updates the formula to agentdust $VERSION. The release stays a draft until it is published. Publish it, then merge this pull request."
