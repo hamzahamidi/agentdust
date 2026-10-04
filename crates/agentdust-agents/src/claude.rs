@@ -101,6 +101,7 @@ impl<'de> DeserializeSeed<'de> for EventSeed<'_> {
     type Value = HookEvent;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<HookEvent, D::Error> {
+        self.budget.arm(NAME_BUDGET);
         deserializer.deserialize_map(self)
     }
 }
