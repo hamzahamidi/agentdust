@@ -20,7 +20,7 @@ One JSON object per frame. Fields are written in this order, and an absent optio
 | `cwd_key` | string, optional | Lowercase hex, 1 to 64 characters |
 | `exe_base` | string, optional | At most 64 bytes, no C0, C1 or bidi control characters |
 
-`agent_identity`, `session_tag_key` and `procs` are not part of the record. A `null` optional field reads as absent, and a field this build does not know is ignored on a version 1 line. `ExeBase` and `CwdKey` check their rule in the constructor and in `Deserialize`, so a line that breaks it is malformed on read and no writer can produce it. The hook leaves `cwd_key` and `exe_base` empty.
+`agent_identity`, `session_tag_key` and `procs` are not part of the record. A `null` optional field reads as absent, and a field this build does not know is ignored on a version 1 line. `ExeBase` and `CwdKey` check their rule in the constructor and in `Deserialize`, so a line that breaks it is malformed on read and no writer can produce it. The hook writes `cwd_key`, an HMAC under the install secret ([install-secret.md](install-secret.md)), and leaves `exe_base` empty.
 
 ## Frame
 
@@ -168,4 +168,4 @@ The whole hook is measured with `cargo test --release -p agentdust --test hook_l
 
 ## Not built yet
 
-Rotation, retention and the recovery of a damaged generation, which [ADR-1](adr-journal-format.md) specifies and which are not in `agentdust-core`. The hook health counters for each kind of drop. The `cwd_key` and `exe_base` values in the hook.
+Rotation, retention and the recovery of a damaged generation, which [ADR-1](adr-journal-format.md) specifies and which are not in `agentdust-core`. The hook health counters for each kind of drop. The `exe_base` value in the hook.
