@@ -57,6 +57,8 @@ No lock is taken and no lock file is created. Appends are not synced, so an ackn
 
 `Ok(Appended { attempts })` is the acknowledgement: the whole frame was written and the recheck of step 6 then found the path still naming the file written. `attempts` says how many frames were written, and a value above 1 means the earlier frames went into files that were no longer the active one. Those are tentative copies. They are not acknowledgements, and readers collapse them with the acknowledged one. An append that ends in `Stale` is not acknowledged and its tentative copies may or may not be readable: one in a file that rotation sealed stays until retention drops it, and one in an unlinked file is gone.
 
+The hook ignores the result of `append`, exits 0 and prints nothing. A record that fails with `TooLarge`, `UnsupportedFilesystem`, `ShortWrite`, `Stale`, a refusal or an I/O error is dropped silently. The hook health counters of spec 4.4 are planned for M2.
+
 The write goes through the `FrameWriter` trait, which the tests implement to inject faults and to pause an append between its write and its recheck.
 
 ### What survives a failed write
