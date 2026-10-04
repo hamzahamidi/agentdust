@@ -25,6 +25,18 @@ fn runner(program: &std::path::Path) -> SystemRunner {
     SystemRunner::new(program.to_path_buf(), None, Duration::from_secs(60))
 }
 
+fn run_retrying(runner: &SystemRunner, args: &[&str]) -> Result<CliOutput, CliError> {
+    for _ in 0..100 {
+        match runner.run(args) {
+            Err(CliError::Spawn(reason)) if reason.contains("busy") => {
+                std::thread::sleep(Duration::from_millis(20))
+            }
+            other => return other,
+        }
+    }
+    runner.run(args)
+}
+
 const REAL_GET: &str = "agentdust:\n  Scope: User config (available in all your projects)\n  Status: \u{2718} Failed to connect\n  Issue: ENOENT: ENOENT: no such file or directory, posix_spawn '/tmp/some dir/agentdust'\n  Type: stdio\n  Command: /tmp/some dir/agentdust\n  Args: mcp\n  Environment:\n\nTo remove this server, run: claude mcp remove agentdust -s user\n";
 
 const REAL_GET_WITH_ENV: &str = "envtest:\n  Scope: User config (available in all your projects)\n  Status: \u{2718} Failed to connect\n  Issue: CONNECTION_CLOSED: Connection closed\n  Type: stdio\n  Command: /usr/bin/true\n  Args: a b c d\n  Environment:\n    API_KEY=abc\n    B=c\n\nTo remove this server, run: claude mcp remove envtest -s user\n";
@@ -292,7 +304,7 @@ fn the_fake_prints_what_the_real_cli_prints() {
 fn a_runner_captures_output_streams_and_the_exit_code() {
     let dir = TempDir::new("cli-capture");
     let program = script(&dir, "cli", "echo out; echo err >&2; exit 3");
-    let result = runner(&program).run(&[]).unwrap();
+    let result = run_retrying(&runner(&program), &[]).unwrap();
     assert_eq!(result, output(3, "out\n", "err\n"));
 }
 
@@ -300,9 +312,7 @@ fn a_runner_captures_output_streams_and_the_exit_code() {
 fn a_runner_passes_arguments_exactly() {
     let dir = TempDir::new("cli-args");
     let program = script(&dir, "cli", "for arg in \"$@\"; do echo \"[$arg]\"; done");
-    let result = runner(&program)
-        .run(&["mcp", "add", "a b", "", "--", "$HOME", "*"])
-        .unwrap();
+    let result = run_retrying(&runner(&program), &["mcp", "add", "a b", "", "--", "$HOME", "*"]).unwrap();
     assert_eq!(result.stdout, "[mcp]\n[add]\n[a b]\n[]\n[--]\n[$HOME]\n[*]\n");
 }
 
@@ -315,7 +325,7 @@ fn a_runner_gives_the_child_the_config_directory_and_no_input() {
         Some("/work/claude".into()),
         Duration::from_secs(60),
     );
-    assert_eq!(with.run(&[]).unwrap().stdout, "dir=/work/claude\n");
+    assert_eq!(run_retrying(&with, &[]).unwrap().stdout, "dir=/work/claude\n");
 }
 
 #[test]
@@ -326,7 +336,7 @@ fn a_runner_reads_large_output_on_both_streams_without_blocking() {
         "cli",
         "head -c 2000000 /dev/zero | tr '\\0' 'x'; head -c 2000000 /dev/zero | tr '\\0' 'y' >&2",
     );
-    let result = runner(&program).run(&[]).unwrap();
+    let result = run_retrying(&runner(&program), &[]).unwrap();
     assert_eq!(result.stdout.len(), 2_000_000);
     assert_eq!(result.stderr.len(), 2_000_000);
 }
@@ -335,7 +345,7 @@ fn a_runner_reads_large_output_on_both_streams_without_blocking() {
 fn a_runner_accepts_output_that_is_not_utf8() {
     let dir = TempDir::new("cli-binary");
     let program = script(&dir, "cli", "printf 'a\\377b'");
-    let result = runner(&program).run(&[]).unwrap();
+    let result = run_retrying(&runner(&program), &[]).unwrap();
     assert!(result.stdout.starts_with('a') && result.stdout.ends_with('b'));
 }
 
@@ -355,7 +365,7 @@ fn a_runner_kills_a_program_that_does_not_finish() {
         "cli",
         &format!("echo $$ > '{}'; exec sleep 30", pid_file.display()),
     );
-    let result = SystemRunner::new(program, None, Duration::from_secs(4)).run(&[]);
+    let result = run_retrying(&SystemRunner::new(program, None, Duration::from_secs(4)), &[]);
     assert!(matches!(result, Err(CliError::TimedOut(_))), "{result:?}");
     let pid = fs::read_to_string(&pid_file).unwrap();
     let alive = Command::new("kill")
@@ -379,7 +389,7 @@ fn a_runner_does_not_wait_for_a_background_child_that_keeps_the_pipes_open() {
             pid_file.display()
         ),
     );
-    let result = runner(&program).run(&[]).unwrap();
+    let result = run_retrying(&runner(&program), &[]).unwrap();
     assert_eq!(result.code, Some(0));
     assert!(result.stdout.starts_with("visible"));
     let pid = fs::read_to_string(&pid_file).unwrap();
