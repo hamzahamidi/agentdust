@@ -1,0 +1,1 @@
+{"v":1,"kind":"shell_start","agent":"claude","session_id":"full","subagent_id":"agent-7","tool_use_id":"toolu_9","wall_ts":1800000000000,"mono_ts":100,"boot":"boot-a","cwd_key":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","exe_base":"node"}

@@ -1,0 +1,2 @@
+{"v":1,"kind":"session_start","agent":"claude","session_id":"a","session_id":"b","wall_ts":1,"mono_ts":2,"boot":"b"}
+{"v":1,"kind":"session_start","agent":"claude","session_id":"s1","wall_ts":1800000000000,"mono_ts":100,"boot":"boot-a"}
