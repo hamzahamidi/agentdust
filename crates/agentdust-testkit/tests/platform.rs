@@ -6,6 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use agentdust_core::darwin;
+use agentdust_core::identity::KernelIdentity;
 
 const SLEEPER: &str = env!("CARGO_BIN_EXE_fixture-sleeper");
 
@@ -15,6 +16,43 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = self.0.kill();
         let _ = self.0.wait();
+    }
+}
+
+struct Orphan(Option<KernelIdentity>);
+
+impl Orphan {
+    fn adopt(pid: i32) -> Self {
+        let identity = darwin::boot_session_uuid()
+            .ok()
+            .and_then(|boot| darwin::process_info(pid, &boot).ok().flatten())
+            .map(|info| info.identity);
+        Self(identity)
+    }
+}
+
+impl Drop for Orphan {
+    fn drop(&mut self) {
+        let Some(identity) = &self.0 else { return };
+        let alive = |pid| {
+            matches!(
+                darwin::process_info(pid, &identity.boot_session_uuid),
+                Ok(Some(_))
+            )
+        };
+        let unchanged = matches!(
+            darwin::process_info(identity.pid, &identity.boot_session_uuid),
+            Ok(Some(info)) if info.identity == *identity
+        );
+        if !unchanged {
+            return;
+        }
+        // SAFETY: the kernel identity was just confirmed to be the sleeper this test spawned.
+        unsafe { libc::kill(identity.pid, libc::SIGKILL) };
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while alive(identity.pid) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 }
 
@@ -96,6 +134,7 @@ fn the_tag_survives_reparenting_to_launchd() {
         .output()
         .unwrap();
     let pid: i32 = String::from_utf8(output.stdout).unwrap().trim().parse().unwrap();
+    let _orphan = Orphan::adopt(pid);
     let sleeper = Path::new(SLEEPER).canonicalize().unwrap();
     let deadline = Instant::now() + Duration::from_secs(2);
     let mut ppid = 0;
@@ -109,7 +148,6 @@ fn the_tag_survives_reparenting_to_launchd() {
         thread::sleep(Duration::from_millis(20));
     }
     let value = darwin::env_var(pid, "AGENTDUST_SESSION").unwrap();
-    unsafe { libc::kill(pid, libc::SIGTERM) };
     assert_eq!(ppid, 1);
     assert_eq!(value.as_deref(), Some(&b"orphan-9"[..]));
 }
