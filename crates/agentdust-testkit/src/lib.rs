@@ -1,5 +1,11 @@
 use std::process::Child;
 
+pub mod report;
+pub mod spec;
+pub mod wait;
+
+pub use wait::wait_until;
+
 pub struct Fixture(pub Child);
 
 impl Drop for Fixture {
