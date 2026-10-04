@@ -1,6 +1,6 @@
 # Journal contention benchmark
 
-This page records the M1 benchmark behind [ADR-1](adr-journal-format.md) (ROADMAP open decision 1, spec sections 3.2 and 10, safety requirement S13, section 9.2 Stress). Four candidates were measured with real writer processes, a reader process and a rotator process. A, C2 and D lost no acknowledged record in these tests. C lost 115 acknowledged records in the 144,000 appends of the three runs, and each run had a rotator running.
+This page records the M1 benchmark behind [ADR-1](adr-journal-format.md) (the ledger format decision of the ROADMAP, spec sections 3.2 and 10, safety requirement S13, section 9.2 Stress). Four candidates were measured with real writer processes, a reader process and a rotator process. A, C2 and D lost no acknowledged record in these tests. C lost 115 acknowledged records in the 144,000 appends of the three runs, and each run had a rotator running.
 
 - **Decision and spec edits:** [adr-journal-format.md](adr-journal-format.md)
 - **Code:** `crates/agentdust-bench`, measured at `ae7ee1b`

@@ -2,7 +2,7 @@
 
 `agentdust_core::journal` rotates the journal and trims it. These are library functions for the future CLI and server. The hook never calls them and the binary has no maintenance subcommand.
 
-[ADR-1](adr-journal-format.md) explains why appenders take no lock and states the retention algorithm once, with a table of what happens to each kind of generation. [journal-schema.md](journal-schema.md) describes the records and the reader. The spec (section 3.2) is not edited here, and the last section lists where the code differs from it.
+[ADR-1](adr-journal-format.md) explains why appenders take no lock and states the retention algorithm once, with a table of what happens to each kind of generation. [journal-schema.md](journal-schema.md) describes the records and the reader. Spec section 3.2 states the same algorithm, and the last section lists where the code differs from the spec.
 
 ```rust
 Journal::rotate(&self, now_ms: u64) -> Result<Rotation, MaintenanceError>
@@ -151,8 +151,9 @@ The mutation checks below were run once each, and each makes the named tests fai
 
 ## Where this differs from the spec
 
-- Spec 3.2 says every reader, writer and rotator takes `journal.lock`. Only rotation and retention take `journal.maint`, and the file name is new.
+- Spec 4.4 still says that a journal writer takes a lock with a 20 ms budget. Appenders and readers take no lock, and only rotation and retention take `journal.maint`. ADR-1 has the edit.
 - Spec 3.2 says records from earlier boots are pruned first. They are dropped on every run, because no process of an earlier boot can be signalled.
 - The limit of "20 MB" is 20,000,000 bytes of frames of records that parse.
 - Spec 3.2 says provenance is marked degraded. The mark is a list in the report.
 - Spec 7.2 lists `journal.jsonl` and `journal.lock`. The directory also holds generations, `journal.maint`, `journal.compact.tmp` and copies. ADR-1 has the edit.
+- Spec 3.3 opens a resumed scope for a `session_start` with a different agent identity and ignores a duplicate one. Retention reopens a session on every `session_start` after its end, because M1 records carry no agent identity (see "The rules").

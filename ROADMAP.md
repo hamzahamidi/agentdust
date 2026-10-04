@@ -1,6 +1,6 @@
 # AgentDust roadmap
 
-The binary is `agentdust`. Status: M0 complete with blockers listed in docs/m0/report.md. Design: [the design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
+The binary is `agentdust`. Status: M0 complete with blockers listed in docs/m0/report.md. M1 complete, with its journal decision recorded in [ADR-1](docs/m1/adr-journal-format.md). Design: [the design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
 
 ## Goal
 
@@ -39,11 +39,11 @@ A macOS developer who uses Claude Code, Codex and Cursor installs the tool in tw
 | Actionable classes | Owned-ended (one batch code) and suspect (one typed code per item). At most 10 items per apply call in total. Managed and unknown are never actionable. Likely-owned stays report-only until its precision is measured |
 | Install | Homebrew formula that installs the attested prebuilt binary, then `agentdust setup` |
 | Platform | macOS arm64 first |
+| Journal | One O_APPEND file framed with RS, no lock for appenders and readers, an append recheck, 64 KiB frame cap, local APFS only |
 
 ## Open decisions
 
-1. Ledger format (append-only file with locking, or SQLite), decided by the M1 contention benchmark.
-2. Suspect rules: the exact age, idleness and launcher-chain thresholds, set from the M1 fixture corpus.
+1. Suspect rules: the exact age, idleness and launcher-chain thresholds, set from the M1 fixture corpus.
 
 ## Milestones
 
@@ -64,7 +64,7 @@ Exit: hook p50 under 10 ms on the real binary, the elicitation matrix recorded, 
 
 - Process identity (PID, start time, UID, executable), with property tests.
 - Journal: minimal fields only (session ID, wall and monotonic timestamps, keyed working directory digest, tool-call ID, executable basename), file permissions 0600, retention and rotation, schema version that fails closed on unknown versions, corrupt-state recovery.
-- Locking and the three-writer benchmark that picks the ledger format.
+- The 3 and 16 writer benchmark that picks the ledger format.
 - Written threat model covering a malicious model, malicious process metadata, a buggy MCP client, same-user tampering, PID reuse, concurrent apply, stale plans and a compromised release artifact.
 - Live process-tree test harness that spawns real fixture processes (cooperative and SIGTERM-ignoring children, detached sessions, children that exit during approval) and only signals PIDs it created.
 - Fixture schema with ground-truth labels.
@@ -135,7 +135,7 @@ Disk deletion or quarantine (1.x, rebuildable caches only), Linux and Windows, d
 | --- | --- |
 | MCP clients differ in elicitation behaviour | M0 matrix, pinned SDK, typed-code regression tests, refuse `apply` on any failing client |
 | `CLAUDE_ENV_FILE` is missing on resume, `/clear` or in plugin hooks | Tag is additive evidence only, with explicit acceptance cases |
-| Hook latency grows under journal contention | Three-writer benchmark in M1, hard budget in CI |
+| Hook latency grows under journal contention | 3 and 16 writer benchmark in M1, hard budget in CI |
 | Weaker provenance for Codex and Cursor | Correlation evidence is likely-owned and report-only until its precision is measured |
 | A suspect is a deliberately detached process | Evidence shown per item, one typed code per item, SIGTERM only, audit log, deny list, false positives counted in the 1.0 evidence |
 | Secrets in commands reach the journal | Ingestion minimisation, privacy invariant test |

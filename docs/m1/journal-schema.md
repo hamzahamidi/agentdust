@@ -1,6 +1,6 @@
 # Journal schema version 1 and its store
 
-This page describes `agentdust_core::journal` as it is built. [ADR-1](adr-journal-format.md) gives the reasons for the storage choice and holds the spec edits. The spec (section 3.2) is not edited here, and the last section lists where the code differs from it.
+This page describes `agentdust_core::journal` as it is built. [ADR-1](adr-journal-format.md) gives the reasons for the storage choice and lists the spec edits that are not applied yet. Spec section 3.2 states the same storage, and the last section lists where the code differs from the spec.
 
 ## Record
 
@@ -168,7 +168,7 @@ The whole hook is measured with `cargo test --release -p agentdust --test hook_l
 
 ## Where this differs from the spec
 
-- Sections 3.2 and 4.4 describe a lock. [ADR-1](adr-journal-format.md) lists the edits.
+- Section 4.4 describes a lock taken by a journal writer, and section 7.2 lists `journal.lock`. [ADR-1](adr-journal-format.md) lists the edits.
 - Section 7.3 says a wrong directory mode "is corrected". The journal functions refuse a data directory looser than 0700 and do not change it. The startup validation that corrects the mode is not part of the journal.
 - Section 3.2 lists `cwd_key` and `exe_base` without limits. The limits above are new.
 - A file mode is refused when it has any bit outside 0600, which includes an owner execute bit.
