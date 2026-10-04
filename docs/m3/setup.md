@@ -124,5 +124,4 @@ What setup does not do:
 What Claude Code imposes:
 
 - The registration lives in a file the CLI owns. Setup reads it only through `claude mcp get`, which prints one line for the arguments, so an argument that contains a space cannot be told apart from two arguments.
-- `claude mcp get` health checks the server and starts a Claude Code session, with the effects listed above.
-- A project or local scope server named `agentdust` takes precedence in `get`, and setup reports it as a conflict.
+- `claude mcp get` health checks the server and ends with a `SessionEnd` hook call, with the effect listed above.
