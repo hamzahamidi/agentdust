@@ -82,7 +82,7 @@ pub fn data_files(dir: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-pub fn stamped(session: &str, boot: &str, wall_ts_ms: u64, mono_ns: u64) -> Record {
+pub fn stamped(session: &str, boot: &str, wall_ts: u64, mono_ts: u64) -> Record {
     Record {
         v: SCHEMA_VERSION,
         kind: Kind::ShellStart,
@@ -90,14 +90,16 @@ pub fn stamped(session: &str, boot: &str, wall_ts_ms: u64, mono_ns: u64) -> Reco
         session_id: session.to_owned(),
         subagent_id: None,
         tool_use_id: None,
-        wall_ts_ms,
-        mono_ns,
+        wall_ts,
+        mono_ts,
         boot: boot.to_owned(),
+        cwd_key: None,
+        exe_base: None,
     }
 }
 
-pub fn named(session: &str, mono_ns: u64) -> Record {
-    stamped(session, "boot", 1_800_000_000_000, mono_ns)
+pub fn named(session: &str, mono_ts: u64) -> Record {
+    stamped(session, "boot", 1_800_000_000_000, mono_ts)
 }
 
 pub fn count_of(records: &[Record], session: &str) -> usize {

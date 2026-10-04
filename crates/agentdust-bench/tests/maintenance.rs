@@ -378,7 +378,7 @@ fn a_newer_version_line_longer_than_the_cap_still_protects_its_generation() {
 #[test]
 fn lines_of_an_unknown_kind_survive_a_rewrite_byte_for_byte() {
     each_candidate(|candidate, dir| {
-        let unknown = "{\"v\":1,\"kind\":\"future_kind\",\"agent\":\"claude\",\"session_id\":\"x\",\"wall_ts_ms\":1,\"mono_ns\":2,\"boot\":\"b\"}\n";
+        let unknown = "{\"v\":1,\"kind\":\"future_kind\",\"agent\":\"claude\",\"session_id\":\"x\",\"wall_ts\":1,\"mono_ts\":2,\"boot\":\"b\"}\n";
         let mut bytes = bytes_of(candidate, &[named("a", 1), expired(1)]);
         bytes.extend(unknown.as_bytes());
         plant_bytes(dir, "journal.10.jsonl", &bytes);

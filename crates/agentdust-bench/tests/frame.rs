@@ -209,7 +209,7 @@ fn a_long_line_of_version_one_is_malformed_and_a_long_line_without_a_version_is_
 
 #[test]
 fn a_line_with_a_kind_this_build_does_not_know_is_counted_apart_and_handed_over_raw() {
-    let text = "{\"v\":1,\"kind\":\"future_kind\",\"agent\":\"claude\",\"session_id\":\"x\",\"wall_ts_ms\":1,\"mono_ns\":2,\"boot\":\"b\"}\n";
+    let text = "{\"v\":1,\"kind\":\"future_kind\",\"agent\":\"claude\",\"session_id\":\"x\",\"wall_ts\":1,\"mono_ts\":2,\"boot\":\"b\"}\n";
     let decoded = decode(text.as_bytes()).unwrap();
     assert_eq!((decoded.unknown_kind, decoded.malformed), (1, 0));
     let mut seen = Vec::new();

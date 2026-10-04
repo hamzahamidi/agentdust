@@ -7,8 +7,8 @@ use agentdust_core::journal::Record;
 
 const SIZE: usize = 150;
 
-fn at(writer: u32, seq: u64, mono_ns: u64) -> Record {
-    record_with(writer, seq, SIZE, 1_800_000_000_000, mono_ns)
+fn at(writer: u32, seq: u64, mono_ts: u64) -> Record {
+    record_with(writer, seq, SIZE, 1_800_000_000_000, mono_ts)
 }
 
 fn report(records: Vec<Record>, skipped_lines: usize) -> ReadOutcome {
