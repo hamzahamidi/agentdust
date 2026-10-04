@@ -148,6 +148,9 @@ fn finish(segment: &[u8], length: usize, terminator: Option<u8>, each: &mut impl
 }
 
 fn classify(raw: &[u8]) -> Class {
+    if raw.first() != Some(&b'{') {
+        return Class::Malformed;
+    }
     match serde_json::from_slice::<Record>(raw) {
         Ok(record) if record.v == SCHEMA_VERSION => Class::Record(record),
         Ok(record) => other_version(u64::from(record.v)),
