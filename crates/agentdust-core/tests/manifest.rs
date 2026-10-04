@@ -48,7 +48,10 @@ fn sample() -> Manifest {
             hook_entry("PreToolUse", Origin::PreExisting),
             mcp_entry(),
         ],
-        agent_executables: BTreeMap::from([("claude".to_owned(), "/Users/u/.local/share/claude/2.1".to_owned())]),
+        agent_executables: BTreeMap::from([(
+            "claude".to_owned(),
+            "/Users/u/.local/share/claude/2.1".to_owned(),
+        )]),
     }
 }
 

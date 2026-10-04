@@ -36,6 +36,7 @@ pub enum SafeOpenError {
 
 enum Shape {
     File,
+    UserFile,
     Dir,
 }
 
@@ -46,6 +47,16 @@ pub fn open_file(path: &Path, access: Access) -> Result<File, SafeOpenError> {
 pub fn open_file_as(path: &Path, access: Access, owner: u32) -> Result<File, SafeOpenError> {
     let file = open_without_following(path, access)?;
     verify(&file.metadata()?, Shape::File, owner)?;
+    Ok(file)
+}
+
+pub fn open_user_file(path: &Path) -> Result<File, SafeOpenError> {
+    open_user_file_as(path, current_uid())
+}
+
+pub fn open_user_file_as(path: &Path, owner: u32) -> Result<File, SafeOpenError> {
+    let file = open_without_following(path, Access::Read)?;
+    verify(&file.metadata()?, Shape::UserFile, owner)?;
     Ok(file)
 }
 
@@ -94,7 +105,7 @@ fn open_without_following(path: &Path, access: Access) -> Result<File, SafeOpenE
 
 fn verify(metadata: &Metadata, shape: Shape, owner: u32) -> Result<(), SafeOpenError> {
     let allowed = match shape {
-        Shape::File => {
+        Shape::File | Shape::UserFile => {
             if !metadata.file_type().is_file() {
                 return Err(SafeOpenError::NotRegular);
             }
@@ -103,7 +114,11 @@ fn verify(metadata: &Metadata, shape: Shape, owner: u32) -> Result<(), SafeOpenE
                     links: metadata.nlink(),
                 });
             }
-            FILE_MODE
+            if matches!(shape, Shape::UserFile) {
+                PERMISSION_BITS
+            } else {
+                FILE_MODE
+            }
         }
         Shape::Dir => {
             if !metadata.file_type().is_dir() {

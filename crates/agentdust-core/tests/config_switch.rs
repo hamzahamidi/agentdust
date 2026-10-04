@@ -40,7 +40,13 @@ fn a_missing_file_or_directory_leaves_apply_enabled() {
 #[test]
 fn an_empty_file_or_one_without_the_key_leaves_apply_enabled() {
     let dir = private_dir("cfg-empty");
-    for text in ["", "\n\n", "# only a comment\n", "retention_days = 14\n", "name = \"x\"\n"] {
+    for text in [
+        "",
+        "\n\n",
+        "# only a comment\n",
+        "retention_days = 14\n",
+        "name = \"x\"\n",
+    ] {
         write_config(&dir, text.as_bytes(), 0o600);
         assert_eq!(apply_switch(&dir), ApplySwitch::Enabled, "{text:?}");
     }
@@ -79,7 +85,10 @@ fn comments_blank_lines_spacing_and_other_keys_do_not_change_the_answer() {
 #[test]
 fn a_key_inside_a_table_is_not_the_top_level_switch() {
     assert_eq!(parse_apply("[other]\napply = false\n"), Ok(None));
-    assert_eq!(parse_apply("apply = true\n[other]\napply = false\n"), Ok(Some(true)));
+    assert_eq!(
+        parse_apply("apply = true\n[other]\napply = false\n"),
+        Ok(Some(true))
+    );
     assert_eq!(parse_apply("[[rules]]\napply = false\n"), Ok(None));
 }
 

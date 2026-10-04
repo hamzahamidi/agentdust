@@ -1,5 +1,5 @@
 use hmac::{Hmac, KeyInit, Mac};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -24,6 +24,10 @@ pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
     let mut mac = start(key);
     mac.update(message);
     mac.finalize().into_bytes().into()
+}
+
+pub fn sha256_hex(data: &[u8]) -> String {
+    to_hex(&Sha256::digest(data))
 }
 
 pub fn keyed_digest(key: &[u8], domain: Domain, data: &[u8]) -> String {
