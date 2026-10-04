@@ -34,7 +34,7 @@ Rows are scenarios, and each cell is what the test asserts about the paused writ
 | The same, but retention runs one millisecond inside the grace window | Present once | Present once | Present once | Present once |
 | Pause after the write, rotate, compact, resume | Present once | Present once | Written again, one duplicate collapsed. Present once | Present once |
 | A probe unlinks the active file after the write | not run | **Lost.** The append returned success | Present once, 2 attempts | not run |
-| A probe rotates after every write | not run | not run | The third attempt fails with `Stale`. The record sits in three generations and is collapsed to one on read | not run |
+| A probe rotates after every write | not run | not run | The third attempt fails with `Stale`, so the record is not acknowledged. Its three tentative copies sit in three generations and are collapsed to one on read | not run |
 | A reader paused after opening the active file, or after listing, while a rotation and a compaction run | Rotation refused while the reader holds the lock. Every acknowledged record once | Every acknowledged record once | Every acknowledged record once | Rotation refused while the reader holds the lock. Every acknowledged record once |
 | A generation retention deletes between the listing and the open | Retention refused. No error, every record once | Skipped, no error, every record once | Skipped, no error, every record once | Retention refused. No error, every record once |
 
@@ -57,6 +57,7 @@ C is the one candidate that loses a record, and only when the writer's pause out
 
 Column definitions:
 
+- **Acknowledged:** the append returned success. For C2 that is after a complete write and a recheck that found the path still naming the file written. A write that a recheck rejected is tentative, and it is not an acknowledgement.
 - **Dropped:** the append returned an error and the writer knows it. For A and D, a lock was still busy after 20 ms. For C2, 3 attempts found a replaced file.
 - **Lost:** the append returned success and the record is missing from the final read.
 - **Torn:** a line that does not parse as a record, a frame without its newline, a line of a newer version or a line of an unknown kind.

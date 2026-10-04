@@ -55,7 +55,7 @@ A segment over the limit is held only up to 65,535 bytes. Its version comes from
 
 No lock is taken and no lock file is created. Appends are not synced, so an acknowledged record can be lost on an OS crash or a power failure, and lost evidence only lowers confidence. The one write call relies on POSIX append semantics for a local regular file. It is stress tested on APFS and is not an APFS guarantee.
 
-`Appended { attempts }` says how many frames were written. A value above 1 means a copy of the frame sits in a file that is no longer the active one, and readers collapse it. An append that ends in `Stale` is a dropped record whose copies may still be read.
+`Ok(Appended { attempts })` is the acknowledgement: the whole frame was written and the recheck of step 6 then found the path still naming the file written. `attempts` says how many frames were written, and a value above 1 means the earlier frames went into files that were no longer the active one. Those are tentative copies. They are not acknowledgements, and readers collapse them with the acknowledged one. An append that ends in `Stale` is not acknowledged and its tentative copies may or may not be readable: one in a file that rotation sealed stays until retention drops it, and one in an unlinked file is gone.
 
 The write goes through the `FrameWriter` trait, which the tests implement to inject faults and to pause an append between its write and its recheck.
 
