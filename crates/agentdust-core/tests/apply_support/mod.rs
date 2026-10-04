@@ -386,3 +386,222 @@ impl RigBuilder {
         }
     }
 }
+
+pub type Hook = Box<dyn Fn(i32) + Send + Sync>;
+
+struct WorldState {
+    findings: Vec<Finding>,
+    exited: std::collections::HashSet<i32>,
+    stubborn: std::collections::HashSet<i32>,
+    signalled: Vec<i32>,
+}
+
+pub struct World {
+    state: Mutex<WorldState>,
+}
+
+impl World {
+    pub fn new(findings: Vec<Finding>) -> Arc<World> {
+        Arc::new(World {
+            state: Mutex::new(WorldState {
+                findings,
+                exited: Default::default(),
+                stubborn: Default::default(),
+                signalled: Vec::new(),
+            }),
+        })
+    }
+
+    pub fn exit(&self, pid: i32) {
+        self.state.lock().unwrap().exited.insert(pid);
+    }
+
+    pub fn stubborn(&self, pid: i32) {
+        self.state.lock().unwrap().stubborn.insert(pid);
+    }
+
+    pub fn set_class(&self, pid: i32, class: Class) {
+        let mut state = self.state.lock().unwrap();
+        for found in state.findings.iter_mut().filter(|f| f.identity.kernel.pid == pid) {
+            found.class = class;
+            found.evidence = evidence_of(class);
+        }
+    }
+
+    pub fn set_path(&self, pid: i32, exe: &str) {
+        let mut state = self.state.lock().unwrap();
+        for found in state.findings.iter_mut().filter(|f| f.identity.kernel.pid == pid) {
+            found.identity.exe_path = Some(exe.into());
+        }
+    }
+
+    pub fn replace(&self, pid: i32) {
+        let mut state = self.state.lock().unwrap();
+        for found in state.findings.iter_mut().filter(|f| f.identity.kernel.pid == pid) {
+            found.identity.kernel.start_time_us += 1;
+        }
+    }
+
+    pub fn alive(&self, pid: i32) -> bool {
+        let state = self.state.lock().unwrap();
+        !state.exited.contains(&pid) && state.findings.iter().any(|f| f.identity.kernel.pid == pid)
+    }
+
+    pub fn signals(&self) -> Vec<i32> {
+        self.state.lock().unwrap().signalled.clone()
+    }
+
+    pub fn surveyor(self: &Arc<Self>) -> Arc<dyn Surveyor> {
+        Arc::new(WorldSurvey(Arc::clone(self)))
+    }
+
+    pub fn provider(self: &Arc<Self>) -> Box<dyn ProcessProvider + Send + Sync> {
+        Box::new(WorldProvider(Arc::clone(self)))
+    }
+
+    pub fn signaller(self: &Arc<Self>, hook: Option<Hook>) -> Box<dyn Signaller> {
+        Box::new(WorldSignaller(Arc::clone(self), hook))
+    }
+}
+
+struct WorldSurvey(Arc<World>);
+struct WorldProvider(Arc<World>);
+struct WorldSignaller(Arc<World>, Option<Hook>);
+
+impl Surveyor for WorldSurvey {
+    fn survey(&self) -> io::Result<Vec<Finding>> {
+        let state = self.0.state.lock().unwrap();
+        Ok(state
+            .findings
+            .iter()
+            .filter(|f| !state.exited.contains(&f.identity.kernel.pid))
+            .cloned()
+            .collect())
+    }
+
+    fn describe(&self, found: &Finding) -> ModelFinding {
+        describe(found)
+    }
+}
+
+impl ProcessProvider for WorldProvider {
+    fn read(&self, pid: i32) -> io::Result<ProcessRead> {
+        let state = self.0.state.lock().unwrap();
+        if state.exited.contains(&pid) {
+            return Ok(ProcessRead::Gone);
+        }
+        Ok(state
+            .findings
+            .iter()
+            .find(|f| f.identity.kernel.pid == pid)
+            .map_or(ProcessRead::Gone, |found| {
+                ProcessRead::Present(agentdust_core::identity::ProcessIdentity {
+                    kernel: found.identity.kernel.clone(),
+                    evidence: agentdust_core::identity::IdentityEvidence {
+                        exe_path: found.identity.exe_path.clone().unwrap_or_default(),
+                    },
+                })
+            }))
+    }
+}
+
+impl Signaller for WorldSignaller {
+    fn sigterm(&self, pid: i32) -> SignalResult {
+        if let Some(hook) = &self.1 {
+            hook(pid);
+        }
+        let mut state = self.0.state.lock().unwrap();
+        state.signalled.push(pid);
+        let exists =
+            !state.exited.contains(&pid) && state.findings.iter().any(|f| f.identity.kernel.pid == pid);
+        if !exists {
+            return SignalResult::NoSuchProcess;
+        }
+        if !state.stubborn.contains(&pid) {
+            state.exited.insert(pid);
+        }
+        SignalResult::Delivered
+    }
+}
+
+pub struct ServerRig {
+    pub dir: TempDir,
+    pub timer: Arc<FakeTimer>,
+    pub world: Arc<World>,
+    pub server: Arc<agentdust_core::apply::server::Server>,
+}
+
+impl ServerRig {
+    pub fn new(findings: Vec<Finding>) -> Self {
+        Self::hooked(findings, None)
+    }
+
+    pub fn hooked(findings: Vec<Finding>, hook: Option<Hook>) -> Self {
+        let dir = TempDir::private("apply-server");
+        let timer = Arc::new(FakeTimer::new(&Events::default()));
+        let world = World::new(findings);
+        let server = Self::server_on(&dir, &timer, &world, hook);
+        Self {
+            dir,
+            timer,
+            world,
+            server,
+        }
+    }
+
+    pub fn server_on(
+        dir: &TempDir,
+        timer: &Arc<FakeTimer>,
+        world: &Arc<World>,
+        hook: Option<Hook>,
+    ) -> Arc<agentdust_core::apply::server::Server> {
+        Arc::new(agentdust_core::apply::server::Server::new(
+            Deps {
+                data_dir: dir.path().to_path_buf(),
+                surveyor: world.surveyor(),
+                provider: world.provider(),
+                signaller: world.signaller(hook),
+                timer: Arc::clone(timer) as Arc<dyn Timer>,
+            },
+            Settings::default(),
+        ))
+    }
+
+    pub fn another_server(&self, hook: Option<Hook>) -> Arc<agentdust_core::apply::server::Server> {
+        Self::server_on(&self.dir, &self.timer, &self.world, hook)
+    }
+
+    pub fn locks(&self) -> PathBuf {
+        self.dir.join("locks")
+    }
+
+    pub fn audit(&self) -> Vec<Value> {
+        let Ok(text) = fs::read_to_string(self.dir.join(AUDIT_FILE)) else {
+            return Vec::new();
+        };
+        text.lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    }
+}
+
+pub fn code_of(challenge: &agentdust_core::apply::server::Challenge) -> String {
+    let at = challenge
+        .message
+        .find("Type ")
+        .expect("the prompt says what to type");
+    challenge.message[at + 5..at + 9].to_owned()
+}
+
+pub fn accept(
+    challenge: &agentdust_core::apply::server::Challenge,
+) -> agentdust_core::apply::server::Response {
+    agentdust_core::apply::server::Response::Accept(Some(code_of(challenge)))
+}
+
+pub fn call(plan_id: &str, items: &[&ModelFinding]) -> agentdust_core::apply::server::Call {
+    agentdust_core::apply::server::Call {
+        plan_id: plan_id.to_owned(),
+        item_ids: items.iter().map(|item| item.item_id.clone()).collect(),
+    }
+}
