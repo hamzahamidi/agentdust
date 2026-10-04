@@ -44,12 +44,11 @@ pub struct Plan {
 
 type Scope<'a> = (Agent, &'a str, &'a str);
 
-type Stamp = (u64, u64, usize);
-
 struct ScopeInfo {
     ended: bool,
     newest: u64,
-    last_lifecycle: Option<(Stamp, bool)>,
+    first_end: Option<u64>,
+    last_start: Option<u64>,
 }
 
 struct Run<'a> {
@@ -90,23 +89,32 @@ fn scope_of(record: &Record) -> Scope<'_> {
 
 fn scopes_of<'a>(entries: &[Entry<'a>]) -> HashMap<Scope<'a>, ScopeInfo> {
     let mut scopes: HashMap<Scope<'a>, ScopeInfo> = HashMap::new();
-    for (index, entry) in entries.iter().enumerate() {
+    for entry in entries {
         let record = entry.record;
         let info = scopes.entry(scope_of(record)).or_insert(ScopeInfo {
             ended: false,
             newest: 0,
-            last_lifecycle: None,
+            first_end: None,
+            last_start: None,
         });
         info.newest = info.newest.max(record.wall_ts);
-        if matches!(record.kind, Kind::SessionStart | Kind::SessionEnd) {
-            let stamp = (record.mono_ts, record.wall_ts, index);
-            if info.last_lifecycle.is_none_or(|(last, _)| stamp > last) {
-                info.last_lifecycle = Some((stamp, record.kind == Kind::SessionEnd));
+        match record.kind {
+            Kind::SessionStart => info.last_start = info.last_start.max(Some(record.mono_ts)),
+            Kind::SessionEnd => {
+                info.first_end = Some(
+                    info.first_end
+                        .map_or(record.mono_ts, |first| first.min(record.mono_ts)),
+                );
             }
+            _ => {}
         }
     }
     for info in scopes.values_mut() {
-        info.ended = info.last_lifecycle.is_some_and(|(_, ends)| ends);
+        info.ended = match (info.first_end, info.last_start) {
+            (Some(end), Some(start)) => start < end,
+            (Some(_), None) => true,
+            (None, _) => false,
+        };
     }
     scopes
 }

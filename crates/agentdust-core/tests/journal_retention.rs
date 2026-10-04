@@ -44,6 +44,11 @@ impl Row {
         self
     }
 
+    fn mono(mut self, mono_ts: u64) -> Self {
+        self.record.mono_ts = mono_ts;
+        self
+    }
+
     fn sub(mut self, id: &str) -> Self {
         self.record.subagent_id = Some(id.to_owned());
         self
@@ -263,7 +268,7 @@ fn a_session_is_judged_separately_in_each_boot() {
 fn the_end_record_may_sit_in_a_file_that_cannot_be_dropped() {
     let rows = [
         row(Kind::SessionStart, "a", NOW - 5_000),
-        row(Kind::SessionEnd, "a", NOW - 5_000).fixed(),
+        row(Kind::SessionEnd, "a", NOW - 4_999).fixed(),
     ];
     let result = run(&rows, &roomy());
     assert_eq!(result.keep, [false, true]);
@@ -273,11 +278,11 @@ fn the_end_record_may_sit_in_a_file_that_cannot_be_dropped() {
 fn over_the_cap_the_oldest_ended_session_goes_first() {
     let rows = [
         row(Kind::SessionStart, "e1", NOW - 300),
-        row(Kind::SessionEnd, "e1", NOW - 300),
+        row(Kind::SessionEnd, "e1", NOW - 300 + 1),
         row(Kind::SessionStart, "e2", NOW - 200),
-        row(Kind::SessionEnd, "e2", NOW - 200),
+        row(Kind::SessionEnd, "e2", NOW - 200 + 1),
         row(Kind::SessionStart, "e3", NOW - 100),
-        row(Kind::SessionEnd, "e3", NOW - 100),
+        row(Kind::SessionEnd, "e3", NOW - 100 + 1),
     ];
     let result = run(&rows, &policy(LIMIT, 450));
     assert_eq!(result.keep, [false, false, true, true, true, true]);
@@ -419,7 +424,7 @@ fn a_session_started_again_after_its_end_is_not_ended_and_is_not_aged_out() {
 }
 
 #[test]
-fn a_session_that_ends_again_after_its_resumed_start_is_ended() {
+fn an_end_after_a_resumed_start_does_not_end_the_session_because_it_cannot_be_attributed() {
     let rows = [
         row(Kind::SessionStart, "a", NOW - 5_000),
         row(Kind::SessionEnd, "a", NOW - 4_000),
@@ -427,12 +432,43 @@ fn a_session_that_ends_again_after_its_resumed_start_is_ended() {
         row(Kind::SessionEnd, "a", NOW - 2_000),
     ];
     let result = run(&rows, &roomy());
-    assert_eq!(result.keep, [false, false, false, false]);
+    assert_eq!(result.keep, [true, true, true, true]);
+    assert_eq!(result.dropped_aged, 0);
+}
+
+#[test]
+fn a_delayed_end_of_the_old_run_does_not_make_a_resumed_session_look_ended() {
+    let rows = [
+        row(Kind::SessionStart, "a", NOW - 5_000),
+        row(Kind::SessionEnd, "a", NOW - 4_000),
+        row(Kind::SessionStart, "a", NOW - 3_000),
+        row(Kind::SessionEnd, "a", NOW - 2_500),
+        row(Kind::ShellStart, "a", NOW - 2_000),
+    ];
+    let result = run(&rows, &roomy());
+    assert_eq!(result.keep, [true; 5]);
+    assert_eq!(result.dropped_aged, 0);
+    let squeezed = run(&rows, &policy(LIMIT, 300));
+    assert_eq!(squeezed.dropped_over_cap, 0);
+    assert_eq!(squeezed.dropped_pinned, 2);
+    assert_eq!(squeezed.degraded, [degraded(Agent::Claude, "a", 2)]);
+}
+
+#[test]
+fn a_session_that_started_once_and_ended_once_is_ended() {
+    let rows = [
+        row(Kind::SessionStart, "a", NOW - 5_000),
+        row(Kind::ShellStart, "a", NOW - 4_500),
+        row(Kind::SessionStart, "a", NOW - 4_000),
+        row(Kind::SessionEnd, "a", NOW - 3_000),
+    ];
+    let result = run(&rows, &roomy());
+    assert_eq!(result.keep, [false; 4]);
     assert_eq!(result.dropped_aged, 4);
 }
 
 #[test]
-fn the_last_lifecycle_record_by_time_decides_and_not_the_order_it_was_read_in() {
+fn a_start_after_an_end_by_time_pins_the_session_whatever_order_it_was_read_in() {
     let rows = [
         row(Kind::SessionStart, "a", NOW - 5_000),
         row(Kind::SessionStart, "a", NOW - 3_000),
@@ -449,17 +485,41 @@ fn the_last_lifecycle_record_by_time_decides_and_not_the_order_it_was_read_in() 
 }
 
 #[test]
-fn records_with_equal_timestamps_are_ordered_as_they_were_read() {
-    let ended_last = [
+fn a_start_and_an_end_with_the_same_monotonic_time_are_ambiguous_and_stay_pinned() {
+    let start_read_first = [
         row(Kind::SessionStart, "a", NOW - 5_000),
         row(Kind::SessionEnd, "a", NOW - 5_000),
     ];
-    assert_eq!(run(&ended_last, &roomy()).keep, [false, false]);
-    let started_last = [
+    assert_eq!(run(&start_read_first, &roomy()).keep, [true, true]);
+    let end_read_first = [
         row(Kind::SessionEnd, "a", NOW - 5_000),
         row(Kind::SessionStart, "a", NOW - 5_000),
     ];
-    assert_eq!(run(&started_last, &roomy()).keep, [true, true]);
+    assert_eq!(run(&end_read_first, &roomy()).keep, [true, true]);
+}
+
+#[test]
+fn the_wall_clock_never_decides_whether_a_session_ended() {
+    let start_looks_later = [
+        row(Kind::SessionStart, "a", NOW - 4_000).mono(7),
+        row(Kind::SessionEnd, "a", NOW - 5_000).mono(7),
+    ];
+    assert_eq!(run(&start_looks_later, &roomy()).keep, [true, true]);
+    let end_looks_later = [
+        row(Kind::SessionStart, "a", NOW - 5_000).mono(7),
+        row(Kind::SessionEnd, "a", NOW - 4_000).mono(7),
+    ];
+    assert_eq!(run(&end_looks_later, &roomy()).keep, [true, true]);
+    let end_is_later_by_mono = [
+        row(Kind::SessionStart, "a", NOW - 4_000).mono(7),
+        row(Kind::SessionEnd, "a", NOW - 5_000).mono(8),
+    ];
+    assert_eq!(run(&end_is_later_by_mono, &roomy()).keep, [false, false]);
+    let start_is_later_by_mono = [
+        row(Kind::SessionStart, "a", NOW - 5_000).mono(8),
+        row(Kind::SessionEnd, "a", NOW - 4_000).mono(7),
+    ];
+    assert_eq!(run(&start_is_later_by_mono, &roomy()).keep, [true, true]);
 }
 
 #[test]

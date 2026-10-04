@@ -119,20 +119,25 @@ fn scopes(rows: &[Row]) -> Scopes {
         ended: HashSet::new(),
         newest: HashMap::new(),
     };
-    let mut last: HashMap<ScopeKey, ((u64, u64, usize), Kind)> = HashMap::new();
-    for (index, row) in rows.iter().enumerate() {
+    let mut first_end: HashMap<ScopeKey, u64> = HashMap::new();
+    let mut last_start: HashMap<ScopeKey, u64> = HashMap::new();
+    for row in rows {
         let newest = found.newest.entry(scope(row)).or_default();
         *newest = (*newest).max(row.record.wall_ts);
-        if matches!(row.record.kind, Kind::SessionStart | Kind::SessionEnd) {
-            let key = (row.record.mono_ts, row.record.wall_ts, index);
-            let entry = last.entry(scope(row)).or_insert((key, row.record.kind));
-            if key > entry.0 {
-                *entry = (key, row.record.kind);
+        match row.record.kind {
+            Kind::SessionStart => {
+                let at = last_start.entry(scope(row)).or_insert(row.record.mono_ts);
+                *at = (*at).max(row.record.mono_ts);
             }
+            Kind::SessionEnd => {
+                let at = first_end.entry(scope(row)).or_insert(row.record.mono_ts);
+                *at = (*at).min(row.record.mono_ts);
+            }
+            _ => {}
         }
     }
-    for (key, (_, kind)) in last {
-        if kind == Kind::SessionEnd {
+    for (key, end) in first_end {
+        if last_start.get(&key).is_none_or(|start| *start < end) {
             found.ended.insert(key);
         }
     }

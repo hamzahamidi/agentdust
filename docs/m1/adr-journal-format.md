@@ -1,6 +1,6 @@
 # ADR-1: The journal is one append-only file, appended without a lock and rechecked after the write
 
-**Status:** accepted. Spec section 3.2, the section 9.1 rows S22 to S25 and the additions to S13, S16 and S18, and the ROADMAP are edited to match. The edits to sections 4.4, 7.2, 7.3, 9.2 and 10 are listed under "Spec edits" and are not applied.
+**Status:** accepted. The spec sections 3.2, 4.4, 7.2, 7.3, 9.1, 9.2 and 10 and the ROADMAP are edited to match. "Spec edits" lists them.
 **Date:** 2026-10-04 · **Deciders:** the repository owner
 **Evidence:** [journal-benchmark.md](journal-benchmark.md)
 
@@ -56,7 +56,7 @@ Its price is that a record can exist twice. When a rotation lands between the wr
 ## The append
 
 1. Encode the record as compact JSON and frame it. A frame longer than 65,536 bytes is refused with `TooLarge`, and nothing is opened or created for it. The hook drops the record silently, and the hook health counters are planned for M2.
-2. Check the volume of the journal directory (section "Local APFS only"). When it is not supported, write nothing, count it and stop.
+2. Check the volume of the journal directory (section "Local APFS only"). When it is not supported, write nothing and stop. The hook drops the record silently.
 3. Open `journal.jsonl` with `O_APPEND`, `O_CREAT`, `O_NOFOLLOW` and mode 0600, in a directory of mode 0700.
 4. Write the frame with one `write(2)`. A call that returns `EINTR` before it transferred anything is restarted. A call that returns fewer bytes than the frame, zero included, is an error and is never completed by a second call, because a second call would not be atomic with respect to other appenders.
 5. Compare `fstat` of the descriptor with `lstat` of the path. They match when `st_dev` and `st_ino` are equal and `st_nlink` is not 0. If they do not match, close the descriptor and go to step 3. After 3 attempts the append fails with `Stale`.
