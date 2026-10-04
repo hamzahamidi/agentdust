@@ -10,6 +10,10 @@ Include the AgentDust version (`agentdust version`), the macOS version, and the 
 
 Nothing is released yet. Reports against the `main` branch are welcome.
 
+## Threat model
+
+The adversaries AgentDust is designed against, the controls for each and the risk that remains are in the [threat model](docs/threat-model.md).
+
 ## What counts as a vulnerability
 
 - AgentDust signals a process that its rules say it must never signal.
