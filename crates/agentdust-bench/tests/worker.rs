@@ -195,8 +195,12 @@ fn a_rotator_with_the_stop_file_in_place_runs_exactly_one_final_cycle_per_candid
             "{label}"
         );
         assert!(report.records.iter().all(|record| !is_marker(record)), "{label}");
+        let journal_files: Vec<_> = data_files(scratch.path())
+            .into_iter()
+            .filter(|path| path.file_name().is_some_and(|name| name != "stop"))
+            .collect();
         assert_eq!(
-            data_files(scratch.path()).len(),
+            journal_files.len(),
             1,
             "{label}: one compacted generation and no active file"
         );
