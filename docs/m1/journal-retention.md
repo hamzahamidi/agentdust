@@ -80,7 +80,7 @@ The size of a record is its whole frame: the JSON bytes plus the 0x1E and the 0x
 | `Busy` | Another run holds `journal.maint` | Nothing |
 | `EmptyBoot` | `current_boot` is empty, which would make every record look like an earlier boot | Nothing, and the check precedes any file access |
 | `UnsupportedFilesystem(facts)` | The volume is not local APFS | Nothing is created |
-| `Refused { path, source }` | The data directory, the lock file, the active file or a generation is a symlink, a FIFO, a directory, hard linked, has a loose mode or another owner | Nothing, except that `journal.maint` may have been created. A FIFO is refused without blocking |
+| `Refused { path, source }` | The data directory, the lock file, the active file or a generation is a symlink, a FIFO, a directory, hard linked, has a loose mode or another owner, or on macOS has an extended ACL with an allow entry | Nothing, except that `journal.maint` may have been created. A FIFO is refused without blocking |
 | `Io` | Any other failure, such as a permission error on a generation or a taken `journal.compact.tmp` directory | Generations already visited stay as they were left. The one that failed is intact |
 
 A run that fails on a generation never deletes it. A reader reports an unsafe generation and goes on, while a maintenance run refuses, because it must not act on a directory it cannot account for.

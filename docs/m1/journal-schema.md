@@ -128,7 +128,7 @@ On this machine `$TMPDIR` is `apfs, local, supported` and `/dev` is `devfs, loca
 
 ## Safe opens
 
-`safe_open::open_file(path, Read | Append | Create)` opens with `O_NOFOLLOW` and `O_NONBLOCK` and then judges the descriptor with `fstat`. `check_dir`, `open_dir` and `ensure_dir` apply the same rules to a directory.
+`safe_open::open_file(path, Read | Append | Create)` opens with `O_NOFOLLOW` and `O_NONBLOCK` and then judges the descriptor with `fstat` and, on macOS, with its extended ACL. `check_dir`, `open_dir` and `ensure_dir` apply the same rules to a directory. The data directory, the journal, the generations, `journal.maint`, `journal.compact.tmp`, the copies and `install.secret` with its temporary file all go through them.
 
 | Refusal | Error |
 | --- | --- |
@@ -138,8 +138,11 @@ On this machine `$TMPDIR` is `apfs, local, supported` and `/dev` is `devfs, loca
 | A file with more than one hard link | `HardLinked` |
 | An owner other than the effective uid | `ForeignOwner` |
 | Any mode bit outside 0600 for a file or 0700 for a directory | `LooseMode` |
+| On macOS, an extended ACL with an allow entry | `ExtendedAcl` |
 
 `Append` and `Read` never create. `Create` is exclusive with mode 0600. A FIFO is refused at once and never blocks. A refused open reads and writes nothing.
+
+The ACL is read from the opened descriptor with `acl_get_fd_np` and `acl_to_text`, declared in `crates/agentdust-core/src/acl.rs` because the `libc` crate does not have them. A file or directory with no ACL passes, and so does one whose entries are all `deny`, such as the `group:everyone deny delete` entry that macOS puts on `~/Library` and `~/Library/Application Support`. Any other entry refuses, and so does a line that is not a recognised entry. The check matters because a parent directory with an inheritable allow entry gives a new file mode 0600 and an ACL that lets another account read it. The mode bits do not show that. The check runs on the descriptor, so it sees an ACL that was inherited when the file was created. A file or directory that `Create` or `ensure_dir` has just made and then refuses is removed, so a refusal leaves no `install.secret.<hex>.tmp` and no empty journal behind. Other platforms have no ACL check.
 
 ## Cost
 

@@ -30,7 +30,8 @@ A secret that is present and unusable is an error, and the file is left as it wa
 | More than one hard link | `Refused(HardLinked)` |
 | FIFO or directory | `Refused(NotRegular)` |
 | Owned by another user | `Refused(ForeignOwner)` |
-| Data directory a symlink, a file, or looser than 0700 | `Refused(..)`, and no secret is created |
+| On macOS, an extended ACL with an allow entry | `Refused(ExtendedAcl)` |
+| Data directory a symlink, a file, looser than 0700, or with an extended ACL that holds an allow entry (macOS) | `Refused(..)`, and no secret is created |
 | Volume not local APFS | `UnsupportedFilesystem(facts)`, and nothing is created |
 
 A process killed between the creation of its temporary file and the rename leaves `install.secret.<16 hex characters>.tmp` behind. It holds 32 random bytes that were never the secret, no code reads it as the secret, and no code removes it.
