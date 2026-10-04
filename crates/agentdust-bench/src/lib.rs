@@ -2,6 +2,8 @@
 
 pub mod candidates;
 pub mod cli;
+#[allow(unsafe_code)]
+pub mod durability;
 pub mod frame;
 #[allow(unsafe_code)]
 pub mod fsinfo;
