@@ -33,13 +33,13 @@ fn accounted(report: &ReadReport) -> usize {
 
 #[derive(Debug, Clone)]
 enum Item {
-    Valid(Record),
+    Valid(Box<Record>),
     Junk { filler: u8, len: usize, framed: bool },
 }
 
 fn arb_item() -> impl Strategy<Value = Item> {
     prop_oneof![
-        3 => arb_record().prop_map(Item::Valid),
+        3 => arb_record().prop_map(|record| Item::Valid(Box::new(record))),
         2 => (select(FILLERS.to_vec()), select(JUNK_LENGTHS.to_vec()), any::<bool>())
             .prop_map(|(filler, len, framed)| Item::Junk { filler, len, framed }),
     ]
@@ -214,7 +214,7 @@ proptest! {
         let valid: Vec<Record> = items
             .iter()
             .filter_map(|item| match item {
-                Item::Valid(record) => Some(record.clone()),
+                Item::Valid(record) => Some(Record::clone(record)),
                 Item::Junk { .. } => None,
             })
             .collect();

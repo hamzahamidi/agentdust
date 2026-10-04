@@ -162,7 +162,7 @@ fn load(
                     } else {
                         seen.insert(Rc::clone(&raw));
                         parsed.push(Parsed {
-                            record,
+                            record: *record,
                             bytes: raw.len() as u64 + 2,
                             droppable,
                         });

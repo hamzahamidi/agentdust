@@ -59,7 +59,7 @@ pub fn wrap(json: &[u8], framing: Framing) -> Vec<u8> {
 
 #[derive(Debug)]
 pub enum Class {
-    Record(Record),
+    Record(Box<Record>),
     Malformed,
     Torn,
     NewerVersion,
@@ -88,7 +88,7 @@ struct KindOnly {
 pub fn decode(reader: impl Read) -> io::Result<Decoded> {
     let mut decoded = Decoded::default();
     scan(reader, |_, class| match class {
-        Class::Record(record) => decoded.records.push(record),
+        Class::Record(record) => decoded.records.push(*record),
         Class::Malformed => decoded.malformed += 1,
         Class::Torn => decoded.torn += 1,
         Class::NewerVersion => decoded.newer_version += 1,
@@ -152,7 +152,7 @@ fn classify(raw: &[u8]) -> Class {
         return Class::Malformed;
     }
     match serde_json::from_slice::<Record>(raw) {
-        Ok(record) if record.v == SCHEMA_VERSION => Class::Record(record),
+        Ok(record) if record.v == SCHEMA_VERSION => Class::Record(Box::new(record)),
         Ok(record) => other_version(u64::from(record.v)),
         Err(_) => classify_unreadable(raw),
     }

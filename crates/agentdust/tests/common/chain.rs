@@ -194,7 +194,9 @@ pub fn run_hop() {
     match hops.get(index + 1) {
         Some(next) => {
             let mut child = spawn_hop(&plan, index + 1);
-            if !next["orphaned"].as_bool().unwrap() {
+            if next["orphaned"].as_bool().unwrap() {
+                std::mem::forget(child);
+            } else {
                 let _ = child.wait();
             }
         }

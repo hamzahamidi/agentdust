@@ -28,7 +28,13 @@ const VALUE_OPTIONS: [&[u8]; 7] = [
 ];
 const CODE_OPTIONS: [&[u8]; 4] = [b"-e", b"--eval", b"-p", b"--print"];
 
-fn read_args(buf: &[u8]) -> Result<(&[u8], Vec<&[u8]>, &[u8]), ParseError> {
+struct Arguments<'a> {
+    exec_path: &'a [u8],
+    args: Vec<&'a [u8]>,
+    rest: &'a [u8],
+}
+
+fn read_args(buf: &[u8]) -> Result<Arguments<'_>, ParseError> {
     let header: [u8; 4] = buf
         .get(..4)
         .and_then(|h| h.try_into().ok())
@@ -43,11 +49,19 @@ fn read_args(buf: &[u8]) -> Result<(&[u8], Vec<&[u8]>, &[u8]), ParseError> {
     for _ in 0..argc {
         args.push(take_cstr(&mut rest).ok_or(ParseError::Truncated)?);
     }
-    Ok((exec_path, args, rest))
+    Ok(Arguments {
+        exec_path,
+        args,
+        rest,
+    })
 }
 
 pub fn parse(buf: &[u8]) -> Result<ProcArgs<'_>, ParseError> {
-    let (exec_path, args, mut rest) = read_args(buf)?;
+    let Arguments {
+        exec_path,
+        args,
+        mut rest,
+    } = read_args(buf)?;
     let mut env = Vec::new();
     while let Some(entry) = take_cstr(&mut rest) {
         if entry.is_empty() {
@@ -59,8 +73,7 @@ pub fn parse(buf: &[u8]) -> Result<ProcArgs<'_>, ParseError> {
 }
 
 pub fn script_argument(buf: &[u8]) -> Result<Option<&[u8]>, ParseError> {
-    let (_, args, _) = read_args(buf)?;
-    let mut rest = args.into_iter().skip(1);
+    let mut rest = read_args(buf)?.args.into_iter().skip(1);
     while let Some(arg) = rest.next() {
         if arg == b"--" {
             return Ok(rest.next());
