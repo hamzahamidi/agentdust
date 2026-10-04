@@ -8,7 +8,10 @@ from pathlib import Path
 
 
 def output(*command: str) -> str:
-    result = subprocess.run(command, capture_output=True, text=True)
+    try:
+        result = subprocess.run(command, capture_output=True, text=True)
+    except OSError:
+        return "unavailable"
     return result.stdout.strip() if result.returncode == 0 else "unavailable"
 
 
