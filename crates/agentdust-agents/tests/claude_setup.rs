@@ -902,3 +902,40 @@ fn a_cli_that_rewrites_settings_on_its_first_call_does_not_break_the_removal() {
     assert_eq!(after["model"], json!("opus"));
     assert!(fake.state.borrow().is_none());
 }
+
+#[test]
+fn a_removal_that_cannot_edit_the_settings_keeps_the_ownership_record() {
+    let world = world("cs-remove-race");
+    world.write_settings(SETTINGS, 0o644);
+    let fake = FakeClaude::new(Mode::Honest);
+    installed(&world, &fake);
+    let outcome = remove(&world.env(Some(&fake)), &mut |_: &str| {
+        let text = fs::read_to_string(world.settings()).unwrap();
+        fs::write(world.settings(), text.replace("opus", "sonnet")).unwrap();
+        true
+    })
+    .unwrap();
+    match outcome {
+        RemoveOutcome::Applied(report) => {
+            assert!(!report.complete);
+            assert!(
+                report.text.contains("changed after it was read"),
+                "{}",
+                report.text
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(world.settings_json()["hooks"]["SessionStart"].is_array());
+    assert_eq!(hook_entries(&world.manifest().unwrap()).len(), 4);
+    let again = remove(&world.env(Some(&fake)), &mut approve).unwrap();
+    match again {
+        RemoveOutcome::Applied(report) => assert!(report.complete, "{}", report.text),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        fs::read_to_string(world.settings()).unwrap(),
+        SETTINGS.replace("opus", "sonnet")
+    );
+    assert!(world.manifest().is_none());
+}
