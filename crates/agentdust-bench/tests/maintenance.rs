@@ -19,6 +19,7 @@ fn open(candidate: Candidate, dir: &Path) -> Box<dyn Journal> {
         dir,
         Options {
             maintenance_budget: Duration::ZERO,
+            ..Options::default()
         },
     )
 }
@@ -634,4 +635,44 @@ fn the_kept_records_keep_the_framing_their_candidate_writes() {
         };
         assert_eq!(bytes[0], expected, "{}", candidate.label());
     }
+}
+
+#[test]
+fn turning_the_syncs_off_changes_no_file_the_maintenance_leaves_behind() {
+    for candidate in Candidate::ALL {
+        let state = |sync: bool| {
+            let scratch = Scratch::new("sync");
+            let dir = scratch.path();
+            plant(dir, "journal.10.jsonl", candidate, &[named("a", 1), expired(1)]);
+            plant(
+                dir,
+                "journal.20.jsonl",
+                candidate,
+                &[named("a", 1), named("b", 2)],
+            );
+            plant(dir, "journal.30.jsonl", candidate, &[expired(2)]);
+            plant(dir, "journal.jsonl", candidate, &[named("c", 3)]);
+            let journal = candidate.open_with(
+                dir,
+                Options {
+                    maintenance_budget: Duration::ZERO,
+                    sync,
+                },
+            );
+            assert!(matches!(journal.rotate(T), Ok(Rotation::Rotated { .. })));
+            let report = retain(&*journal, T, 0);
+            let mut files: Vec<_> = names_in(dir)
+                .into_iter()
+                .map(|name| (fs::read(dir.join(&name)).unwrap(), name))
+                .collect();
+            files.sort();
+            (files, report)
+        };
+        assert_eq!(state(true), state(false), "{}", candidate.label());
+    }
+}
+
+#[test]
+fn syncing_is_on_unless_a_caller_turns_it_off() {
+    assert!(Options::default().sync);
 }

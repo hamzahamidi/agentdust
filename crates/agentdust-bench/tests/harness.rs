@@ -20,6 +20,7 @@ fn cell(candidate: Candidate, writers: u32, records_per_writer: u64, size: usize
         pace_us: 0,
         rotate_period_ms: 2,
         grace_ms: 0,
+        sync: true,
     }
 }
 
@@ -230,4 +231,16 @@ fn a_rotator_process_waits_for_go_and_runs_its_final_cycle_when_the_stop_file_ex
     let outcome: RotatorOutcome = serde_json::from_str(rest.trim()).unwrap();
     assert_eq!(outcome.cycles, 1);
     assert!(outcome.final_cycle_ok);
+}
+
+#[test]
+fn a_cell_with_the_maintenance_syncs_off_loses_and_tears_nothing_except_under_c() {
+    for candidate in Candidate::ALL {
+        let scratch = Scratch::new("no-sync");
+        let mut quick = cell(candidate, 3, 40, 150);
+        quick.sync = false;
+        quick.rotate_period_ms = 1;
+        let outcome = run_cell(Path::new(EXE), scratch.path(), &quick).unwrap();
+        assert_consistent(candidate, &outcome, 120);
+    }
 }

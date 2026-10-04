@@ -42,6 +42,7 @@ fn rotator_plan(candidate: Candidate, scratch: &Scratch, stop_file: &Path) -> Ro
         grace_ms: 0,
         budget_ms: 0,
         final_budget_ms: 0,
+        sync: true,
         stop_file: stop_file.to_path_buf(),
     }
 }
@@ -241,4 +242,26 @@ fn a_rotator_loop_cycles_until_the_stop_file_appears_and_then_runs_the_final_cyc
     assert!(outcome.rotations >= 1);
     let report = Candidate::Recheck.open(scratch.path()).read_all().unwrap();
     assert_eq!(check(&report, &acked(3, 6), 150), Integrity::default());
+}
+
+#[test]
+fn a_rotator_with_the_syncs_off_runs_the_same_final_cycle() {
+    for candidate in Candidate::ALL {
+        let scratch = Scratch::new("rotator-no-sync");
+        run_writer(&plan(candidate, &scratch, 12));
+        let stop = scratch.path().join("stop");
+        File::create(&stop).unwrap();
+        let mut quiet = rotator_plan(candidate, &scratch, &stop);
+        quiet.sync = false;
+        let outcome = run_rotator(&quiet);
+        assert!(outcome.final_cycle_ok, "{}", candidate.label());
+        assert_eq!((outcome.cycles, outcome.rotations, outcome.rewritten), (1, 1, 1));
+        let report = candidate.open(scratch.path()).read_all().unwrap();
+        assert_eq!(
+            check(&report, &acked(3, 12), 150),
+            Integrity::default(),
+            "{}",
+            candidate.label()
+        );
+    }
 }

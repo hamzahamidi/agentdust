@@ -38,6 +38,7 @@ fn lock_file(dir: &Path) -> File {
 fn immediate() -> Options {
     Options {
         maintenance_budget: Duration::ZERO,
+        ..Options::default()
     }
 }
 
