@@ -47,6 +47,7 @@ True of the code today:
 - The journal holds event kinds, session and tool identifiers, timestamps, the boot session and a keyed digest of the working directory, never the path. The digest is an HMAC under a random secret that stays in the data directory. A test sends a 9 MB tool response through the hook and checks that neither the output nor the command reaches the journal. Another plants sentinel paths, commands, outputs and session tags and checks that none appears in any file of the data directory.
 - The hook exits 0 and prints nothing, including on malformed input, an unwritable data directory and a data directory on a volume that is not local APFS, where it records nothing.
 - The live tests start real processes (some ignore SIGTERM, some detach into their own session, some outlive their parent) through a [harness](docs/m1/live-harness.md) that can only signal processes it started. It revalidates each one's identity before every signal and logs each signal sent.
+- The classifier will be judged against a [corpus of 22 fixtures](docs/fixtures.md) that carry the truth about each process: left behind by an ended session, live, detached, managed or unknown. It includes six protected cases (PID 1, another user, the agent itself, a launchd job, a Homebrew service, an app helper). The fixtures that can be started are started for real through the harness, and each one's parent, session and liveness are checked against the kernel.
 
 Design for 0.1, not implemented yet:
 
