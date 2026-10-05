@@ -16,7 +16,7 @@ A macOS developer who uses Claude Code installs the tool in two commands. Claude
 ## v1.0 success criteria
 
 1. Install: `brew install` pours a prebuilt binary and never compiles. `agentdust setup` finishes in under 5 seconds on a declared fixture account and prints a diff before changing anything.
-2. Hook cost: p50 under 10 ms and p95 under 20 ms on the release binary, including three agents writing the journal at once.
+2. Hook cost: p50 under 10 ms and p95 under 20 ms on the release binary, including three Claude Code sessions writing the journal at once.
 3. Idle: the MCP server does no periodic work when idle. CPU over a 60 second idle window stays under 0.1%. Resident memory is reported per release (target under 10 MB).
 4. Actionability: `apply` rejects managed and unknown items, even when the model supplies their ID. Owned-ended items can be approved as one batch with one typed code. Every suspect item needs its own typed code, shows its evidence, and is never signalled as part of a process group.
 5. Classifier: fixtures carry ground-truth labels (`true_owned_ended`, `true_live_owned`, `true_detached`, `true_managed`, `true_unknown`). No fixture outside `true_owned_ended` is classified owned-ended, no `true_managed` or `true_unknown` fixture is ever actionable, and every `true_owned_ended` fixture is classified owned-ended.
@@ -127,7 +127,7 @@ Exit: the Claude Code plugin is submitted and the other plugins are validated lo
 
 ## Platform expansion after v1
 
-The current release target is macOS arm64 with Claude Code. Finish the Codex and Cursor adapter matrices in M4 and M5 on that target before adding another operating system. Verify a clean-account Homebrew installation before expanding the release matrix.
+The current target is Claude Code on macOS arm64. Keep Codex and Cursor deferred. Verify the Claude Code install and collect the two-week dogfood evidence before expanding to another operating system.
 
 ### M10 Intel macOS (M)
 
