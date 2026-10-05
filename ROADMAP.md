@@ -1,6 +1,6 @@
 # AgentDust roadmap
 
-The binary is `agentdust`. M0 is complete with the Cursor coverage gap recorded in [the M0 report](docs/m0/report.md). M1 is complete, with its journal decision recorded in [ADR-1](docs/m1/adr-journal-format.md). M2 and M3 shipped in the [0.1.0 release](https://github.com/hamzahamidi/agentdust/releases/tag/v0.1.0). The Homebrew formula pull request is pending the recovery workflow. Verify installation from a clean account before expanding the release matrix. Design: [the design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
+The binary is `agentdust`. M0 is complete with the Cursor coverage gap recorded in [the M0 report](docs/m0/report.md). M1 is complete, with its journal decision recorded in [ADR-1](docs/m1/adr-journal-format.md). M2 and M3 shipped in the [0.1.0 release](https://github.com/hamzahamidi/agentdust/releases/tag/v0.1.0). The 0.1.0 Homebrew formula is merged. Verify installation from a clean account before expanding the release matrix. Design: [the design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
 
 ## Goal
 
@@ -113,9 +113,9 @@ Exit: on a clean account, install, setup, a controlled stale process found by a 
 
 ### M8 Plugins, listings and upstream (S, external latency)
 
-- Thin plugins for the three agents. Submission to Anthropic's directory and the Cursor marketplace. One technical comment on anthropics/claude-code#1935. A request for a lifecycle event carrying the PID and session of spawned processes.
+- Submit the optional Claude Code cleanup plugin, shipped in 0.1, to Anthropic's directory. Add thin Codex and Cursor plugins after their adapters and setup paths ship, then submit the Cursor plugin to its marketplace. One technical comment on anthropics/claude-code#1935. A request for a lifecycle event carrying the PID and session of spawned processes.
 
-Exit: submitted and validated locally. Acceptance by third parties is not a gate.
+Exit: the Claude Code plugin is submitted and the other plugins are validated locally. Acceptance by third parties is not a gate.
 
 ### M9 1.0 readiness
 
@@ -123,7 +123,7 @@ Exit: submitted and validated locally. Acceptance by third parties is not a gate
 
 ## Platform expansion after v1
 
-The current release target is macOS arm64 with Claude Code. Finish the Codex and Cursor adapter matrices in M4 and M5 on that target before adding another operating system. Close the Homebrew install gap and verify installation from a clean account before expanding the release matrix.
+The current release target is macOS arm64 with Claude Code. Finish the Codex and Cursor adapter matrices in M4 and M5 on that target before adding another operating system. Verify a clean-account Homebrew installation before expanding the release matrix.
 
 ### M10 Intel macOS (M)
 
