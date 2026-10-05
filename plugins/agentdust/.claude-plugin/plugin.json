@@ -1,0 +1,17 @@
+{
+  "name": "agentdust",
+  "description": "Optional Claude Code skill for reviewing and cleaning leftover processes",
+  "version": "0.1.0",
+  "author": {
+    "name": "Hamza Hamidi",
+    "url": "https://github.com/hamzahamidi"
+  },
+  "homepage": "https://github.com/hamzahamidi/agentdust",
+  "repository": "https://github.com/hamzahamidi/agentdust",
+  "license": "MIT",
+  "keywords": [
+    "agentdust",
+    "claude-code",
+    "process-cleanup"
+  ]
+}

@@ -1,10 +1,12 @@
 # AgentDust
 
+[![CI](https://github.com/hamzahamidi/agentdust/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hamzahamidi/agentdust/actions/workflows/ci.yml) [![Latest release](https://img.shields.io/github/v/release/hamzahamidi/agentdust)](https://github.com/hamzahamidi/agentdust/releases/latest) [![License](https://img.shields.io/github/license/hamzahamidi/agentdust)](LICENSE)
+
 AgentDust is a macOS tool that finds processes left running after Claude Code sessions and stops them only after you approve each one with a typed code. Codex and Cursor support are planned for later releases.
 
-**Release 0.1.0 supports Claude Code on Apple silicon and installs through Homebrew.**
+**Release 0.1.0 supports Claude Code on Apple silicon. The Homebrew formula pull request is pending.**
 
-Install with `brew install hamzahamidi/agentdust/agentdust`. To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
+The Homebrew install is pending the formula pull request. After it merges, run `brew install hamzahamidi/agentdust/agentdust`. To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
 
 Agents start dev servers, MCP servers and helpers. When a session ends or crashes, some of them keep running under `launchd`, holding memory, ports and sometimes CPU. The upstream reports are open: [anthropics/claude-code#1935](https://github.com/anthropics/claude-code/issues/1935) and [openai/codex#21008](https://github.com/openai/codex/issues/21008).
 
@@ -21,10 +23,11 @@ Release 0.1 adds the analysis and the approved cleanup for Claude Code. The Code
 | Journal rotation and retention, as library functions that nothing runs yet | Built |
 | MCP approval probe: a typed-code form that changes nothing | Built |
 | Reproducible release pipeline | The GitHub Actions dry run built two identical binaries, packaged a deterministic tarball, and verified the binary, tarball and SBOM attestations ([M0 report](docs/m0/report.md), [0.1.0 run](https://github.com/hamzahamidi/agentdust/actions/runs/37249711505)) |
-| Homebrew distribution | Tap repository exists. The first release adds the public formula |
+| Homebrew distribution | The 0.1.0 release is public. The formula pull request is pending; the release workflow opens it |
 | Release workflow: tag gate, audit, two builds, tarball, SBOM, attestation, draft release, formula | Built ([release process](docs/release.md)) |
 | `agentdust setup` for Claude Code (hooks in `settings.json`, the MCP server through the `claude` CLI, a diff and consent, `--check`, `--remove`) and `agentdust status` | Built ([setup](docs/m3/setup.md)) |
 | `agentdust doctor`, the MCP doctor and plan tools, and cleanup through the MCP form or terminal approval | Built for release 0.1.0 ([apply design and limits](docs/m3/apply.md)) |
+| Optional Claude Code cleanup skill | Available as the `agentdust` plugin marketplace below |
 
 ## How cleanup works
 
@@ -36,7 +39,7 @@ The design is in [docs/superpowers/specs](docs/superpowers/specs).
 
 ## Why I built AgentDust
 
-My Mac was running hot, so I looked for leftovers from my AI coding sessions. Six processes had outlived their sessions by 7 to 9 days: two dev servers, a mock server, a browser driver with its MCP server and a stale Node script. Three held ports, and all six sat at 0% CPU, so they were not what heated the Mac, but nothing had told me they were there. Related reports are still open upstream: [anthropics/claude-code#1935](https://github.com/anthropics/claude-code/issues/1935) and [openai/codex#21008](https://github.com/openai/codex/issues/21008).
+My Mac was running hot, so I looked for leftovers from my AI coding sessions. Six leftover processes were 7 to 9 days old: two dev servers, a mock server, a browser driver with its MCP server and a stale Node script. Three held ports, and all six sat at 0% CPU, so they were not what heated the Mac, but nothing had told me they were there. Related reports are still open upstream: [anthropics/claude-code#1935](https://github.com/anthropics/claude-code/issues/1935) and [openai/codex#21008](https://github.com/openai/codex/issues/21008).
 
 Killing every process whose parent PID is 1 is unsafe. A background Node job showed a parent PID of 1 after 0.3 s while its agent was still running. Killing by name or by parent PID can kill live work.
 
@@ -68,12 +71,27 @@ Release 0.1.0 supports Apple silicon with Claude Code. The Status table above li
 
 ### Install and connect
 
+Homebrew installation is pending the formula pull request. After it merges, run:
+
 ```bash
 brew install hamzahamidi/agentdust/agentdust
 agentdust setup
 ```
 
 `brew install` pours the prebuilt binary. Check what you downloaded with `gh attestation verify` ([how](docs/release.md#verify-a-release)). `agentdust setup` shows a diff and asks before it changes anything ([details](#setting-up-claude-code)).
+
+### Add the optional Claude Code skill
+
+The MCP server exposes the tools. The optional plugin adds `/agentdust:cleanup`, a reusable workflow for inspecting and cleaning leftover processes. It does not install the server or start cleanup by itself.
+
+```bash
+claude plugin marketplace add hamzahamidi/agentdust
+claude plugin install agentdust@agentdust --scope user
+```
+
+Start a new Claude Code session, then run `/agentdust:cleanup` or ask Claude to inspect processes left by a Claude Code session. `agentdust_doctor` only reads the inventory. When you ask to clean up, the skill creates a fresh plan, shows its eligible items and evidence, then calls `agentdust_apply` to show AgentDust's typed approval form. Type the generated code yourself to approve. The skill never supplies an approval code. The plugin contains only this skill; `agentdust setup` separately registers the MCP server and hooks.
+
+The plugin can also be reviewed or tested from a checkout of this repository with `claude plugin validate .`. See [Claude Code plugin installation](https://code.claude.com/docs/en/plugins/install) for install scopes and management.
 
 ### Find leftover processes
 

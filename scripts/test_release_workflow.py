@@ -1,6 +1,8 @@
 import json
+import os
 import re
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -350,6 +352,71 @@ class TapJobTest(unittest.TestCase):
         cls.jobs = load(RELEASE)["jobs"]
         cls.tap = cls.jobs["tap-pr"]
 
+    def make_tap_fixture(self, root, branch_base, branch_version, main_version, main_extra=False):
+        remote = root / "tap.git"
+        source = root / "source"
+        tap = root / "tap"
+        fake_bin = root / "bin"
+        formula = root / "formula" / "agentdust.rb"
+        pr_marker = root / "pr-created"
+        fake_bin.mkdir()
+
+        subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True)
+        subprocess.run(["git", "init", "--initial-branch=main", str(source)], check=True, capture_output=True, text=True)
+        subprocess.run(["git", "-C", str(source), "config", "user.name", "Tap Test"], check=True)
+        subprocess.run(["git", "-C", str(source), "config", "user.email", "tap-test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(source), "remote", "add", "origin", str(remote)], check=True)
+
+        formula_dir = source / "Formula"
+        formula_dir.mkdir()
+        tap_formula = formula_dir / "agentdust.rb"
+        tap_formula.write_text('class Agentdust < Formula\n  version "0.1.0"\nend\n', encoding="utf-8")
+        subprocess.run(["git", "-C", str(source), "add", "Formula"], check=True)
+        subprocess.run(["git", "-C", str(source), "commit", "-m", "initial formula"], check=True, capture_output=True, text=True)
+
+        if branch_base != "0.1.0":
+            tap_formula.write_text(f'class Agentdust < Formula\n  version "{branch_base}"\nend\n', encoding="utf-8")
+            subprocess.run(["git", "-C", str(source), "commit", "-am", "base formula"], check=True, capture_output=True, text=True)
+        branch = f"agentdust-{branch_version}"
+        subprocess.run(["git", "-C", str(source), "checkout", "-b", branch], check=True, capture_output=True, text=True)
+        tap_formula.write_text(f'class Agentdust < Formula\n  version "{branch_version}"\nend\n', encoding="utf-8")
+        subprocess.run(["git", "-C", str(source), "commit", "-am", "release formula"], check=True, capture_output=True, text=True)
+        subprocess.run(["git", "-C", str(source), "checkout", "main"], check=True, capture_output=True, text=True)
+        if main_extra:
+            (source / "README.md").write_text("Tap default branch update\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(source), "add", "README.md"], check=True)
+            subprocess.run(["git", "-C", str(source), "commit", "-m", "update default branch"], check=True, capture_output=True, text=True)
+        elif main_version != branch_base:
+            tap_formula.write_text(f'class Agentdust < Formula\n  version "{main_version}"\nend\n', encoding="utf-8")
+            subprocess.run(["git", "-C", str(source), "commit", "-am", "newer formula"], check=True, capture_output=True, text=True)
+        subprocess.run(["git", "-C", str(remote), "symbolic-ref", "HEAD", "refs/heads/main"], check=True)
+        subprocess.run(["git", "-C", str(source), "push", "--all", "origin"], check=True, capture_output=True, text=True)
+        subprocess.run(["git", "clone", str(remote), str(tap)], check=True, capture_output=True, text=True)
+
+        formula.parent.mkdir()
+        formula.write_text(f'class Agentdust < Formula\n  version "{branch_version}"\nend\n', encoding="utf-8")
+        gh = fake_bin / "gh"
+        gh.write_text(
+            "#!/bin/sh\n"
+            "if [ \"$1\" = api ]; then printf main; exit 0; fi\n"
+            "if [ \"$1\" = pr ] && [ \"$2\" = list ]; then exit 0; fi\n"
+            "if [ \"$1\" = pr ] && [ \"$2\" = create ]; then touch \"$PR_MARKER\"; exit 0; fi\n"
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        gh.chmod(0o755)
+        env = {
+            **os.environ,
+            "FORMULA": str(formula),
+            "GH_TOKEN": "test-token",
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "PR_MARKER": str(pr_marker),
+            "TAP_DIR": str(tap),
+            "TAP_REPOSITORY": "owner/tap",
+            "VERSION": branch_version,
+        }
+        return env, remote, branch, pr_marker
+
     def test_the_job_is_off_until_the_secret_exists(self):
         self.assertEqual(self.tap["environment"], "release")
         self.assertEqual(self.tap["env"]["TAP_ENABLED"], "${{ secrets.HOMEBREW_TAP_TOKEN != '' }}")
@@ -388,11 +455,50 @@ class TapJobTest(unittest.TestCase):
 
     def test_the_formula_files_come_from_the_tested_script_and_the_pull_request_is_only_opened(self):
         command = runs(self.tap)
-        self.assertIn('python3 scripts/tap_update.py --tap tap --formula formula/agentdust.rb --version "$VERSION"', command)
-        self.assertIn("gh pr create", command)
+        self.assertIn("bash scripts/create_tap_pr.sh", command)
+        helper = (ROOT / "scripts/create_tap_pr.sh").read_text(encoding="utf-8")
+        self.assertIn('python3 scripts/tap_update.py --tap "$TAP_DIR" --formula "$FORMULA" --version "$VERSION"', helper)
+        self.assertIn('merge --no-edit "origin/$base"', helper)
+        self.assertIn("gh pr create", helper)
+        recovery = (WORKFLOWS / "homebrew-tap-recovery.yml").read_text(encoding="utf-8")
+        self.assertIn('--source-ref "refs/tags/v$VERSION"', recovery)
         for word in ("gh pr merge", "--auto", "git push --force", "--force"):
             with self.subTest(word=word):
-                self.assertNotIn(word, command)
+                self.assertNotIn(word, helper)
+
+    def test_a_stale_release_branch_cannot_open_a_downgrade_pull_request(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            env, _, _, pr_marker = self.make_tap_fixture(root, "0.1.0", "0.1.1", "0.2.0")
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "create_tap_pr.sh")],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse(pr_marker.exists())
+
+    def test_a_diverged_release_branch_merges_and_pushes_the_current_default(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            env, remote, branch, pr_marker = self.make_tap_fixture(root, "0.2.0", "0.3.0", "0.2.0", main_extra=True)
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "create_tap_pr.sh")],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertTrue(pr_marker.exists())
+            current_default_is_ancestor = subprocess.run(
+                ["git", "--git-dir", str(remote), "merge-base", "--is-ancestor", "refs/heads/main", f"refs/heads/{branch}"]
+            )
+            self.assertEqual(current_default_is_ancestor.returncode, 0)
 
     def test_the_formula_comes_from_the_package_job_of_this_run(self):
         download = step_with(self.tap, "actions/download-artifact")
