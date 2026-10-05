@@ -1,6 +1,6 @@
 # AgentDust roadmap
 
-The binary is `agentdust`. Status: M0 complete with blockers listed in docs/m0/report.md. M1 complete, with its journal decision recorded in [ADR-1](docs/m1/adr-journal-format.md). Design: [the design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
+The binary is `agentdust`. M0 is complete with the Cursor coverage gap recorded in [the M0 report](docs/m0/report.md). M1 is complete, with its journal decision recorded in [ADR-1](docs/m1/adr-journal-format.md). M2 and M3 shipped in the [0.1.0 release](https://github.com/hamzahamidi/agentdust/releases/tag/v0.1.0). The Homebrew formula is not on the tap's default branch. Verify that install path before expanding the release matrix. Design: [the design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
 
 ## Goal
 
@@ -120,6 +120,40 @@ Exit: submitted and validated locally. Acceptance by third parties is not a gate
 ### M9 1.0 readiness
 
 - Criterion 8 met. Process-group signals and SIGKILL are added only if real failures justify them.
+
+## Platform expansion after v1
+
+The current release target is macOS arm64 with Claude Code. Finish the Codex and Cursor adapter matrices in M4 and M5 on that target before adding another operating system. Close the Homebrew install gap and verify installation from a clean account before expanding the release matrix.
+
+### M10 Intel macOS (M)
+
+* Build `x86_64-apple-darwin` beside the current Apple silicon target.
+* Run process identity, PID reuse, privacy, setup and live apply checks on Intel Mac hardware.
+* Update the release workflow and Homebrew formula to select the correct archive for each architecture. Attest each binary and publish its checksum and SBOM.
+
+Exit: a clean Intel Mac installs the formula, runs setup, finds controlled stale processes, completes typed approval, and signals only the process approved.
+
+### M11 Linux x86_64 with Claude Code (L)
+
+* Add a Linux `ProcessProvider` that reads PID, start time, UID, executable path and boot identity from Linux process interfaces. Revalidate the same identity before signalling.
+* Treat unreadable or changing `/proc` data as unavailable evidence. It must not make a process more actionable.
+* Add fixtures for PID reuse, reparenting, systemd services, containers, permission denial and processes that outlive a session. Keep managed and unknown processes non actionable.
+* Define which local file systems support the journal guarantees. Refuse a data directory on a file system that has not passed the journal and privacy checks.
+* Add Claude Code setup and hook coverage on Ubuntu LTS. Publish an `x86_64-unknown-linux-gnu` release archive with checksum, SBOM and build attestation. Add a Linux package manager after users ask for one.
+
+Exit: the Linux fixtures preserve the classifier safety criteria, live process tests pass on Ubuntu LTS, the clean account flow completes, and the release artifact installs without compiling Rust.
+
+### M12 WSL2 with Claude Code (M)
+
+* Run AgentDust and Claude Code inside the same WSL2 distribution. Use the Linux process provider and release archive.
+* Keep process discovery and signalling inside that distribution. Do not inspect or signal Windows host processes.
+* Check hook setup, journal permissions, terminal approval and MCP approval in a clean WSL2 distribution. Reject data locations whose file system does not meet the journal guarantees.
+
+Exit: the full setup, doctor, plan and approved apply flow passes in a clean WSL2 distribution, and tests prove that a Windows host process cannot become actionable.
+
+### Native Windows
+
+Native Windows is not scheduled. Start it only after user requests justify a separate Windows process provider, identity revalidation, fixture harness, setup path and release artifact. WSL2 support does not count as native Windows support.
 
 ## Not in 0.1
 
