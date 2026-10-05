@@ -199,17 +199,12 @@ jobs:
           repository: ${{ env.TAP_REPOSITORY }}
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
+          fetch-depth: 0
           persist-credentials: false
       - if: env.TAP_ENABLED == 'true'
         env:
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
-          python3 scripts/tap_update.py --tap tap --formula formula/agentdust.rb --version "$VERSION"
-          branch="agentdust-$VERSION"
-          base="$(git -C tap rev-parse --abbrev-ref HEAD)"
-          git -C tap checkout -b "$branch"
-          git -C tap add Formula
-          git -C tap -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "agentdust $VERSION"
-          git -C tap push "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${TAP_REPOSITORY}.git" "$branch"
-          gh pr create --repo "$TAP_REPOSITORY" --base "$base" --head "$branch" --title "agentdust $VERSION" --body "Updates the formula to agentdust $VERSION. The release stays a draft until it is published. Publish it, then merge this pull request."
+          export TAP_DIR=tap
+          export FORMULA=formula/agentdust.rb
+          bash scripts/create_tap_pr.sh

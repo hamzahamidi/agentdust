@@ -1,6 +1,6 @@
 # AgentDust roadmap
 
-The binary is `agentdust`. M0 is complete with the Cursor coverage gap recorded in [the M0 report](docs/m0/report.md). M1 is complete, with its journal decision recorded in [ADR-1](docs/m1/adr-journal-format.md). M2 and M3 shipped in the [0.1.0 release](https://github.com/hamzahamidi/agentdust/releases/tag/v0.1.0). The Homebrew formula is not on the tap's default branch. Verify that install path before expanding the release matrix. Design: [the design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
+The binary is `agentdust`. M0 is complete with the Cursor coverage gap recorded in [the M0 report](docs/m0/report.md). M1 is complete, with its journal decision recorded in [ADR-1](docs/m1/adr-journal-format.md). M2 and M3 shipped in the [0.1.0 release](https://github.com/hamzahamidi/agentdust/releases/tag/v0.1.0). The Homebrew formula pull request is pending the recovery workflow. Verify installation from a clean account before expanding the release matrix. Design: [the design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
 
 ## Goal
 
@@ -157,7 +157,7 @@ Native Windows is not scheduled. Start it only after user requests justify a sep
 
 ## Not in 0.1
 
-Codex, Cursor, disk report, process-group signals, SIGKILL, listening ports, persisted plans, plugins, upstream outreach.
+Codex and Cursor adapters, disk report, process-group signals, SIGKILL, listening ports, persisted plans, upstream outreach.
 
 ## Not in v1
 

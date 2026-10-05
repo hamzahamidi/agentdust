@@ -1,6 +1,6 @@
 # Releasing AgentDust
 
-A release starts when a tag `vX.Y.Z` is pushed. [`release.yml`](../.github/workflows/release.yml) then checks the tag, builds the binary twice on `macos-15` and creates a draft GitHub Release. It publishes nothing. A person checks the draft, publishes it, and merges the pull request that puts the new formula in the Homebrew tap. This is spec 8.4 and S20.
+A release starts when a tag `vX.Y.Z` is pushed. [`release.yml`](../.github/workflows/release.yml) checks the tag, builds the binary twice on `macos-15` and creates a draft GitHub Release. A person checks and publishes the draft, then merges the pull request that puts the new formula in the Homebrew tap. The tap job reuses its release branch on retry. [`homebrew-tap-recovery.yml`](../.github/workflows/homebrew-tap-recovery.yml) can open the tap pull request for an already published release. This is spec 8.4 and S20.
 
 ## What the workflow does
 
@@ -11,11 +11,12 @@ A release starts when a tag `vX.Y.Z` is pushed. [`release.yml`](../.github/workf
 | `build` | `macos-15`, two jobs (`copy` a and b) | `scripts/toolchain.py check --include-lock` against `release/toolchain.json`, then `cargo build --release --locked -p agentdust` with the `DEVELOPER_DIR` and `SDKROOT` of the record. Any drift in the runner image, Rust, Cargo, Xcode, SDK, flags or the `Cargo.lock` hash stops the build |
 | `package` | `macos-15` | Compares the two binaries, checks that the binary prints `agentdust X.Y.Z`, builds the tarball from each binary and compares the tarballs, generates a CycloneDX SBOM from the workspace, writes `SHA256SUMS` for the tarball and SBOM, attests the binary, tarball and SBOM, writes the formula for the release download URL, and installs the tarball through a local tap on the runner |
 | `release` | `ubuntu-24.04` | Creates a draft release for the existing tag with the tarball and `SHA256SUMS`. It has no checkout of the source and the only write permission in the workflow besides the attestation |
-| `tap-pr` | `ubuntu-24.04` | Uses the `release` environment secret `HOMEBREW_TAP_TOKEN` to open a pull request in the tap with the new formula. Without it the job prints a notice and does nothing |
+| `tap-pr` | `ubuntu-24.04` | Uses the `release` environment secret `HOMEBREW_TAP_TOKEN` to open a pull request in the tap with the new formula. A retry reuses the existing branch and skips a duplicate commit or pull request. Without the secret the job prints a notice and does nothing |
+| Homebrew tap recovery | `ubuntu-24.04` | Manually dispatched for a published version. Downloads and verifies its release assets, regenerates the formula, then reuses the version branch or opens its pull request |
 
 The artifacts of a run are `build-a` and `build-b` (the binary and the toolchain record), `release-files` (tarball, SBOM and `SHA256SUMS`) and `homebrew-formula` (`agentdust.rb`). They are kept for 3 days. The tarball is `agentdust-X.Y.Z-darwin-arm64.tar.gz` with sorted entries, a fixed time and owner, and a gzip header without name or time.
 
-The workflow starts only on a pushed tag that matches `v[0-9]+.[0-9]+.[0-9]+`. It has no schedule and cannot be started by hand. Every action is pinned to a full commit SHA, the default token can only read, and the jobs that write have their own permissions: `package` gets `id-token` and `attestations`, `release` gets `contents`.
+The release workflow starts on a pushed tag that matches `v[0-9]+.[0-9]+.[0-9]+`. Every action is pinned to a full commit SHA, the default token can only read, and the jobs that write have their own permissions: `package` gets `id-token` and `attestations`, `release` gets `contents`. The recovery workflow starts only by manual dispatch from `main`; it uses `HOMEBREW_TAP_TOKEN` only for the tap branch and pull request.
 
 ## Cut a release
 
@@ -34,12 +35,21 @@ For each release:
 4. Tag that commit and push the tag: `git tag -a vX.Y.Z -m "agentdust X.Y.Z" <commit>`, then `git push origin vX.Y.Z`.
 5. Watch the run with `gh run watch`. A refusal by `verify` names the reason on the first failing step.
 6. Check the draft release as described in the next section. Publish it with `gh release edit vX.Y.Z --draft=false`.
-7. Merge the tap pull request after the release is published, because the formula URL only works for a published release. Without `HOMEBREW_TAP_TOKEN`, download the `homebrew-formula` artifact, run `python3 scripts/tap_update.py --tap <checkout of the tap> --formula agentdust.rb --version X.Y.Z`, then commit and push the result to the tap.
+7. Merge the tap pull request after the release is published, because the formula URL only works for a published release. If `tap-pr` fails after publication, use the recovery workflow below. Without `HOMEBREW_TAP_TOKEN`, the Action does not open a pull request; restore the token permission, then run recovery. Do not create the formula branch by hand.
 8. On a clean account run `brew install hamzahamidi/agentdust/agentdust`, `agentdust version` and `agentdust setup`.
+
+If the release is already public but `tap-pr` failed, do not recreate the tag. Start the recovery workflow with the published version, without `v`:
+
+```bash
+gh workflow run homebrew-tap-recovery.yml --ref main -f version=0.1.0
+gh run watch
+```
+
+The workflow checks the tarball and SBOM checksums and verifies the tarball attestation before it updates the tap. Merge the generated pull request after confirming the release is public.
 
 `scripts/tap_update.py` writes the new `Formula/agentdust.rb`. When the minor version changes it first saves the old formula as `Formula/agentdust@MAJOR.MINOR.rb` with the class name Homebrew expects (`AgentdustAT01` for 0.1). It refuses a version older than the one in the tap, the same version with another digest, and a versioned formula that already exists with other content.
 
-If a run fails after the tag was pushed, no release exists unless the `release` job ran. Delete the draft if there is one, delete the tag locally and on the remote, fix the cause and tag again.
+If a run fails before `release` creates a draft, fix the failing step and rerun the failed jobs when their inputs remain valid. If only `tap-pr` failed after the release was published, use the recovery workflow above. Do not delete or recreate a published release tag to recover the tap pull request.
 
 Rehearsal in a fork: fork the repository, push `main`, run `gh workflow run ci.yml --ref main --repo <fork>` and wait for it, then push a tag equal to the crate version on that commit to the fork. The run builds, attests and creates a draft release in the fork, and `tap-pr` stays off because the fork has no `HOMEBREW_TAP_TOKEN`. To rehearse a drift refusal, change one value in `release/toolchain.json` in the fork, such as `xcode`, and push a new tag. Delete the drafts and tags afterwards.
 

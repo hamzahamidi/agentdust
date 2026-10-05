@@ -1,0 +1,72 @@
+name: homebrew-tap-recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published AgentDust version without the leading v
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  TAP_REPOSITORY: hamzahamidi/homebrew-agentdust
+
+jobs:
+  tap-pr:
+    runs-on: ubuntu-24.04
+    environment: release
+    timeout-minutes: 10
+    permissions:
+      attestations: read
+      contents: read
+    env:
+      VERSION: ${{ inputs.version }}
+      TAP_ENABLED: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+    steps:
+      - name: Require dispatch from main and a release version
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          python3 - "$VERSION" <<'PY'
+          import re
+          import sys
+
+          if re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", sys.argv[1]) is None:
+              raise SystemExit("version must have the form MAJOR.MINOR.PATCH")
+          PY
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download and verify release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" --pattern "agentdust-$VERSION-darwin-arm64.tar.gz" --pattern "agentdust-$VERSION-sbom.cdx.json" --pattern SHA256SUMS --dir dist
+          (cd dist && shasum -a 256 -c SHA256SUMS)
+          gh attestation verify "dist/agentdust-$VERSION-darwin-arm64.tar.gz" --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-ref "refs/tags/v$VERSION"
+          gh attestation verify "dist/agentdust-$VERSION-sbom.cdx.json" --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-ref "refs/tags/v$VERSION"
+      - name: Generate and check formula
+        run: |
+          python3 scripts/formula.py --tarball "dist/agentdust-$VERSION-darwin-arm64.tar.gz" --version "$VERSION" --url "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/agentdust-$VERSION-darwin-arm64.tar.gz" --out formula/agentdust.rb
+          ruby -c formula/agentdust.rb
+      - if: env.TAP_ENABLED != 'true'
+        run: echo "HOMEBREW_TAP_TOKEN is not set, so no tap pull request is opened"
+      - if: env.TAP_ENABLED == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.TAP_REPOSITORY }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+          fetch-depth: 0
+          persist-credentials: false
+      - if: env.TAP_ENABLED == 'true'
+        name: Open or recover the tap pull request
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          export TAP_DIR=tap
+          export FORMULA=formula/agentdust.rb
+          bash scripts/create_tap_pr.sh

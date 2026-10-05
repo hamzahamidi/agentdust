@@ -1,0 +1,15 @@
+{
+  "name": "agentdust",
+  "description": "Claude Code cleanup workflow for AgentDust",
+  "owner": {
+    "name": "Hamza Hamidi",
+    "url": "https://github.com/hamzahamidi"
+  },
+  "plugins": [
+    {
+      "name": "agentdust",
+      "source": "./plugins/agentdust",
+      "description": "Optional Claude Code skill for reviewing and cleaning leftover processes"
+    }
+  ]
+}
