@@ -397,4 +397,14 @@ From spec 7.4:
 
 The host application stays in the trusted computing base (7.1).
 
-Not modelled: file systems other than local APFS beyond the refusal in section 9, the Codex and Cursor adapters (M4 and M5), which have weaker provenance and their own hook formats, and the read-only disk report (M7). Each gets its own pass when it lands.
+Not modelled: file systems other than local APFS beyond the refusal in section 9, the Codex and Cursor adapters (M4 and M5), which have weaker provenance and their own hook formats, and agent storage outside the M7 roots. The M7 metadata scanner is covered below.
+
+## 16. Read-only disk inventory (M7)
+
+A planted directory, symlink, mount, FIFO or changing directory can redirect or delay an inventory. Names and file contents may hold credentials or project paths.
+
+The scanner reads directory entries and metadata only. Each root path component is opened with `O_DIRECTORY | O_NOFOLLOW`; descendants use `fstatat(AT_SYMLINK_NOFOLLOW)` and `openat(O_DIRECTORY | O_NOFOLLOW)`. The opened directory's device and inode must match its metadata before traversal. Entries on another filesystem, symlinks and special files are excluded. No regular file is opened.
+
+The CLI and MCP return fixed root labels, categories, counters and statuses. Raw entry names and filesystem errors are not returned. The scanner writes no journal, report or approval state and performs no deletion. Root overrides come from the launching user's environment, never a model argument.
+
+The scan checks its budget between directory entries and before each root: 100,000 entries, 64 directory levels or 10 seconds, with a partial result. One MCP disk scan runs at a time. A filesystem call can block beyond the budget. Concurrent modifications can change totals; the report is not a snapshot or a reclaimable-space calculation. See [M7 scope and limits](m7/disk.md).

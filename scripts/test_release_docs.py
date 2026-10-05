@@ -2,6 +2,7 @@ import json
 import re
 import subprocess
 import sys
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -19,7 +20,8 @@ SETUP_RS = ROOT / "crates" / "agentdust" / "src" / "setup.rs"
 THREAT_MODEL = ROOT / "docs" / "threat-model.md"
 REPOSITORY = "hamzahamidi/agentdust"
 SIGNER = f"{REPOSITORY}/.github/workflows/release.yml"
-RELEASE_COMMANDS = {"setup", "doctor", "apply", "status", "version", "mcp", "hook"}
+VERSION = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
+RELEASE_COMMANDS = {"disk", "setup", "doctor", "apply", "status", "version", "mcp", "hook"}
 BANNED = (
     "ensure",
     "leverage",
@@ -62,12 +64,12 @@ class ReadmeUsageTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.text = read(README)
-        cls.usage = section(cls.text, r"## Using AgentDust 0\.1\.0")
+        cls.usage = section(cls.text, r"## Using AgentDust " + re.escape(VERSION))
 
     def test_the_section_names_the_supported_release_platform_and_agent(self):
-        self.assertIn("Release 0.1.0 supports Apple silicon with Claude Code.", self.usage)
+        self.assertIn(f"Release {VERSION} supports Apple silicon with Claude Code.", self.usage)
 
-    def test_the_section_covers_the_commands_of_release_0_1(self):
+    def test_the_section_covers_the_commands_of_current_release(self):
         for needle in (
             "brew install hamzahamidi/agentdust/agentdust",
             "agentdust setup",
@@ -95,7 +97,7 @@ class ReadmeUsageTest(unittest.TestCase):
             with self.subTest(needle=needle):
                 self.assertIn(needle, self.usage)
 
-    def test_the_section_leaves_out_what_release_0_1_does_not_have(self):
+    def test_the_section_leaves_out_what_current_release_does_not_have(self):
         for needle in ("support-bundle", "codex mcp add", "--claude-config-dir", "--purge-data", "SIGKILL"):
             with self.subTest(needle=needle):
                 self.assertNotIn(needle, self.usage)
@@ -103,7 +105,7 @@ class ReadmeUsageTest(unittest.TestCase):
     def test_the_section_links_the_release_document_for_verification(self):
         self.assertIn("docs/release.md#verify-a-release", self.usage)
 
-    def test_every_command_the_readme_shows_is_a_command_of_release_0_1(self):
+    def test_every_command_the_readme_shows_is_a_command_of_current_release(self):
         shown = set(re.findall(r"\bagentdust ([a-z][a-z-]*)", self.text))
         self.assertTrue(shown)
         self.assertLessEqual(shown, RELEASE_COMMANDS, shown - RELEASE_COMMANDS)
@@ -182,7 +184,7 @@ class ReleaseDocTest(unittest.TestCase):
 
     def test_the_integrator_part_lists_what_the_workflow_cannot_settle(self):
         integrator = section(self.text, r"## For the integrator")
-        for needle in ("0.1.0", "release/toolchain.json", "SBOM", "HOMEBREW_TAP_TOKEN", "Homebrew install command", "typed-code form"):
+        for needle in (VERSION, "release/toolchain.json", "SBOM", "HOMEBREW_TAP_TOKEN", "Homebrew install command", "typed-code form"):
             with self.subTest(needle=needle):
                 self.assertIn(needle, integrator)
 

@@ -27,6 +27,7 @@ use rmcp::{ErrorData, ServerHandler};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+const DISK: &str = "agentdust_disk";
 const DOCTOR: &str = "agentdust_doctor";
 const PLAN: &str = "agentdust_plan";
 const APPLY: &str = "agentdust_apply";
@@ -69,6 +70,7 @@ struct ErrorResult {
 #[derive(Clone)]
 pub struct AgentDustServer {
     apply: Arc<Server>,
+    disk_slot: Arc<tokio::sync::Semaphore>,
 }
 
 impl AgentDustServer {
@@ -88,6 +90,7 @@ impl AgentDustServer {
         );
         Ok(Self {
             apply: Arc::new(apply),
+            disk_slot: Arc::new(tokio::sync::Semaphore::new(1)),
         })
     }
 }
@@ -104,7 +107,7 @@ impl ServerHandler for AgentDustServer {
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         Ok(
-            ListToolsResult::with_all_items(vec![doctor_tool(), plan_tool(), apply_tool()])
+            ListToolsResult::with_all_items(vec![doctor_tool(), plan_tool(), apply_tool(), disk_tool()])
                 .with_ttl_ms(0)
                 .with_cache_scope(CacheScope::Private),
         )
@@ -117,6 +120,7 @@ impl ServerHandler for AgentDustServer {
     ) -> Result<CallToolResponse, ErrorData> {
         match request.name.as_ref() {
             DOCTOR => self.doctor(),
+            DISK => self.disk(&request).await,
             PLAN => self.plan(),
             APPLY => self.apply(&request, &context).await,
             _ => Err(ErrorData::invalid_params(
@@ -133,6 +137,28 @@ impl AgentDustServer {
         while let Ok(Step::Ask(challenge)) = step {
             step = self.apply.answer(call, &challenge.nonce, Response::Cancel);
         }
+    }
+
+    async fn disk(&self, request: &CallToolRequestParams) -> Result<CallToolResponse, ErrorData> {
+        if request.arguments.as_ref().is_some_and(|args| !args.is_empty()) {
+            return Err(ErrorData::invalid_params("disk report takes no arguments", None));
+        }
+        let permit = self
+            .disk_slot
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| internal("disk report already running"))?;
+        let _: EmptyArgs = arguments(request)?;
+        let config =
+            paths::claude_config_dir().map_err(|_| internal("Claude configuration root unavailable"))?;
+        let project = std::env::current_dir().map_err(|_| internal("current project unavailable"))?;
+        let report = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            agentdust_core::disk::report(&config, &project)
+        })
+        .await
+        .map_err(|_| internal("disk report unavailable"))?;
+        success(&report)
     }
 
     fn doctor(&self) -> Result<CallToolResponse, ErrorData> {
@@ -253,6 +279,14 @@ impl AgentDustServer {
                 .map_err(apply_error)?;
         }
     }
+}
+
+fn disk_tool() -> Tool {
+    tool::<EmptyArgs>(
+        DISK,
+        "Read-only Claude Code disk inventory: logical and allocated bytes by category. No file contents or paths. Scans configuration and the server working directory's .claude/worktrees only. Partial scans are marked. Allocated bytes are not reclaimable space. Deletes nothing.",
+        true,
+    )
 }
 
 fn doctor_tool() -> Tool {

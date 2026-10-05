@@ -4,7 +4,7 @@ The binary is `agentdust`. M0 is complete with the Cursor coverage gap recorded 
 
 ## Goal
 
-A macOS developer who uses Claude Code, Codex and Cursor installs the tool in two commands. Any of those agents can then analyse leftover processes and disk growth, show the findings, and clean stale processes after the user approves a typed code.
+A macOS developer who uses Claude Code installs the tool in two commands. Claude Code can then analyse leftover processes and disk growth, show the findings, and clean stale processes after the user approves a typed code.
 
 ## Principles
 
@@ -30,8 +30,8 @@ A macOS developer who uses Claude Code, Codex and Cursor installs the tool in tw
 | --- | --- |
 | v1 scope | Process hygiene end to end, plus a read-only disk report |
 | Language | Rust, one binary, Tokio only in the MCP subcommand |
-| Interface | One MCP server with `agentdust_doctor`, `agentdust_plan`, `agentdust_apply`, plus a CLI |
-| Agents | Claude Code, Codex and Cursor, delivered one at a time in that order |
+| Interface | One MCP server with `agentdust_doctor`, `agentdust_plan`, `agentdust_apply`, `agentdust_disk`, plus a CLI |
+| Agents | Claude Code first; Codex and Cursor deferred |
 | Provenance | Layered evidence: event-driven process sampling, a journal of paired shell calls per adapter, and an environment tag on Claude Code as additive evidence only |
 | Approval | MCP elicitation with a typed one-time code, fail closed |
 | Plan state | Canonical plan in server memory with an opaque ID. `plan.json` is for inspection. A server restart invalidates plans |
@@ -44,6 +44,10 @@ A macOS developer who uses Claude Code, Codex and Cursor installs the tool in tw
 ## Open decisions
 
 1. Suspect rules: the exact age, idleness and launcher-chain thresholds, set from the M1 fixture corpus.
+
+## Current priority
+
+M7 is the 0.2.0 delivery: a read-only disk report for Claude Code on macOS. Codex (M4), Cursor (M5) and the broader M6 beta work are deferred. Agent expansion follows evidence from Claude Code use.
 
 ## Milestones
 
@@ -92,24 +96,24 @@ Exit: controlled Claude fixtures whose session has ended become owned-ended and 
 
 Exit: on a clean account, install, setup, a controlled stale process found by a Claude Code session, typed approval, and exactly that process receives SIGTERM.
 
-### M4 Codex adapter and setup (L)
+### M4 Codex adapter and setup (L, deferred)
 
 - `hooks.json` under `CODEX_HOME` with `PreToolUse` and `PostToolUse` Bash matchers, MCP registration through `codex mcp add`.
 - Its own acceptance matrix and setup rollback tests. The correlation engine ships here as likely-owned evidence only.
 
-### M5 Cursor adapter and setup (L)
+### M5 Cursor adapter and setup (L, deferred)
 
 - `~/.cursor/hooks.json` with `afterShellExecution`, MCP registration.
 - Its own acceptance matrix and setup rollback tests.
 
-### M6 Hardening and beta: release 0.2 (L)
+### M6 Hardening and beta (L, deferred)
 
 - Broader fixture corpus, race tests, host and MCP version drift tests, `unsafe` review, mixed-version process handling after `brew upgrade`.
 - Measured dogfood on the first machine.
 
 ### M7 Read-only disk report (M)
 
-- Inventory of known agent roots, each classified rebuildable, history, worktree, application state or unknown. Logical and allocated size are reported separately. Nothing is deleted.
+- Claude Code configuration and current-project worktree inventory through `agentdust disk [--json]` and `agentdust_disk`. Entries are classified rebuildable, history, worktree, application state or unknown. Logical and allocated size are reported separately. Partial scans are marked. Nothing is deleted. [Scope and limits](docs/m7/disk.md).
 
 ### M8 Plugins, listings and upstream (S, external latency)
 
@@ -155,9 +159,9 @@ Exit: the full setup, doctor, plan and approved apply flow passes in a clean WSL
 
 Native Windows is not scheduled. Start it only after user requests justify a separate Windows process provider, identity revalidation, fixture harness, setup path and release artifact. WSL2 support does not count as native Windows support.
 
-## Not in 0.1
+## Deferred capabilities
 
-Codex and Cursor adapters, disk report, process-group signals, SIGKILL, listening ports, persisted plans, upstream outreach.
+Codex and Cursor adapters, process-group signals, SIGKILL, listening ports, persisted plans, upstream outreach.
 
 ## Not in v1
 
