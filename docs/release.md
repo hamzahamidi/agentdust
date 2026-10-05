@@ -82,7 +82,7 @@ These are the points this page and the workflow cannot settle by themselves. Eac
 
 - `version` under `[workspace.package]` is 0.1.0. The gate compares the tag with the version in `Cargo.toml`.
 - `release/toolchain.json` must match the `Cargo.lock` and the runner used by the release. Refresh it after the final lockfile change with the dry-run workflow.
-- The README banner says there is no release yet, and SECURITY.md says no release is published. Remove both sentences when the release is published, and update the README Status table.
+- The README describes 0.1.0 and gives the Homebrew install command for Claude Code on Apple silicon.
 - `agentdust doctor`, `agentdust apply` and the MCP tools `agentdust_doctor`, `agentdust_plan` and `agentdust_apply` are implemented. The doctor and non-TTY apply refusal have local macOS smoke coverage. The typed approval form was exercised in Claude Code 2.1.289 and Codex CLI 0.156.1 ([client matrix](m0/client-matrix.md)). The release docs test compares the documented setup flags with the command parser.
 - The typed-code form in Cursor remains untested because Cursor is not installed on the test machine ([client matrix](m0/client-matrix.md)).
 - The rollback relies on `apply = false` (S21). The reader is `agentdust_core::config::apply_switch`. Confirm that the MCP and the terminal apply both call it and that the S21 tests exist.

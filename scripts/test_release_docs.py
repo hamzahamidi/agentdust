@@ -62,10 +62,10 @@ class ReadmeUsageTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.text = read(README)
-        cls.usage = section(cls.text, r"## Using AgentDust \(from release 0\.1\)")
+        cls.usage = section(cls.text, r"## Using AgentDust 0\.1\.0")
 
-    def test_the_section_says_the_release_is_not_published(self):
-        self.assertIn("not published", self.usage)
+    def test_the_section_names_the_supported_release_platform_and_agent(self):
+        self.assertIn("Release 0.1.0 supports Apple silicon with Claude Code.", self.usage)
 
     def test_the_section_covers_the_commands_of_release_0_1(self):
         for needle in (
@@ -182,7 +182,7 @@ class ReleaseDocTest(unittest.TestCase):
 
     def test_the_integrator_part_lists_what_the_workflow_cannot_settle(self):
         integrator = section(self.text, r"## For the integrator")
-        for needle in ("0.1.0", "release/toolchain.json", "SBOM", "HOMEBREW_TAP_TOKEN", "no release yet", "typed-code form"):
+        for needle in ("0.1.0", "release/toolchain.json", "SBOM", "HOMEBREW_TAP_TOKEN", "Homebrew install command", "typed-code form"):
             with self.subTest(needle=needle):
                 self.assertIn(needle, integrator)
 

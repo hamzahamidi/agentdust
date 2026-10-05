@@ -128,6 +128,13 @@ impl ServerHandler for AgentDustServer {
 }
 
 impl AgentDustServer {
+    fn cancel_pending(&self, call: &Call, nonce: &str) {
+        let mut step = self.apply.answer(call, nonce, Response::Cancel);
+        while let Ok(Step::Ask(challenge)) = step {
+            step = self.apply.answer(call, &challenge.nonce, Response::Cancel);
+        }
+    }
+
     fn doctor(&self) -> Result<CallToolResponse, ErrorData> {
         let data_dir = paths::data_dir().map_err(internal)?;
         let install_secret = secret::load_existing(&data_dir).ok();
@@ -189,13 +196,17 @@ impl AgentDustServer {
             .is_some_and(|v| v.as_str() >= ProtocolVersion::V_2026_07_28.as_str());
         if retry_based {
             let step = if let Some(nonce) = request.request_state.as_deref() {
-                let input = request
-                    .input_responses
-                    .as_ref()
-                    .and_then(|r| r.get(INPUT_KEY))
-                    .ok_or_else(|| ErrorData::invalid_params("missing approval response", None))?;
-                let result = ElicitResult::deserialize(input)
-                    .map_err(|_| ErrorData::invalid_params("invalid approval response", None))?;
+                let Some(input) = request.input_responses.as_ref().and_then(|r| r.get(INPUT_KEY)) else {
+                    self.cancel_pending(&call, nonce);
+                    return Err(ErrorData::invalid_params("missing approval response", None));
+                };
+                let result = match ElicitResult::deserialize(input) {
+                    Ok(result) => result,
+                    Err(_) => {
+                        self.cancel_pending(&call, nonce);
+                        return Err(ErrorData::invalid_params("invalid approval response", None));
+                    }
+                };
                 self.apply
                     .answer(&call, nonce, elicitation_response(result))
                     .map_err(apply_error)?
@@ -229,6 +240,7 @@ impl AgentDustServer {
                 Ok(result) => elicitation_response(result),
                 Err(ServiceError::Timeout { .. }) => Response::Timeout,
                 Err(_) => {
+                    self.cancel_pending(&call, &challenge.nonce);
                     return success(&ErrorResult {
                         error: "The client could not show or collect the approval form.".into(),
                         code: "elicitation_failed",

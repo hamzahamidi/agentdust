@@ -1,11 +1,10 @@
 # AgentDust
 
-AgentDust is a macOS tool in development that finds processes left running after Claude Code sessions and stops them only after you approve each one with a typed code. Codex and Cursor support are planned for later releases.
+AgentDust is a macOS tool that finds processes left running after Claude Code sessions and stops them only after you approve each one with a typed code. Codex and Cursor support are planned for later releases.
 
-**No release has been published yet. A development build can inspect processes and run approved cleanup.**
+**Release 0.1.0 supports Claude Code on Apple silicon and installs through Homebrew.**
 
-- Need a prebuilt install? Release 0.1 will cover Claude Code on Apple silicon and install through Homebrew. Watch the repository's releases.
-- Want to help test? Run the non-destructive [approval probe](#running-the-development-probe).
+Install with `brew install hamzahamidi/agentdust/agentdust`. To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
 
 Agents start dev servers, MCP servers and helpers. When a session ends or crashes, some of them keep running under `launchd`, holding memory, ports and sometimes CPU. The upstream reports are open: [anthropics/claude-code#1935](https://github.com/anthropics/claude-code/issues/1935) and [openai/codex#21008](https://github.com/openai/codex/issues/21008).
 
@@ -21,11 +20,11 @@ Release 0.1 adds the analysis and the approved cleanup for Claude Code. The Code
 | Claude Code hook that records session and shell events in a local journal | Built |
 | Journal rotation and retention, as library functions that nothing runs yet | Built |
 | MCP approval probe: a typed-code form that changes nothing | Built |
-| Reproducible release pipeline | Proven in a dry run: two identical binaries, a deterministic tarball, a verified attestation ([report](docs/m0/report.md)) |
+| Reproducible release pipeline | The GitHub Actions dry run built two identical binaries, packaged a deterministic tarball, and verified the binary, tarball and SBOM attestations ([M0 report](docs/m0/report.md), [0.1.0 run](https://github.com/hamzahamidi/agentdust/actions/runs/37249711505)) |
 | Homebrew distribution | Tap repository exists. The first release adds the public formula |
-| Release workflow: tag gate, audit, two builds, tarball, SBOM, attestation, draft release, formula | Built. The tagged release workflow has not run on GitHub yet ([release process](docs/release.md)) |
+| Release workflow: tag gate, audit, two builds, tarball, SBOM, attestation, draft release, formula | Built ([release process](docs/release.md)) |
 | `agentdust setup` for Claude Code (hooks in `settings.json`, the MCP server through the `claude` CLI, a diff and consent, `--check`, `--remove`) and `agentdust status` | Built ([setup](docs/m3/setup.md)) |
-| `agentdust doctor`, the MCP doctor and plan tools, and cleanup through the MCP form or terminal approval | Built, not released ([apply design and limits](docs/m3/apply.md)) |
+| `agentdust doctor`, the MCP doctor and plan tools, and cleanup through the MCP form or terminal approval | Built for release 0.1.0 ([apply design and limits](docs/m3/apply.md)) |
 
 ## How cleanup works
 
@@ -63,9 +62,9 @@ Cleanup controls:
 
 Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
 
-## Using AgentDust (from release 0.1)
+## Using AgentDust 0.1.0
 
-Release 0.1 is not published. This section describes how 0.1 works on Apple silicon with Claude Code. The Status table above shows which parts the code has today.
+Release 0.1.0 supports Apple silicon with Claude Code. The Status table above lists the included features.
 
 ### Install and connect
 
@@ -113,7 +112,7 @@ agentdust status
 
 ## Running the development probe
 
-Run the probe to check whether your agent client can collect a typed approval. It shows a typed-code form and reports how the client answered. It changes nothing on your machine. Building it needs Rust 1.99.0 (pinned in `rust-toolchain.toml`); the 0.1 release will be a prebuilt binary that needs no Rust.
+Run the probe to check whether your agent client can collect a typed approval. It shows a typed-code form and reports how the client answered. It changes nothing on your machine. Building it needs Rust 1.99.0 (pinned in `rust-toolchain.toml`); release 0.1.0 is a prebuilt binary that needs no Rust.
 
 ```bash
 cargo build --release
@@ -122,7 +121,7 @@ cargo build --release
 Register it with the agent you use:
 
 ```bash
-claude mcp add --scope user agentdust-probe "$PWD/target/release/agentdust" mcp
+claude mcp add --scope user agentdust-probe -- "$PWD/target/release/agentdust" mcp
 ```
 
 ```bash

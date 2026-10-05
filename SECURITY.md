@@ -16,8 +16,6 @@ AgentDust is before 1.0. Security fixes go into the latest 0.x release and into 
 | An earlier 0.x release | No. Upgrade to the latest |
 | `main` | Reports are welcome, and fixes land here first |
 
-No release is published yet, so `main` is the only code a report can be about today.
-
 ## When a release is withdrawn
 
 A release is withdrawn when it can signal a process that the rules say it must never signal, or when its artifacts are in doubt. Until the replacement is out, either of these works on your machine:
