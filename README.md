@@ -1,12 +1,10 @@
 # AgentDust
 
-[![CI](https://github.com/hamzahamidi/agentdust/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hamzahamidi/agentdust/actions/workflows/ci.yml) [![Latest release](https://img.shields.io/github/v/release/hamzahamidi/agentdust)](https://github.com/hamzahamidi/agentdust/releases/latest) [![License](https://img.shields.io/github/license/hamzahamidi/agentdust)](LICENSE)
+[![CI](https://github.com/hamzahamidi/agentdust/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hamzahamidi/agentdust/actions/workflows/ci.yml) [![Latest release](https://img.shields.io/github/v/release/hamzahamidi/agentdust)](https://github.com/hamzahamidi/agentdust/releases/latest) [![License](https://img.shields.io/github/license/hamzahamidi/agentdust)](LICENSE) [![Homebrew custom tap](https://img.shields.io/badge/Homebrew-custom%20tap-FBB040?logo=homebrew&logoColor=black)](https://github.com/hamzahamidi/homebrew-agentdust)
 
 AgentDust is a macOS tool that finds processes left running after Claude Code sessions and stops them only after you approve each one with a typed code. Codex and Cursor support are planned for later releases.
 
-**Release 0.1.0 supports Claude Code on Apple silicon. The Homebrew formula pull request is pending.**
-
-The Homebrew install is pending the formula pull request. After it merges, run `brew install hamzahamidi/agentdust/agentdust`. To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
+**Release 0.1.0 supports Claude Code on Apple silicon and is available through Homebrew.** See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
 
 Agents start dev servers, MCP servers and helpers. When a session ends or crashes, some of them keep running under `launchd`, holding memory, ports and sometimes CPU. The upstream reports are open: [anthropics/claude-code#1935](https://github.com/anthropics/claude-code/issues/1935) and [openai/codex#21008](https://github.com/openai/codex/issues/21008).
 
@@ -23,7 +21,7 @@ Release 0.1 adds the analysis and the approved cleanup for Claude Code. The Code
 | Journal rotation and retention, as library functions that nothing runs yet | Built |
 | MCP approval probe: a typed-code form that changes nothing | Built |
 | Reproducible release pipeline | The GitHub Actions dry run built two identical binaries, packaged a deterministic tarball, and verified the binary, tarball and SBOM attestations ([M0 report](docs/m0/report.md), [0.1.0 run](https://github.com/hamzahamidi/agentdust/actions/runs/37249711505)) |
-| Homebrew distribution | The 0.1.0 release is public. The formula pull request is pending; the release workflow opens it |
+| Homebrew distribution | Available from the [AgentDust tap](https://github.com/hamzahamidi/homebrew-agentdust) for macOS on Apple silicon |
 | Release workflow: tag gate, audit, two builds, tarball, SBOM, attestation, draft release, formula | Built ([release process](docs/release.md)) |
 | `agentdust setup` for Claude Code (hooks in `settings.json`, the MCP server through the `claude` CLI, a diff and consent, `--check`, `--remove`) and `agentdust status` | Built ([setup](docs/m3/setup.md)) |
 | `agentdust doctor`, the MCP doctor and plan tools, and cleanup through the MCP form or terminal approval | Built for release 0.1.0 ([apply design and limits](docs/m3/apply.md)) |
@@ -71,14 +69,14 @@ Release 0.1.0 supports Apple silicon with Claude Code. The Status table above li
 
 ### Install and connect
 
-Homebrew installation is pending the formula pull request. After it merges, run:
+Install the prebuilt binary and connect it to Claude Code:
 
 ```bash
 brew install hamzahamidi/agentdust/agentdust
 agentdust setup
 ```
 
-`brew install` pours the prebuilt binary. Check what you downloaded with `gh attestation verify` ([how](docs/release.md#verify-a-release)). `agentdust setup` shows a diff and asks before it changes anything ([details](#setting-up-claude-code)).
+`brew install` installs the prebuilt binary. To verify the release artifacts, follow [these steps](docs/release.md#verify-a-release). `agentdust setup` shows a diff and asks before it changes anything ([details](#setting-up-claude-code)).
 
 ### Add the optional Claude Code skill
 
