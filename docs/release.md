@@ -9,11 +9,11 @@ A release starts when a tag `vX.Y.Z` is pushed. [`release.yml`](../.github/workf
 | `verify` | `ubuntu-24.04` | Refuses a tag that is not `vMAJOR.MINOR.PATCH`, a tag that differs from `version` under `[workspace.package]`, a commit that `origin/main` does not contain, and a commit without a passing `linux` and `macos` check run from GitHub Actions. A commit with no check run at all is refused. The decisions are in `scripts/check_release.py` |
 | `audit` | `ubuntu-24.04` | `cargo audit` against `Cargo.lock` |
 | `build` | `macos-15`, two jobs (`copy` a and b) | `scripts/toolchain.py check --include-lock` against `release/toolchain.json`, then `cargo build --release --locked -p agentdust` with the `DEVELOPER_DIR` and `SDKROOT` of the record. Any drift in the runner image, Rust, Cargo, Xcode, SDK, flags or the `Cargo.lock` hash stops the build |
-| `package` | `macos-15` | Compares the two binaries, checks that the binary prints `agentdust X.Y.Z`, builds the tarball from each binary and compares the tarballs, writes `SHA256SUMS`, attests the binary and the tarball, writes the formula for the release download URL, and installs the tarball through a local tap on the runner |
+| `package` | `macos-15` | Compares the two binaries, checks that the binary prints `agentdust X.Y.Z`, builds the tarball from each binary and compares the tarballs, generates a CycloneDX SBOM from the workspace, writes `SHA256SUMS` for the tarball and SBOM, attests the binary, tarball and SBOM, writes the formula for the release download URL, and installs the tarball through a local tap on the runner |
 | `release` | `ubuntu-24.04` | Creates a draft release for the existing tag with the tarball and `SHA256SUMS`. It has no checkout of the source and the only write permission in the workflow besides the attestation |
-| `tap-pr` | `ubuntu-24.04` | Opens a pull request in the tap with the new formula, when the secret `TAP_TOKEN` exists. Without it the job prints a notice and does nothing |
+| `tap-pr` | `ubuntu-24.04` | Uses the `release` environment secret `HOMEBREW_TAP_TOKEN` to open a pull request in the tap with the new formula. Without it the job prints a notice and does nothing |
 
-The artifacts of a run are `build-a` and `build-b` (the binary and the toolchain record), `release-files` (tarball and `SHA256SUMS`) and `homebrew-formula` (`agentdust.rb`). They are kept for 3 days. The tarball is `agentdust-X.Y.Z-darwin-arm64.tar.gz` with sorted entries, a fixed time and owner, and a gzip header without name or time.
+The artifacts of a run are `build-a` and `build-b` (the binary and the toolchain record), `release-files` (tarball, SBOM and `SHA256SUMS`) and `homebrew-formula` (`agentdust.rb`). They are kept for 3 days. The tarball is `agentdust-X.Y.Z-darwin-arm64.tar.gz` with sorted entries, a fixed time and owner, and a gzip header without name or time.
 
 The workflow starts only on a pushed tag that matches `v[0-9]+.[0-9]+.[0-9]+`. It has no schedule and cannot be started by hand. Every action is pinned to a full commit SHA, the default token can only read, and the jobs that write have their own permissions: `package` gets `id-token` and `attestations`, `release` gets `contents`.
 
@@ -21,8 +21,8 @@ The workflow starts only on a pushed tag that matches `v[0-9]+.[0-9]+.[0-9]+`. I
 
 Once, before the first release:
 
-1. Create the tap repository `hamzahamidi/homebrew-agentdust` with a `Formula` directory.
-2. Create a fine-grained token that can reach only that repository, with write access to contents and pull requests, and store it as the repository secret `TAP_TOKEN`. Until the secret exists, `tap-pr` does nothing.
+1. Confirm that the tap repository `hamzahamidi/homebrew-agentdust` has a `Formula` directory.
+2. Store a fine-grained token with write access to that repository's contents and pull requests as `HOMEBREW_TAP_TOKEN` in the `release` environment. Without it, `tap-pr` does nothing.
 3. Check in the repository settings that `main` requires the `linux` and `macos` checks and allows squash merges only. The workflow checks that `main` contains the commit. It does not read branch protection.
 4. Rehearse in a fork (last part of this section).
 
@@ -34,23 +34,24 @@ For each release:
 4. Tag that commit and push the tag: `git tag -a vX.Y.Z -m "agentdust X.Y.Z" <commit>`, then `git push origin vX.Y.Z`.
 5. Watch the run with `gh run watch`. A refusal by `verify` names the reason on the first failing step.
 6. Check the draft release as described in the next section. Publish it with `gh release edit vX.Y.Z --draft=false`.
-7. Merge the tap pull request after the release is published, because the formula URL only works for a published release. Without `TAP_TOKEN`, download the `homebrew-formula` artifact, run `python3 scripts/tap_update.py --tap <checkout of the tap> --formula agentdust.rb --version X.Y.Z`, then commit and push the result to the tap.
+7. Merge the tap pull request after the release is published, because the formula URL only works for a published release. Without `HOMEBREW_TAP_TOKEN`, download the `homebrew-formula` artifact, run `python3 scripts/tap_update.py --tap <checkout of the tap> --formula agentdust.rb --version X.Y.Z`, then commit and push the result to the tap.
 8. On a clean account run `brew install hamzahamidi/agentdust/agentdust`, `agentdust version` and `agentdust setup`.
 
 `scripts/tap_update.py` writes the new `Formula/agentdust.rb`. When the minor version changes it first saves the old formula as `Formula/agentdust@MAJOR.MINOR.rb` with the class name Homebrew expects (`AgentdustAT01` for 0.1). It refuses a version older than the one in the tap, the same version with another digest, and a versioned formula that already exists with other content.
 
 If a run fails after the tag was pushed, no release exists unless the `release` job ran. Delete the draft if there is one, delete the tag locally and on the remote, fix the cause and tag again.
 
-Rehearsal in a fork: fork the repository, push `main`, run `gh workflow run ci.yml --ref main --repo <fork>` and wait for it, then push a tag equal to the crate version on that commit to the fork. The run builds, attests and creates a draft release in the fork, and `tap-pr` stays off because the fork has no `TAP_TOKEN`. To rehearse a drift refusal, change one value in `release/toolchain.json` in the fork, such as `xcode`, and push a new tag. Delete the drafts and tags afterwards.
+Rehearsal in a fork: fork the repository, push `main`, run `gh workflow run ci.yml --ref main --repo <fork>` and wait for it, then push a tag equal to the crate version on that commit to the fork. The run builds, attests and creates a draft release in the fork, and `tap-pr` stays off because the fork has no `HOMEBREW_TAP_TOKEN`. To rehearse a drift refusal, change one value in `release/toolchain.json` in the fork, such as `xcode`, and push a new tag. Delete the drafts and tags afterwards.
 
 ## Verify a release
 
-Download the tarball and the checksum list, check the digest, then check the attestations of the tarball and of the binary inside it:
+Download the tarball, the SBOM and the checksum list, check both digests, then check the attestations of the tarball, the SBOM and the binary inside it:
 
 ```bash
-gh release download vX.Y.Z --repo hamzahamidi/agentdust --pattern 'agentdust-*.tar.gz' --pattern SHA256SUMS
+gh release download vX.Y.Z --repo hamzahamidi/agentdust --pattern 'agentdust-*.tar.gz' --pattern 'agentdust-*-sbom.cdx.json' --pattern SHA256SUMS
 shasum -a 256 -c SHA256SUMS
 gh attestation verify agentdust-X.Y.Z-darwin-arm64.tar.gz --repo hamzahamidi/agentdust --signer-workflow hamzahamidi/agentdust/.github/workflows/release.yml
+gh attestation verify agentdust-X.Y.Z-sbom.cdx.json --repo hamzahamidi/agentdust --signer-workflow hamzahamidi/agentdust/.github/workflows/release.yml
 tar -xzf agentdust-X.Y.Z-darwin-arm64.tar.gz
 gh attestation verify agentdust-X.Y.Z-darwin-arm64/agentdust --repo hamzahamidi/agentdust --signer-workflow hamzahamidi/agentdust/.github/workflows/release.yml
 ```
@@ -79,12 +80,12 @@ For the maintainer: revert the tap commit that added the withdrawn release, whic
 
 These are the points this page and the workflow cannot settle by themselves. Each one is true of the branch where this page was written.
 
-- `version` under `[workspace.package]` is 0.0.0. Set the release version in `Cargo.toml` and `Cargo.lock` before tagging, because the gate compares the tag with it.
-- `release/toolchain.json` is the record from the M0 dry run (runner image `macos15 20260907.0337.1` and the `Cargo.lock` hash of that time). The release compares every value, including the lock hash, so refresh it after the last change to `Cargo.lock` (step 2 above) or `build` stops.
+- `version` under `[workspace.package]` is 0.1.0. The gate compares the tag with the version in `Cargo.toml`.
+- `release/toolchain.json` must match the `Cargo.lock` and the runner used by the release. Refresh it after the final lockfile change with the dry-run workflow.
 - The README banner says there is no release yet, and SECURITY.md says no release is published. Remove both sentences when the release is published, and update the README Status table.
 - `agentdust doctor`, `agentdust apply` and the MCP tools `agentdust_doctor`, `agentdust_plan` and `agentdust_apply` are implemented. The doctor and non-TTY apply refusal have local macOS smoke coverage. The typed approval form was exercised in Claude Code 2.1.289 and Codex CLI 0.156.1 ([client matrix](m0/client-matrix.md)). The release docs test compares the documented setup flags with the command parser.
 - The typed-code form in Cursor remains untested because Cursor is not installed on the test machine ([client matrix](m0/client-matrix.md)).
 - The rollback relies on `apply = false` (S21). The reader is `agentdust_core::config::apply_switch`. Confirm that the MCP and the terminal apply both call it and that the S21 tests exist.
-- The workflow has not run on GitHub. It was checked by parsing it as YAML and by tests of its structure and of each script it calls, and `actionlint` was not available. Rehearse in a fork before the first tag.
-- No SBOM is produced. ROADMAP criterion 7 and the last S20 row of the threat model say each release ships one.
-- The tap repository does not exist and `TAP_TOKEN` is not set, so `tap-pr` is off. Installing `agentdust@MAJOR.MINOR` through Homebrew and running `gh attestation verify` on the binary that Homebrew installs have not been run. Run both on the first release and write the result here.
+- The release workflow has not run on GitHub. CI passed on the release candidate branch, but the tagged release workflow still needs its first run.
+- The workflow produces a CycloneDX SBOM from the workspace, includes its checksum and attests it with the binary and tarball.
+- The tap repository and the `release` environment secret `HOMEBREW_TAP_TOKEN` exist. Installing `agentdust@MAJOR.MINOR` through Homebrew and running `gh attestation verify` on the binary that Homebrew installs have not been run. Run both on the first release and write the result here.

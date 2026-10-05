@@ -170,7 +170,7 @@ class ReleaseDocTest(unittest.TestCase):
         cut = section(self.text, r"## Cut a release")
         self.assertIn("gh workflow run ci.yml --ref main", cut)
         self.assertIn("gh workflow run ci.yml --ref main", check_release.CI_HINT)
-        for needle in ("release-dry-run", "release/toolchain.json", "git tag -a", "TAP_TOKEN", "homebrew-agentdust", "[workspace.package]"):
+        for needle in ("release-dry-run", "release/toolchain.json", "git tag -a", "HOMEBREW_TAP_TOKEN", "homebrew-agentdust", "[workspace.package]"):
             with self.subTest(needle=needle):
                 self.assertIn(needle, cut)
 
@@ -182,7 +182,7 @@ class ReleaseDocTest(unittest.TestCase):
 
     def test_the_integrator_part_lists_what_the_workflow_cannot_settle(self):
         integrator = section(self.text, r"## For the integrator")
-        for needle in ("0.0.0", "release/toolchain.json", "SBOM", "TAP_TOKEN", "fork", "no release yet", "typed-code form"):
+        for needle in ("0.1.0", "release/toolchain.json", "SBOM", "HOMEBREW_TAP_TOKEN", "no release yet", "typed-code form"):
             with self.subTest(needle=needle):
                 self.assertIn(needle, integrator)
 
@@ -233,11 +233,13 @@ class ThreatModelReleaseRowsTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertIn(f"`{path}`", implemented)
 
-    def test_only_the_sbom_and_scoped_token_row_is_still_planned(self):
+    def test_the_sbom_and_scoped_token_row_is_implemented(self):
         planned = [row for row in self.rows if "planned M3" in row]
-        self.assertEqual(len(planned), 1)
-        self.assertIn("SBOM", planned[0])
-        self.assertIn("scoped", planned[0])
+        self.assertEqual(planned, [])
+        implemented = [row for row in self.rows if "| implemented |" in row and "SBOM" in row]
+        self.assertEqual(len(implemented), 1)
+        self.assertIn("CycloneDX", implemented[0])
+        self.assertIn("release` environment", implemented[0])
 
     def test_the_lock_hash_is_described_as_compared_by_the_release(self):
         text = read(THREAT_MODEL)

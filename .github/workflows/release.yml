@@ -119,15 +119,23 @@ jobs:
           SOURCE_DATE_EPOCH="$epoch" python3 scripts/package.py --binary builds/build-a/target/release/agentdust --version "$VERSION" --out-dir dist
           SOURCE_DATE_EPOCH="$epoch" python3 scripts/package.py --binary builds/build-b/target/release/agentdust --version "$VERSION" --out-dir second
           cmp "dist/agentdust-$VERSION-darwin-arm64.tar.gz" "second/agentdust-$VERSION-darwin-arm64.tar.gz"
+      - uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: dist/agentdust-${{ env.VERSION }}-sbom.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
       - run: |
           cd dist
-          shasum -a 256 *.tar.gz > SHA256SUMS
+          shasum -a 256 *.tar.gz *.sbom.cdx.json > SHA256SUMS
           shasum -a 256 -c SHA256SUMS
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             builds/build-a/target/release/agentdust
             dist/*.tar.gz
+            dist/*.sbom.cdx.json
       - run: |
           python3 scripts/formula.py --tarball "dist/agentdust-$VERSION-darwin-arm64.tar.gz" --version "$VERSION" --url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/agentdust-$VERSION-darwin-arm64.tar.gz" --out formula/agentdust.rb
           ruby -c formula/agentdust.rb
@@ -164,15 +172,16 @@ jobs:
   tap-pr:
     needs: [verify, package, release]
     runs-on: ubuntu-24.04
+    environment: release
     timeout-minutes: 10
     permissions:
       contents: read
     env:
       VERSION: ${{ needs.verify.outputs.version }}
-      TAP_ENABLED: ${{ secrets.TAP_TOKEN != '' }}
+      TAP_ENABLED: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
     steps:
       - if: env.TAP_ENABLED != 'true'
-        run: echo "TAP_TOKEN is not set, so no tap pull request is opened"
+        run: echo "HOMEBREW_TAP_TOKEN is not set, so no tap pull request is opened"
       - if: env.TAP_ENABLED == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -187,13 +196,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ env.TAP_REPOSITORY }}
-          token: ${{ secrets.TAP_TOKEN }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
           persist-credentials: false
       - if: env.TAP_ENABLED == 'true'
         env:
-          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
-          GH_TOKEN: ${{ secrets.TAP_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           python3 scripts/tap_update.py --tap tap --formula formula/agentdust.rb --version "$VERSION"
           branch="agentdust-$VERSION"
@@ -201,5 +210,5 @@ jobs:
           git -C tap checkout -b "$branch"
           git -C tap add Formula
           git -C tap -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "agentdust $VERSION"
-          git -C tap push "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPOSITORY}.git" "$branch"
+          git -C tap push "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${TAP_REPOSITORY}.git" "$branch"
           gh pr create --repo "$TAP_REPOSITORY" --base "$base" --head "$branch" --title "agentdust $VERSION" --body "Updates the formula to agentdust $VERSION. The release stays a draft until it is published. Publish it, then merge this pull request."

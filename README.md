@@ -22,8 +22,8 @@ Release 0.1 adds the analysis and the approved cleanup for Claude Code. The Code
 | Journal rotation and retention, as library functions that nothing runs yet | Built |
 | MCP approval probe: a typed-code form that changes nothing | Built |
 | Reproducible release pipeline | Proven in a dry run: two identical binaries, a deterministic tarball, a verified attestation ([report](docs/m0/report.md)) |
-| Homebrew distribution | Proven with a local tap in the dry run. No public tap or release yet |
-| Release workflow: tag gate, audit, two builds, tarball, attestation, draft release, formula | Built. It has not run on GitHub yet ([release process](docs/release.md)) |
+| Homebrew distribution | Tap repository exists. The first release adds the public formula |
+| Release workflow: tag gate, audit, two builds, tarball, SBOM, attestation, draft release, formula | Built. The tagged release workflow has not run on GitHub yet ([release process](docs/release.md)) |
 | `agentdust setup` for Claude Code (hooks in `settings.json`, the MCP server through the `claude` CLI, a diff and consent, `--check`, `--remove`) and `agentdust status` | Built ([setup](docs/m3/setup.md)) |
 | `agentdust doctor`, the MCP doctor and plan tools, and cleanup through the MCP form or terminal approval | Built, not released ([apply design and limits](docs/m3/apply.md)) |
 

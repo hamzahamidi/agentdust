@@ -258,18 +258,30 @@ class PackageTest(unittest.TestCase):
         self.assertIn('epoch="$(git log -1 --format=%ct)"', self.script)
 
     def test_the_checksum_lists_the_tarball_and_is_verified(self):
-        self.assertIn("shasum -a 256 *.tar.gz > SHA256SUMS", self.script)
+        self.assertIn("shasum -a 256 *.tar.gz *.sbom.cdx.json > SHA256SUMS", self.script)
         self.assertIn("shasum -a 256 -c SHA256SUMS", self.script)
 
     def test_the_binary_and_the_tarball_are_attested(self):
         attest = step_with(self.package, "actions/attest-build-provenance")
         subjects = attest["with"]["subject-path"].split()
-        self.assertEqual(subjects, ["builds/build-a/target/release/agentdust", "dist/*.tar.gz"])
+        self.assertEqual(subjects, ["builds/build-a/target/release/agentdust", "dist/*.tar.gz", "dist/*.sbom.cdx.json"])
 
     def test_the_attestation_comes_after_the_comparison_and_the_checksum(self):
         attest = step_index(self.package, "actions/attest-build-provenance")
         self.assertLess(step_index(self.package, "compare_builds.py"), attest)
+        self.assertLess(step_index(self.package, "anchore/sbom-action"), attest)
         self.assertLess(step_index(self.package, "SHA256SUMS"), attest)
+
+    def test_the_release_sbom_is_generated_from_the_source_and_included_in_release_files(self):
+        sbom = step_with(self.package, "anchore/sbom-action")
+        self.assertEqual(sbom["with"]["path"], ".")
+        self.assertEqual(sbom["with"]["format"], "cyclonedx-json")
+        self.assertEqual(sbom["with"]["output-file"], "dist/agentdust-${{ env.VERSION }}-sbom.cdx.json")
+        self.assertEqual(sbom["with"]["upload-artifact"], False)
+        self.assertEqual(sbom["with"]["upload-release-assets"], False)
+        release_files = step_with(self.package, "actions/upload-artifact")
+        self.assertEqual(release_files["with"]["name"], "release-files")
+        self.assertEqual(release_files["with"]["path"], "dist")
 
     def test_the_formula_points_at_the_release_download_and_is_checked_as_ruby(self):
         self.assertIn("python3 scripts/formula.py", self.script)
@@ -338,7 +350,8 @@ class TapJobTest(unittest.TestCase):
         cls.tap = cls.jobs["tap-pr"]
 
     def test_the_job_is_off_until_the_secret_exists(self):
-        self.assertEqual(self.tap["env"]["TAP_ENABLED"], "${{ secrets.TAP_TOKEN != '' }}")
+        self.assertEqual(self.tap["environment"], "release")
+        self.assertEqual(self.tap["env"]["TAP_ENABLED"], "${{ secrets.HOMEBREW_TAP_TOKEN != '' }}")
         self.assertNotIn("if", self.tap)
 
     def test_every_step_is_guarded_by_the_secret_check_except_the_notice(self):
@@ -350,18 +363,18 @@ class TapJobTest(unittest.TestCase):
 
     def test_the_notice_says_why_nothing_happened_and_does_nothing_else(self):
         notice = [step for step in steps(self.tap) if step["if"] == TAP_OFF][0]
-        self.assertIn("TAP_TOKEN", notice["run"])
+        self.assertIn("HOMEBREW_TAP_TOKEN", notice["run"])
         self.assertNotIn("secrets.", json.dumps(notice))
 
     def test_the_secret_appears_only_in_the_tap_job_and_only_in_guarded_steps(self):
-        self.assertEqual(sum(1 for job in self.jobs.values() if "secrets.TAP_TOKEN" in json.dumps(job)), 1)
-        self.assertIn("secrets.TAP_TOKEN", json.dumps(self.tap))
+        self.assertEqual(sum(1 for job in self.jobs.values() if "secrets.HOMEBREW_TAP_TOKEN" in json.dumps(job)), 1)
+        self.assertIn("secrets.HOMEBREW_TAP_TOKEN", json.dumps(self.tap))
         for step in steps(self.tap):
-            if "secrets.TAP_TOKEN" in json.dumps(step):
+            if "secrets.HOMEBREW_TAP_TOKEN" in json.dumps(step):
                 self.assertEqual(step["if"], TAP_ON)
 
     def test_the_secret_is_not_a_job_wide_environment_value(self):
-        self.assertNotIn("TAP_TOKEN", json.dumps({key: value for key, value in self.tap["env"].items() if key != "TAP_ENABLED"}))
+        self.assertNotIn("HOMEBREW_TAP_TOKEN", json.dumps({key: value for key, value in self.tap["env"].items() if key != "TAP_ENABLED"}))
 
     def test_the_job_itself_can_only_read_contents(self):
         self.assertEqual(self.tap["permissions"], {"contents": "read"})
@@ -370,7 +383,7 @@ class TapJobTest(unittest.TestCase):
         self.assertRegex(self.text, r"(?m)^  TAP_REPOSITORY: hamzahamidi/homebrew-agentdust$")
         checkout = [step for step in steps(self.tap) if step.get("with", {}).get("repository")][0]
         self.assertEqual(checkout["with"]["repository"], "${{ env.TAP_REPOSITORY }}")
-        self.assertEqual(checkout["with"]["token"], "${{ secrets.TAP_TOKEN }}")
+        self.assertEqual(checkout["with"]["token"], "${{ secrets.HOMEBREW_TAP_TOKEN }}")
 
     def test_the_formula_files_come_from_the_tested_script_and_the_pull_request_is_only_opened(self):
         command = runs(self.tap)
@@ -388,7 +401,22 @@ class TapJobTest(unittest.TestCase):
 class DryRunTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.build = load(WORKFLOWS / "release-dry-run.yml")["jobs"]["build"]
+        cls.jobs = load(WORKFLOWS / "release-dry-run.yml")["jobs"]
+        cls.build = cls.jobs["build"]
+        cls.package = cls.jobs["package"]
+
+    def test_the_dry_run_packages_the_version_from_the_workspace_manifest(self):
+        version = step_with(self.package, "tomllib.load")
+        self.assertIn('tomllib.load(open("Cargo.toml", "rb"))', version["run"])
+        self.assertIn('>> "$GITHUB_ENV"', version["run"])
+
+    def test_the_dry_run_generates_checksums_and_an_attested_sbom(self):
+        sbom = step_with(self.package, "anchore/sbom-action")
+        self.assertEqual(sbom["with"]["format"], "cyclonedx-json")
+        self.assertEqual(sbom["with"]["output-file"], "dist/agentdust-${{ env.VERSION }}-sbom.cdx.json")
+        self.assertIn("*.sbom.cdx.json", runs(self.package))
+        attest = step_with(self.package, "actions/attest-build-provenance")
+        self.assertIn("dist/*.sbom.cdx.json", attest["with"]["subject-path"])
 
     def test_the_toolchain_is_recorded_before_it_is_checked(self):
         self.assertLess(step_index(self.build, "toolchain.py record"), step_index(self.build, "toolchain.py check"))
