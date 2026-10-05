@@ -101,31 +101,12 @@ fn the_volume_is_probed_once_on_the_nearest_existing_ancestor() {
     let volume = Recording {
         asked: Mutex::new(Vec::new()),
     };
-    load_or_create_with(&parent.join("data"), &volume, &NoProbe).unwrap();
+    load_or_create_with(&parent.join("a/b"), &volume, &NoProbe).unwrap();
     assert_eq!(
         volume.asked.lock().unwrap().as_slice(),
         std::slice::from_ref(&parent)
     );
-    assert!(parent.join("data").join(SECRET_FILE).exists());
-    fs::remove_dir_all(&parent).unwrap();
-}
-
-#[test]
-fn a_directory_below_a_missing_parent_is_probed_on_the_nearest_ancestor_and_not_created() {
-    let parent = private_dir("secret-volume-missing-parent");
-    let volume = Recording {
-        asked: Mutex::new(Vec::new()),
-    };
-    let result = load_or_create_with(&parent.join("a/b"), &volume, &NoProbe);
-    assert!(
-        matches!(&result, Err(SecretError::Io(err)) if err.kind() == io::ErrorKind::NotFound),
-        "{result:?}"
-    );
-    assert_eq!(
-        volume.asked.lock().unwrap().as_slice(),
-        std::slice::from_ref(&parent)
-    );
-    assert!(!parent.join("a").exists());
+    assert!(parent.join("a/b").join(SECRET_FILE).exists());
     fs::remove_dir_all(&parent).unwrap();
 }
 

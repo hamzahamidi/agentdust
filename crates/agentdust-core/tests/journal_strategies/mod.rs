@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 
-use agentdust_core::journal::{Agent, CwdKey, ExeBase, Kind, Record, SCHEMA_VERSION};
+use agentdust_core::journal::{
+    Agent, AgentIdentity, CwdKey, ExeBase, Kind, Record, SCHEMA_VERSION, SessionTagKey,
+};
 use proptest::collection::vec;
 use proptest::prelude::*;
 use proptest::sample::select;
@@ -37,6 +39,22 @@ pub fn exe_base() -> impl Strategy<Value = ExeBase> {
         .prop_map(|chars| ExeBase::try_from(String::from_iter(chars)).unwrap())
 }
 
+pub fn agent_identity() -> impl Strategy<Value = AgentIdentity> {
+    (
+        1..=i32::MAX,
+        any::<u64>(),
+        any::<u32>(),
+        proptest::option::of(exe_base()),
+    )
+        .prop_map(|(pid, start_time_us, uid, exe_base)| {
+            AgentIdentity::new(pid, start_time_us, uid, exe_base).unwrap()
+        })
+}
+
+pub fn session_tag_key() -> impl Strategy<Value = SessionTagKey> {
+    "[0-9a-f]{64}".prop_map(|key| SessionTagKey::try_from(key).unwrap())
+}
+
 pub fn arb_record() -> impl Strategy<Value = Record> {
     (
         (select(KINDS.to_vec()), select(AGENTS.to_vec())),
@@ -50,6 +68,10 @@ pub fn arb_record() -> impl Strategy<Value = Record> {
             proptest::option::of("[0-9a-f]{1,64}"),
             proptest::option::of(exe_base()),
         ),
+        (
+            proptest::option::of(agent_identity()),
+            proptest::option::of(session_tag_key()),
+        ),
     )
         .prop_map(
             |(
@@ -57,6 +79,7 @@ pub fn arb_record() -> impl Strategy<Value = Record> {
                 (session_id, subagent_id, tool_use_id),
                 (wall_ts, mono_ts, boot),
                 (cwd_key, exe_base),
+                (agent_identity, session_tag_key),
             )| Record {
                 v: SCHEMA_VERSION,
                 kind,
@@ -68,6 +91,8 @@ pub fn arb_record() -> impl Strategy<Value = Record> {
                 mono_ts,
                 boot,
                 cwd_key: cwd_key.map(|key| CwdKey::try_from(key).unwrap()),
+                agent_identity,
+                session_tag_key,
                 exe_base,
             },
         )
@@ -106,6 +131,8 @@ pub fn small_record() -> impl Strategy<Value = Record> {
             mono_ts,
             boot: boot.to_owned(),
             cwd_key: None,
+            agent_identity: None,
+            session_tag_key: None,
             exe_base: None,
         })
 }

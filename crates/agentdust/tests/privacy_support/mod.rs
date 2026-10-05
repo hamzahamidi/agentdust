@@ -5,7 +5,7 @@ use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use agentdust_core::journal::{Class, RECORD_KEYS, scan};
+use agentdust_core::journal::{AGENT_IDENTITY_KEYS, Class, RECORD_KEYS, scan};
 use agentdust_core::secret::SECRET_FILE;
 
 const MAX_DEPTH: usize = 3;
@@ -26,6 +26,7 @@ pub struct Sentinels {
     pub env_value: String,
     pub tag: String,
     pub process_dir: String,
+    pub generated: Vec<String>,
 }
 
 impl Sentinels {
@@ -48,11 +49,16 @@ impl Sentinels {
             env_value: make("env-sentinel-dK9s"),
             tag: make("tag-sentinel-mC1v"),
             process_dir: make("process-dir-sentinel-eY7u"),
+            generated: Vec::new(),
         }
     }
 
+    pub fn also_never_stored(&mut self, value: impl Into<String>) {
+        self.generated.push(value.into());
+    }
+
     pub fn never_stored(&self) -> Vec<&str> {
-        vec![
+        let mut values: Vec<&str> = vec![
             &self.command,
             &self.output_start,
             &self.output_middle,
@@ -66,7 +72,9 @@ impl Sentinels {
             &self.env_value,
             &self.tag,
             &self.process_dir,
-        ]
+        ];
+        values.extend(self.generated.iter().map(String::as_str));
+        values
     }
 
     pub fn nowhere_outside_the_journal(&self) -> Vec<&str> {
@@ -110,6 +118,7 @@ pub fn is_known_file(name: &str) -> bool {
 pub struct Scan {
     pub names: BTreeSet<String>,
     pub keys: BTreeSet<String>,
+    pub identity_keys: BTreeSet<String>,
     pub journal_files: usize,
 }
 
@@ -119,9 +128,11 @@ pub fn scan_data_dir(dir: &Path, stage: &str, sentinels: &Sentinels) -> Scan {
     let mut found = Scan {
         names: BTreeSet::new(),
         keys: BTreeSet::new(),
+        identity_keys: BTreeSet::new(),
         journal_files: 0,
     };
     let allowed: BTreeSet<&str> = RECORD_KEYS.iter().copied().collect();
+    let allowed_identity: BTreeSet<&str> = AGENT_IDENTITY_KEYS.iter().copied().collect();
     for file in all_files(dir) {
         let name = file.file_name().unwrap().to_str().unwrap().to_owned();
         assert!(is_known_file(&name), "{stage}: unexpected file {name}");
@@ -149,6 +160,23 @@ pub fn scan_data_dir(dir: &Path, stage: &str, sentinels: &Sentinels) -> Scan {
                     unlisted.is_empty(),
                     "{stage}: keys outside the list in {name}: {unlisted:?}"
                 );
+                if let Some(identity) = value.get("agent_identity") {
+                    let nested: BTreeSet<String> = identity
+                        .as_object()
+                        .unwrap_or_else(|| panic!("{stage}: agent_identity in {name} is not an object"))
+                        .keys()
+                        .cloned()
+                        .collect();
+                    let unlisted: Vec<&String> = nested
+                        .iter()
+                        .filter(|key| !allowed_identity.contains(key.as_str()))
+                        .collect();
+                    assert!(
+                        unlisted.is_empty(),
+                        "{stage}: identity keys outside the list in {name}: {unlisted:?}"
+                    );
+                    found.identity_keys.extend(nested);
+                }
                 found.keys.extend(keys);
             })
             .unwrap();

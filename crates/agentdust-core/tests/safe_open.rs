@@ -347,25 +347,13 @@ fn a_missing_directory_is_not_found() {
 }
 
 #[test]
-fn ensure_dir_creates_a_missing_final_component_with_mode_0700() {
+fn ensure_dir_creates_missing_directories_with_mode_0700() {
     let root = private_dir("so-ensure");
-    let leaf = root.join("data");
+    let leaf = root.join("a/b/data");
     ensure_dir(&leaf).unwrap();
     assert_eq!(mode_of(&leaf), 0o700);
+    assert_eq!(mode_of(&root.join("a")), 0o700);
     ensure_dir(&leaf).unwrap();
-    fs::remove_dir_all(&root).unwrap();
-}
-
-#[test]
-fn ensure_dir_below_a_missing_parent_fails_and_creates_nothing() {
-    let root = private_dir("so-ensure-no-parent");
-    for leaf in [root.join("missing/data"), root.join("a/b/data")] {
-        match ensure_dir(&leaf) {
-            Err(SafeOpenError::Io(err)) => assert_eq!(err.kind(), ErrorKind::NotFound, "{leaf:?}"),
-            other => panic!("{leaf:?}: {other:?}"),
-        }
-    }
-    assert!(fs::read_dir(&root).unwrap().next().is_none());
     fs::remove_dir_all(&root).unwrap();
 }
 

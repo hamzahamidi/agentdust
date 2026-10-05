@@ -63,21 +63,11 @@ fn appended_frames_read_back_in_order() {
 #[test]
 fn the_first_append_creates_the_directory_and_the_journal_with_private_modes() {
     let root = TempDir::private("append-first");
-    let dir = root.join("data");
+    let dir = root.join("nested/data");
     append(&dir, &named("a")).unwrap();
     assert_eq!(mode_of(&dir), 0o700);
+    assert_eq!(mode_of(&root.join("nested")), 0o700);
     assert_eq!(mode_of(&dir.join("journal.jsonl")), 0o600);
-}
-
-#[test]
-fn an_append_below_a_missing_parent_fails_and_creates_nothing() {
-    let root = TempDir::private("append-no-parent");
-    let result = append(&root.join("missing/data"), &named("a"));
-    match result {
-        Err(JournalError::Io(err)) => assert_eq!(err.kind(), std::io::ErrorKind::NotFound),
-        other => panic!("{other:?}"),
-    }
-    assert!(names_in(&root).is_empty());
 }
 
 #[test]

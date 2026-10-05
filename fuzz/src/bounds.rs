@@ -23,6 +23,12 @@ pub fn retained_bytes(report: &ReadReport) -> usize {
                 + record.boot.len()
                 + record.cwd_key.as_ref().map_or(0, |key| key.as_str().len())
                 + record.exe_base.as_ref().map_or(0, |name| name.as_str().len())
+                + record.session_tag_key.as_ref().map_or(0, |key| key.as_str().len())
+                + record
+                    .agent_identity
+                    .as_ref()
+                    .and_then(|identity| identity.exe_base())
+                    .map_or(0, |name| name.as_str().len())
         })
         .sum()
 }

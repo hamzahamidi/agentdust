@@ -1,6 +1,6 @@
 # Journal schema version 1 and its store
 
-This page describes `agentdust_core::journal` as it is built. [ADR-1](adr-journal-format.md) gives the reasons for the storage choice and lists the spec edits. Spec section 3.2 states the same storage, and the last section lists where the code differs from the spec.
+This page describes `agentdust_core::journal` as it is built. [ADR-1](adr-journal-format.md) gives the reasons for the storage choice and holds the spec edits. The spec (section 3.2) is not edited here, and the last section lists where the code differs from it.
 
 ## Record
 
@@ -13,16 +13,18 @@ One JSON object per frame. Fields are written in this order, and an absent optio
 | `agent` | string | `claude`, `codex`, `cursor` |
 | `session_id` | string | |
 | `subagent_id` | string, optional | |
+| `agent_identity` | object, optional | The agent process: `pid`, `start_time_us`, `uid` and `exe_base`, at most 160 bytes encoded. No path and no boot. See [provenance.md](../m2/provenance.md) |
 | `tool_use_id` | string, optional | |
 | `wall_ts` | unsigned 64-bit | Milliseconds since the Unix epoch, for display |
 | `mono_ts` | unsigned 64-bit | Nanoseconds of `CLOCK_MONOTONIC`. It orders events within one boot only |
 | `boot` | string | Boot session UUID |
+| `session_tag_key` | string, optional | Lowercase hex, exactly 64 characters. The keyed digest of the session tag |
 | `cwd_key` | string, optional | Lowercase hex, 1 to 64 characters |
 | `exe_base` | string, optional | At most 64 bytes, no C0, C1 or bidi control characters |
 
-The keys are listed once, in `journal::RECORD_KEYS`. The [privacy test](privacy-test.md) fails on a key in a journal file that is not in the list, so adding a field means editing the list.
+The keys are listed once, in `journal::RECORD_KEYS`, and the keys of the nested identity in `journal::AGENT_IDENTITY_KEYS`. The [privacy test](privacy-test.md) fails on a key in a journal file that is not in the lists, so adding a field means editing a list.
 
-`agent_identity`, `session_tag_key` and `procs` are not part of the record. A `null` optional field reads as absent, and a field this build does not know is ignored on a version 1 line. `ExeBase` and `CwdKey` check their rule in the constructor and in `Deserialize`, so a line that breaks it is malformed on read and no writer can produce it. The hook writes `cwd_key`, an HMAC under the install secret ([install-secret.md](install-secret.md)), and leaves `exe_base` empty.
+`procs` is not part of the record. A `null` optional field reads as absent, and a field this build does not know is ignored on a version 1 line. `ExeBase`, `CwdKey`, `SessionTagKey` and `AgentIdentity` check their rules in the constructor and in `Deserialize`, so a line that breaks one is malformed on read and no writer can produce it. An identity needs a positive `pid` that fits an `i32`. The hook writes `agent_identity` on every record it journals when it finds an agent above it, `session_tag_key` on a `session_start`, and `cwd_key`, an HMAC under the install secret ([install-secret.md](install-secret.md)). It leaves `exe_base` empty. [provenance.md](../m2/provenance.md) describes how the first two are found and used.
 
 ## Frame
 
@@ -48,16 +50,14 @@ A segment over the limit is held only up to 65,535 bytes. Its version comes from
 
 1. Encode the frame. `WrongVersion` when `v` is not 1, `TooLarge` when the frame is over 65,536 bytes. Nothing is opened or created before this check.
 2. Ask the volume probe about the directory, or about its nearest existing ancestor when it does not exist yet. A volume that is not local APFS returns `UnsupportedFilesystem` with the facts, and nothing is created.
-3. Create the final component of the data directory with mode 0700 when it is missing, then check it: a real directory, owned by the current user, with no bit outside 0700. The parent must exist. A missing parent fails with `Io(NotFound)`, nothing is created and the hook stays silent.
+3. Create the data directory with mode 0700 when it is missing, then check it: a real directory, owned by the current user, with no bit outside 0700.
 4. Open `journal.jsonl` with `O_APPEND` and `O_NOFOLLOW`. A missing file is created exclusively with mode 0600 and then reopened, and is never written through the creating descriptor. When a rotation takes the file between the creation and the reopen, the open is repeated, up to 3 rounds, and then fails with `NotFound`.
 5. Write the whole frame with one `write(2)`. A call that fails with `EINTR` has transferred nothing and is restarted. Fewer bytes than the frame, zero included, is `ShortWrite` and is never completed by a second call. Any other error is returned.
 6. Compare `fstat` of the descriptor with `lstat` of the path. They match when `st_dev` and `st_ino` are equal and `st_nlink` is not 0. Otherwise close and go to step 4. After 3 attempts the result is `Stale`.
 
 No lock is taken and no lock file is created. Appends are not synced, so an acknowledged record can be lost on an OS crash or a power failure, and lost evidence only lowers confidence. The one write call relies on POSIX append semantics for a local regular file. It is stress tested on APFS and is not an APFS guarantee.
 
-`Ok(Appended { attempts })` is the acknowledgement: the whole frame was written and the recheck of step 6 then found the path still naming the file written. `attempts` says how many frames were written, and a value above 1 means the earlier frames went into files that were no longer the active one. Those are tentative copies. They are not acknowledgements, and readers collapse them with the acknowledged one. An append that ends in `Stale` is not acknowledged and its tentative copies may or may not be readable: one in a file that rotation sealed stays until retention drops it, and one in an unlinked file is gone.
-
-The hook ignores the result of `append`, exits 0 and prints nothing. A record that fails with `TooLarge`, `UnsupportedFilesystem`, `ShortWrite`, `Stale`, a refusal or an I/O error is dropped silently. The hook health counters of spec 4.4 are planned for M2.
+`Appended { attempts }` says how many frames were written. A value above 1 means a copy of the frame sits in a file that is no longer the active one, and readers collapse it. An append that ends in `Stale` is a dropped record whose copies may still be read.
 
 The write goes through the `FrameWriter` trait, which the tests implement to inject faults and to pause an append between its write and its recheck.
 
@@ -130,7 +130,7 @@ On this machine `$TMPDIR` is `apfs, local, supported` and `/dev` is `devfs, loca
 
 ## Safe opens
 
-`safe_open::open_file(path, Read | Append | Create)` opens with `O_NOFOLLOW` and `O_NONBLOCK` and then judges the descriptor with `fstat` and, on macOS, with its extended ACL. `check_dir`, `open_dir` and `ensure_dir` apply the same rules to a directory. The data directory, the journal, the generations, `journal.maint`, `journal.compact.tmp`, the copies and `install.secret` with its temporary file all go through them.
+`safe_open::open_file(path, Read | Append | Create)` opens with `O_NOFOLLOW` and `O_NONBLOCK` and then judges the descriptor with `fstat`. `check_dir`, `open_dir` and `ensure_dir` apply the same rules to a directory.
 
 | Refusal | Error |
 | --- | --- |
@@ -140,11 +140,8 @@ On this machine `$TMPDIR` is `apfs, local, supported` and `/dev` is `devfs, loca
 | A file with more than one hard link | `HardLinked` |
 | An owner other than the effective uid | `ForeignOwner` |
 | Any mode bit outside 0600 for a file or 0700 for a directory | `LooseMode` |
-| On macOS, an extended ACL with an allow entry | `ExtendedAcl` |
 
 `Append` and `Read` never create. `Create` is exclusive with mode 0600. A FIFO is refused at once and never blocks. A refused open reads and writes nothing.
-
-The ACL is read from the opened descriptor with `acl_get_fd_np` and `acl_to_text`, declared in `crates/agentdust-core/src/acl.rs` because the `libc` crate does not have them. A file or directory with no ACL passes, and so does one whose entries are all `deny`, such as the `group:everyone deny delete` entry that macOS puts on `~/Library` and `~/Library/Application Support`. Any other entry refuses, and so does a line that is not a recognised entry. The check matters because a parent directory with an inheritable allow entry gives a new file mode 0600 and an ACL that lets another account read it. The mode bits do not show that. The check runs on the descriptor, so it sees an ACL that was inherited when the file was created. A file or directory that `Create` or `ensure_dir` has just made and then refuses is removed, so a refusal leaves no `install.secret.<hex>.tmp` and no empty journal behind. Other platforms have no ACL check.
 
 ## Cost
 
@@ -168,8 +165,9 @@ The whole hook is measured with `cargo test --release -p agentdust --test hook_l
 
 ## Where this differs from the spec
 
+- Sections 3.2 and 4.4 describe a lock. [ADR-1](adr-journal-format.md) lists the edits.
 - Section 7.3 says a wrong directory mode "is corrected". The journal functions refuse a data directory looser than 0700 and do not change it. The startup validation that corrects the mode is not part of the journal.
-- Section 3.2 lists `cwd_key` and `exe_base` without limits. The limits above are new.
+- Section 3.2 lists `cwd_key`, `exe_base` and `session_tag_key` without limits, and `agent_identity` without a shape. The limits above and the four keys of the identity are defined here, and [provenance.md](../m2/provenance.md) lists the other differences.
 - A file mode is refused when it has any bit outside 0600, which includes an owner execute bit.
 
 ## Not built yet

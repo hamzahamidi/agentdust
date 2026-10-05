@@ -8,6 +8,7 @@ use thiserror::Error;
 
 use crate::budget::{Budget, Metered};
 
+pub const ENV_FILE_VAR: &str = "CLAUDE_ENV_FILE";
 pub const MAX_ID_LEN: usize = 256;
 pub const MAX_CWD_LEN: usize = 4096;
 const ESCAPED_BYTE_LEN: usize = 6;
@@ -41,7 +42,6 @@ pub fn parse_event(reader: impl Read) -> Result<HookEvent, EventError> {
         Err(_) if budget.tripped() => return Err(EventError::FieldTooLong),
         Err(err) => return Err(err.into()),
     };
-    deserializer.end()?;
     let strings = [
         Some(&event.session_id),
         Some(&event.hook_event_name),

@@ -9,6 +9,7 @@ use thiserror::Error;
 const FILE_MODE: u32 = 0o600;
 const DIR_MODE: u32 = 0o700;
 const PERMISSION_BITS: u32 = 0o7777;
+const PRIVATE_OPEN_FLAGS: i32 = libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_NOCTTY;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Access {
@@ -39,6 +40,8 @@ pub enum SafeOpenError {
 
 enum Shape {
     File,
+    SharedFile,
+    UserFile,
     Dir,
 }
 
@@ -48,12 +51,72 @@ pub fn open_file(path: &Path, access: Access) -> Result<File, SafeOpenError> {
 
 pub fn open_file_as(path: &Path, access: Access, owner: u32) -> Result<File, SafeOpenError> {
     let file = open_without_following(path, access)?;
-    if let Err(err) = judge(&file, Shape::File, owner) {
+    if let Err(err) = verify_handle(&file, Shape::File, owner) {
         if access == Access::Create {
+            drop(file);
             let _ = fs::remove_file(path);
         }
         return Err(err);
     }
+    Ok(file)
+}
+
+pub fn open_shared_append(path: &Path) -> Result<File, SafeOpenError> {
+    open_shared_append_as(path, current_uid())
+}
+
+pub fn open_shared_append_as(path: &Path, owner: u32) -> Result<File, SafeOpenError> {
+    let file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .mode(FILE_MODE)
+        .custom_flags(PRIVATE_OPEN_FLAGS)
+        .open(path)
+        .map_err(refusal)?;
+    verify_handle(&file, Shape::SharedFile, owner)?;
+    Ok(file)
+}
+
+pub fn open_lock_file(path: &Path) -> Result<File, SafeOpenError> {
+    open_lock_file_as(path, current_uid())
+}
+
+pub fn open_lock_file_as(path: &Path, owner: u32) -> Result<File, SafeOpenError> {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .mode(FILE_MODE)
+        .custom_flags(PRIVATE_OPEN_FLAGS)
+        .open(path)
+        .map_err(refusal)?;
+    verify_handle(&file, Shape::File, owner)?;
+    Ok(file)
+}
+
+pub fn open_private_append(path: &Path) -> Result<File, SafeOpenError> {
+    open_private_append_as(path, current_uid())
+}
+
+pub fn open_private_append_as(path: &Path, owner: u32) -> Result<File, SafeOpenError> {
+    let file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .mode(FILE_MODE)
+        .custom_flags(PRIVATE_OPEN_FLAGS)
+        .open(path)
+        .map_err(refusal)?;
+    verify_handle(&file, Shape::File, owner)?;
+    Ok(file)
+}
+
+pub fn open_user_file(path: &Path) -> Result<File, SafeOpenError> {
+    open_user_file_as(path, current_uid())
+}
+
+pub fn open_user_file_as(path: &Path, owner: u32) -> Result<File, SafeOpenError> {
+    let file = open_without_following(path, Access::Read)?;
+    verify_handle(&file, Shape::UserFile, owner)?;
     Ok(file)
 }
 
@@ -71,20 +134,16 @@ pub fn open_dir(path: &Path) -> Result<File, SafeOpenError> {
 
 pub fn open_dir_as(path: &Path, owner: u32) -> Result<File, SafeOpenError> {
     let dir = open_without_following(path, Access::Read)?;
-    judge(&dir, Shape::Dir, owner)?;
+    verify_handle(&dir, Shape::Dir, owner)?;
     Ok(dir)
 }
 
 pub fn ensure_dir(path: &Path) -> Result<(), SafeOpenError> {
     match check_dir(path) {
         Err(SafeOpenError::Io(err)) if err.kind() == io::ErrorKind::NotFound => {
-            let created = match DirBuilder::new().mode(DIR_MODE).create(path) {
-                Ok(()) => true,
-                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => false,
-                Err(err) => return Err(err.into()),
-            };
+            DirBuilder::new().recursive(true).mode(DIR_MODE).create(path)?;
             let checked = check_dir(path);
-            if created && checked.is_err() {
+            if checked.is_err() {
                 let _ = fs::remove_dir(path);
             }
             checked
@@ -101,14 +160,18 @@ fn open_without_following(path: &Path, access: Access) -> Result<File, SafeOpenE
         Access::Append => options.append(true),
         Access::Create => options.write(true).create_new(true).mode(FILE_MODE),
     };
-    options.open(path).map_err(|err| match err.raw_os_error() {
+    options.open(path).map_err(refusal)
+}
+
+fn refusal(err: io::Error) -> SafeOpenError {
+    match err.raw_os_error() {
         Some(libc::ELOOP) => SafeOpenError::Symlink,
         Some(libc::ENXIO | libc::EISDIR) => SafeOpenError::NotRegular,
         _ => SafeOpenError::Io(err),
-    })
+    }
 }
 
-fn judge(file: &File, shape: Shape, owner: u32) -> Result<(), SafeOpenError> {
+fn verify_handle(file: &File, shape: Shape, owner: u32) -> Result<(), SafeOpenError> {
     verify(&file.metadata()?, shape, owner)?;
     if crate::acl::extended_acl_has_allow_entry(file.as_raw_fd())? {
         return Err(SafeOpenError::ExtendedAcl);
@@ -118,7 +181,7 @@ fn judge(file: &File, shape: Shape, owner: u32) -> Result<(), SafeOpenError> {
 
 fn verify(metadata: &Metadata, shape: Shape, owner: u32) -> Result<(), SafeOpenError> {
     let allowed = match shape {
-        Shape::File => {
+        Shape::File | Shape::SharedFile | Shape::UserFile => {
             if !metadata.file_type().is_file() {
                 return Err(SafeOpenError::NotRegular);
             }
@@ -127,7 +190,12 @@ fn verify(metadata: &Metadata, shape: Shape, owner: u32) -> Result<(), SafeOpenE
                     links: metadata.nlink(),
                 });
             }
-            FILE_MODE
+            match shape {
+                Shape::SharedFile => PERMISSION_BITS,
+                Shape::UserFile => PERMISSION_BITS,
+                Shape::File => FILE_MODE,
+                Shape::Dir => unreachable!(),
+            }
         }
         Shape::Dir => {
             if !metadata.file_type().is_dir() {

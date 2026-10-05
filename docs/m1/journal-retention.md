@@ -2,7 +2,7 @@
 
 `agentdust_core::journal` rotates the journal and trims it. These are library functions for the future CLI and server. The hook never calls them and the binary has no maintenance subcommand.
 
-[ADR-1](adr-journal-format.md) explains why appenders take no lock and states the retention algorithm once, with a table of what happens to each kind of generation. [journal-schema.md](journal-schema.md) describes the records and the reader. Spec section 3.2 states the same algorithm, and the last section lists where the code differs from the spec.
+[ADR-1](adr-journal-format.md) explains why appenders take no lock and states the retention algorithm once, with a table of what happens to each kind of generation. [journal-schema.md](journal-schema.md) describes the records and the reader. The spec (section 3.2) is not edited here, and the last section lists where the code differs from it.
 
 ```rust
 Journal::rotate(&self, now_ms: u64) -> Result<Rotation, MaintenanceError>
@@ -29,9 +29,8 @@ A reader reads `journal.jsonl` and every file whose name is exactly `journal.<ca
 1. Opens the data directory with the safe open rules. A missing directory is left missing and the result is `Rotation::Empty`.
 2. Asks the volume probe about the directory. A volume that is not local APFS returns `UnsupportedFilesystem` and creates nothing.
 3. Creates `journal.maint` exclusively when it is missing, opens it with the safe open rules and takes the lock without blocking. A held lock is `Busy`.
-4. Opens every existing generation `journal.<stamp>.jsonl` with the safe open rules, oldest stamp first, and closes it again. The first one that is a symlink, a FIFO, a directory, hard linked, owned by another user or too loose fails the run with `Refused` and its path, before anything is renamed. The check is the one retention makes, shared in the code. A FIFO is refused without blocking.
-5. Opens `journal.jsonl` for reading with the safe open rules. A missing or empty file is `Rotation::Empty`.
-6. Renames it to `journal.<stamp>.jsonl`, taking the next free stamp when the name is taken, and syncs the directory. Nothing is truncated and the inode is kept.
+4. Opens `journal.jsonl` for reading with the safe open rules. A missing or empty file is `Rotation::Empty`.
+5. Renames it to `journal.<stamp>.jsonl`, taking the next free stamp when the name is taken, even by a dangling symlink, and syncs the directory. Nothing is truncated and the inode is kept.
 
 The active file is renamed and never rewritten. An appender that opened the old inode and writes later lands in a file that readers still list, and its recheck sees that the path no longer names that file and writes the frame again. That recheck is the protection of a late writer, so no step of rotation or retention waits for time to pass.
 
@@ -48,11 +47,9 @@ The active file is renamed and never rewritten. An appender that opened the old 
 | Earlier boots | The record's boot is not `current_boot` | Dropped on every run |
 | Age | The session has ended and `now_ms` minus the newest `wall_ts` of the session is more than `ended_max_age` (14 days) | Every record of the session is dropped |
 | Size, ended sessions | The kept records total more than `max_bytes` (20,000,000) | Ended sessions are dropped whole, the least recently active first, until the total fits |
-| Size, pinned sessions | Still over `max_bytes` | Records of sessions that have not ended are dropped, the least recently active session first, oldest record first, `session_start` last. Each such session is listed in `RetainReport::degraded` with the number of records lost |
+| Size, pinned sessions | Still over `max_bytes` | Records of sessions without a `session_end` are dropped, the least recently active session first, oldest record first, `session_start` last. Each such session is listed in `RetainReport::degraded` with the number of records lost |
 
-A session is an agent, a session id and a boot. A subagent record carries its parent's session id and belongs to the parent's session. The same session id under two agents, or in two boots, is two sessions.
-
-A session has ended when it has a `session_end` record and every `session_start` of the session has a smaller `mono_ts` than its earliest `session_end`. Only `mono_ts` within the boot is compared. The wall clock and the order in which a run read the records never decide, because neither shows which event came first. A `session_start` that is not earlier than the earliest `session_end` keeps the session open. That covers a resume, a start with the same `mono_ts` as an end, and a `session_end` that arrives after a resumed start: M1 records carry no agent identity, so a delayed end of the old run cannot be told from the end of the resumed one. The session's records are pinned, and they are dropped for the size limit only as pinned evidence, with a `degraded` entry. The cost is that a resumed session that did end stays pinned until the next boot, when every record of the earlier boot is dropped. Spec 3.3 opens a resumed scope for a `session_start` with a different agent identity and ignores a duplicate one with the same identity. The M1 scope is an agent, a session id and a boot, so retention pins more evidence than the spec does and never less. A finer scope arrives with the agent identity that M2 records. A late event of any kind keeps the whole session because the age is judged from the newest record.
+A session is an agent, a session id and a boot. A subagent record carries its parent's session id and belongs to the parent's session. A session has ended when any of its records is a `session_end`, and a late event keeps the whole session because the age is judged from the newest record. The same session id under two agents, or in two boots, is two sessions.
 
 The size of a record is its whole frame: the JSON bytes plus the 0x1E and the 0x0A. Only records that parse count. Lines that do not parse, lines of an unknown kind and lines of a newer schema version are not counted. A record that cannot be dropped, because it sits in the active file or in a generation that holds a newer schema version, still counts, so a journal can stay above the limit until those files change. The planner is `journal::retention::plan`, a pure function of the records, the sizes, the policy, `now_ms` and the current boot.
 
@@ -80,7 +77,7 @@ The size of a record is its whole frame: the JSON bytes plus the 0x1E and the 0x
 | `Busy` | Another run holds `journal.maint` | Nothing |
 | `EmptyBoot` | `current_boot` is empty, which would make every record look like an earlier boot | Nothing, and the check precedes any file access |
 | `UnsupportedFilesystem(facts)` | The volume is not local APFS | Nothing is created |
-| `Refused { path, source }` | The data directory, the lock file, the active file or a generation is a symlink, a FIFO, a directory, hard linked, has a loose mode or another owner, or on macOS has an extended ACL with an allow entry | Nothing, except that `journal.maint` may have been created. A FIFO is refused without blocking |
+| `Refused { path, source }` | The data directory, the lock file, the active file or a generation is a symlink, a FIFO, a directory, hard linked, has a loose mode or another owner | Nothing, except that `journal.maint` may have been created. A FIFO is refused without blocking |
 | `Io` | Any other failure, such as a permission error on a generation or a taken `journal.compact.tmp` directory | Generations already visited stay as they were left. The one that failed is intact |
 
 A run that fails on a generation never deletes it. A reader reports an unsafe generation and goes on, while a maintenance run refuses, because it must not act on a directory it cannot account for.
@@ -89,7 +86,7 @@ A run that fails on a generation never deletes it. A reader reports an unsafe ge
 
 | File | Pins |
 | --- | --- |
-| `journal_retention.rs`, `journal_retention_props.rs` | The planner: 34 cases and 8 properties at 1,024 cases each, including a session resumed after its end, a delayed end of the old run and ties in `mono_ts` |
+| `journal_retention.rs`, `journal_retention_props.rs` | The planner: 26 cases and 8 properties at 1,024 cases each |
 | `journal_rotate.rs` | Rotation, the stamp, the lock, the volume gate, every refusal, the probe points |
 | `journal_rotate_interleave.rs` | A writer paused before and after its write across rotations, a reader paused after its open and after its listing |
 | `journal_retain.rs` | The algorithm file by file: replacement under its own name, deletion, duplicates, the active file, the lock, the gate, unsafe files, torn and garbage lines, unknown kinds |
@@ -132,16 +129,12 @@ The mutation checks below were run once each, and each makes the named tests fai
 | No copy before a rewrite | 8 in `journal_retain_recovery.rs` and the ADR table test |
 | The lock is shared and not exclusive | 1 in `journal_rotate.rs` (the one that holds a run at the probe) |
 | The hook calls `prune` | 1 in `hook_never_prunes.rs` |
-| A session with one `session_end` after all its starts is ended | 2 in `journal_retain_rules.rs`, 4 in `journal_retention.rs`, 2 of the 8 properties in `journal_retention_props.rs` |
-| A resumed session, a delayed end of the old run and an equal `mono_ts` keep the session open | 5 in `journal_retention.rs`, 1 in `journal_retain_rules.rs` |
-| The wall clock and the read order never decide the state | 2 in `journal_retention.rs`, 3 of the 8 properties in `journal_retention_props.rs` |
-| A standalone rotation skips the check of the existing generations | 7 in `journal_rotate.rs` |
 
 ## Limits
 
 - Nothing calls `prune` yet. The CLI and the server decide the cadence, and each run that finds bytes in the active file adds one generation.
 - The whole journal is read into memory. At the default limit that is about 20 MB of frames and the same again for their records. A journal of that size was not measured.
-- `degraded` is returned and not stored. The M2 doctor has to carry it.
+- `degraded` is returned and not stored. `doctor` does not read it: it derives degraded sessions from records that carry no agent identity and counts tags that no session explains ([doctor](../m2/doctor.md)).
 - Copies are never deleted by retention.
 - A session ends for retention only with a `session_end` record. A session whose agent died without one stays pinned until the size limit drops it. Spec 3.3 also ends a session when its agent identity is gone, and retention has no view of processes.
 - A line of an unknown kind is kept for ever, because retention cannot tell its session or its age.
@@ -152,7 +145,8 @@ The mutation checks below were run once each, and each makes the named tests fai
 
 ## Where this differs from the spec
 
+- Spec 3.2 says every reader, writer and rotator takes `journal.lock`. Only rotation and retention take `journal.maint`, and the file name is new.
 - Spec 3.2 says records from earlier boots are pruned first. They are dropped on every run, because no process of an earlier boot can be signalled.
 - The limit of "20 MB" is 20,000,000 bytes of frames of records that parse.
 - Spec 3.2 says provenance is marked degraded. The mark is a list in the report.
-- Spec 3.3 opens a resumed scope for a `session_start` with a different agent identity and ignores a duplicate one. Retention keeps a session open when a `session_start` is not earlier than its first `session_end`, because M1 records carry no agent identity (see "The rules").
+- Spec 7.2 lists `journal.jsonl` and `journal.lock`. The directory also holds generations, `journal.maint`, `journal.compact.tmp` and copies. ADR-1 has the edit.

@@ -325,6 +325,7 @@ impl Harness {
         let spec = spec.clone().report_file(&report_path);
         let child = Command::new(&self.fixture)
             .args(spec.args())
+            .env_remove("AGENTDUST_SESSION")
             .envs(spec.env.iter().map(|(name, value)| (name, value)))
             .stdin(Stdio::null())
             .stdout(Stdio::null())

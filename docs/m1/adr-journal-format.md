@@ -1,6 +1,6 @@
 # ADR-1: The journal is one append-only file, appended without a lock and rechecked after the write
 
-**Status:** accepted. The spec sections 3.2, 4.4, 7.2, 7.3, 9.1, 9.2 and 10 and the ROADMAP are edited to match. "Spec edits" lists them.
+**Status:** proposed. The spec and the ROADMAP are not edited here. A person applies the edits in the last sections.
 **Date:** 2026-10-04 · **Deciders:** the repository owner
 **Evidence:** [journal-benchmark.md](journal-benchmark.md)
 
@@ -12,7 +12,7 @@ This is candidate C2 of the benchmark. Section "Why C2" says why it beats the ot
 
 ## Context
 
-The M0 design of spec section 3.2 kept the journal in `journal.jsonl` behind a `journal.lock` that every reader, writer and rotator takes, "until the M1 contention benchmark decides otherwise". Hooks have p50 under 10 ms and p95 under 20 ms (ROADMAP v1.0 criterion 2, spec 4.4). The M0 hook measured p50 2.50 to 2.68 ms and p95 2.85 to 3.36 ms ([M0 report](../m0/report.md)), which leaves about 16 ms of p95 for the journal.
+Spec section 3.2 stores the journal in `journal.jsonl` behind a `journal.lock` that every reader, writer and rotator takes, "until the M1 contention benchmark decides otherwise". Hooks have p50 under 10 ms and p95 under 20 ms (ROADMAP v1.0 criterion 2, spec 4.4). The M0 hook measured p50 2.50 to 2.68 ms and p95 2.85 to 3.36 ms ([M0 report](../m0/report.md)), which leaves about 16 ms of p95 for the journal.
 
 Rotation and retention have to work while hooks write. That is the hard part: an appender that has opened the active file and is then paused writes into whatever that file has become by the time it resumes.
 
@@ -55,16 +55,14 @@ Its price is that a record can exist twice. When a rotation lands between the wr
 
 ## The append
 
-1. Encode the record as compact JSON and frame it. A frame longer than 65,536 bytes is refused with `TooLarge`, and nothing is opened or created for it. The hook drops the record silently, and the hook health counters are planned for M2.
-2. Check the volume of the journal directory (section "Local APFS only"). When it is not supported, write nothing and stop. The hook drops the record silently.
+1. Encode the record as compact JSON and frame it. A frame longer than 65,536 bytes is dropped and counted, and nothing is opened or created for it.
+2. Check the volume of the journal directory (section "Local APFS only"). When it is not supported, write nothing, count it and stop.
 3. Open `journal.jsonl` with `O_APPEND`, `O_CREAT`, `O_NOFOLLOW` and mode 0600, in a directory of mode 0700.
 4. Write the frame with one `write(2)`. A call that returns `EINTR` before it transferred anything is restarted. A call that returns fewer bytes than the frame, zero included, is an error and is never completed by a second call, because a second call would not be atomic with respect to other appenders.
 5. Compare `fstat` of the descriptor with `lstat` of the path. They match when `st_dev` and `st_ino` are equal and `st_nlink` is not 0. If they do not match, close the descriptor and go to step 3. After 3 attempts the append fails with `Stale`.
 6. Return. There is no `fsync`.
 
-A record is acknowledged when `Journal::append` returns `Ok(Appended)`: one `write(2)` transferred the whole frame and the recheck of step 5 then found the path still naming the file that was written. A write that succeeded and whose recheck failed is tentative and is not an acknowledgement, because the file it reached is no longer the active file. The append writes the frame again, and each tentative copy is one of the copies that readers and retention collapse. When all 3 attempts end in a failed recheck the append returns `Stale` and the record is not acknowledged. Its tentative copies may or may not remain: one written into a file that rotation sealed stays readable until retention drops it, and one written into a file that was unlinked is gone. The tests pin both: an unlinked active file under every attempt leaves no copy at all (`journal_append_recheck.rs`), and a rotation after every write leaves the copies in generations. A missing record whose append returned `Stale` is therefore not a lost record.
-
-The guarantees below speak of acknowledged records only. A record that was not acknowledged can be present zero, one or several times before the reader collapses equal records.
+A record is acknowledged by its last successful data-bearing `write(2)`. The earlier ones, if any, wrote into files that are no longer the active file, and those copies are what the readers and retention collapse. An append that fails with `Stale` is counted as dropped, yet its copies sit in generations and the record may still be read. That only adds evidence.
 
 The atomicity of step 4 is a reliance on POSIX append semantics for local regular files, a write on an `O_APPEND` descriptor lands whole at the end of the file while other processes append. It is not an APFS guarantee and it does not hold on network file systems. It was stress tested on APFS with 3 and 16 writer processes and no torn or interleaved line appeared. [tests/frame.rs](../../crates/agentdust-bench/tests/frame.rs) pins the byte layout, and `sixteen_writer_processes_with_4000_byte_records_tear_nothing` in [tests/harness.rs](../../crates/agentdust-bench/tests/harness.rs) pins the concurrency.
 
@@ -84,7 +82,7 @@ A line of a newer schema version is counted apart from a malformed line, and tha
 
 ## Local APFS only
 
-The writer supports one place for the journal: a local APFS volume. `statfs(2)` on the journal directory must report `f_fstypename` equal to `apfs` and `MNT_LOCAL` set in `f_flags`. On any other volume the writer opens nothing, writes nothing and returns `UnsupportedFilesystem` with the facts. The hook drops the record silently, and a reason in hook health is planned for M2. The refusal has three grounds: a network volume breaks the premise of an atomic append, SMB is unproven, and a local volume that is not APFS was not tested.
+The writer supports one place for the journal: a local APFS volume. `statfs(2)` on the journal directory must report `f_fstypename` equal to `apfs` and `MNT_LOCAL` set in `f_flags`. On any other volume the writer opens nothing, writes nothing and records the reason in hook health: a network volume breaks the premise of an atomic append, SMB is unproven, and a local volume that is not APFS was not tested.
 
 What `journal-bench fs` reported on the benchmark machine:
 
@@ -143,7 +141,7 @@ A run takes the exclusive lock on `journal.maint` without blocking and reports `
 | G12 | a line that does not parse, and records that the rules drop and keep | replaced, the line dropped | yes |
 | G13 | a line that does not parse and only records that the rules drop | deleted | yes |
 | G14 | no bytes | left as it is | no |
-| G15 | a symlink, a FIFO, a directory, a hard link, a loose mode or, on macOS, an extended ACL with an allow entry where a regular private file belongs | the run is refused and nothing changes | no |
+| G15 | a symlink, a FIFO, a directory, a hard link or a loose mode where a regular private file belongs | the run is refused and nothing changes | no |
 
 - **Replaced** means the lines that stay are written to `journal.compact.tmp` (created exclusively, mode 0600), in their original order and with their original bytes, each framed as 0x1E, the bytes and 0x0A. The file is synced and renamed over the generation, and the directory is synced at the end of the run. A bare line without the 0x1E gains its frame.
 - **A duplicate** is a record in a closed generation whose bytes equal those of a record read earlier in the run. Files are read in stamp order and the active file last, so the copy in the older file stays. A duplicate in the active file is not touched and readers collapse it. Duplicates are removed before the rules run, so the size limit counts a record once.
@@ -180,7 +178,7 @@ The order across boots is weak. A boot is ranked by wall time, which can go back
 
 A frame is at most 65,536 bytes including its delimiters. The cap is chosen from latency. The benchmark that preceded this one found no torn line up to 4 MiB with 16 writers, and p99 of 3.2 ms at 64 KiB, 5.0 ms at 256 KiB and 34.0 ms at 4 MiB ([carried over](journal-benchmark.md#measurements-carried-over), not repeated). This run measured only padded records of 150 and 4,000 bytes, the second standing for a `sample` record.
 
-The cap says nothing about a real `sample` record. The `procs` list of spec 3.2 has no length limit. The M2 sampler needs a byte budget below the cap and a truncation marker, `procs_total` and `procs_recorded`, so a truncated list is visible as one. Until it exists, a `sample` record over the cap is refused with `TooLarge`, and the hook drops it silently until the M2 health counters exist.
+The cap says nothing about a real `sample` record. The `procs` list of spec 3.2 has no length limit. The M2 sampler needs a byte budget below the cap and a truncation marker, `procs_total` and `procs_recorded`, so a truncated list is visible as one. Until it exists, a `sample` record over the cap is dropped and counted in hook health.
 
 ## Alternatives considered
 
@@ -239,17 +237,27 @@ The cap says nothing about a real `sample` record. The `procs` list of spec 3.2 
 - The benchmark and the `agentdust-core` tests have not run on Linux. The crates compile for `x86_64-unknown-linux-gnu` with `cargo check --all-targets`.
 - "No observed losses" means none in 144,000 attempted appends per candidate in three runs. It is not a proof, and the rotation stress used a 1 ms period that no hook workload reaches.
 
-## Spec edits
+## Spec edits to propose
 
-Applied to [the spec](../superpowers/specs/2026-10-03-agentdust-design.md):
+Section 3.2, storage paragraph. Replace:
 
-- Section 3.2, the storage paragraph and the retention paragraph. They state the frame, the append and its recheck, the acknowledgement, `journal.maint`, the reader and the retention steps.
-- Section 9.1, the rows S22 (frame and atomic write), S23 (an acknowledged record is present exactly once), S24 (local APFS only) and S25 (the order of a read), each mapped to named tests, and the additions to the tests of S13, S16 and S18.
-- The ROADMAP: open decision 1 is removed, the decisions table has a Journal row, and the M1 bullet and the latency risk name the 3 and 16 writer benchmark.
+```text
+Storage until the M1 contention benchmark decides otherwise: `journal.jsonl` plus a separate `journal.lock` taken with `flock` by every reader, writer and rotator before opening the data file. Rotation never truncates the active file. A truncated last line is ignored and counted in hook health.
+```
 
-Applied: the remaining edits below are in the spec too, so the spec, this record and the code agree.
+with:
 
-Section 4.4, journal write budget. Replaced:
+```text
+Storage: `journal.jsonl` and closed generations `journal.<stamp>.jsonl`, in a directory on a local APFS volume (section 7.3). A record is one frame: the byte 0x1E, the record as compact JSON, the byte 0x0A. An append opens `journal.jsonl` with `O_APPEND` and `O_NOFOLLOW`, writes the frame with one `write(2)` and compares `fstat` of the descriptor with `lstat` of the path. When the path names another file, or none, the frame is written again, up to 3 attempts in all. An appender takes no lock. A call interrupted by a signal before it transferred anything may be restarted. A write that returns fewer bytes than the frame is an error and is never completed by a second call. A frame longer than 65,536 bytes is dropped and counted in hook health. Appends are not synced: an acknowledged record can be lost on an OS crash or a power failure, and lost evidence only lowers confidence (S19). `journal.maint`, taken with `flock` by rotation and retention only, keeps two maintenance runs apart. Rotation renames `journal.jsonl` to `journal.<stamp>.jsonl`, where `<stamp>` is the wall clock in milliseconds moved up to the next free number, and never truncates or rewrites the active file. Readers take no lock. A reader opens `journal.jsonl`, lists the generations, opens each one that still exists, collapses records that are equal in every field, and orders the rest by the wall time at which their boot first appears, then `mono_ts`, then the remaining fields in a fixed order. This order is for presentation. It does not show which event caused which, and the order of boots is weak because wall time can move backwards. A frame without its closing 0x0A, a line that does not parse and a line of an unknown kind are skipped and counted. A line of a newer schema version is counted apart, including one over the size limit, which is recognised by its leading `{"v":`.
+```
+
+Section 3.2, retention paragraph. After "records of active sessions are pinned." add:
+
+```text
+Retention visits each closed generation, oldest first, and never the active file. A generation that holds a line of a newer schema version is left as it is. A record whose bytes repeat those of a record read earlier in the run is dropped, and so are the records the rules above drop. A generation with nothing to drop is left as it is, and one with no line left is deleted. In any other case the lines that stay are written, with their original bytes, to `journal.compact.tmp`, which is synced and renamed over the generation, and the directory is synced. Before a rewrite or a delete drops a line that does not parse, the generation is copied byte for byte to `journal.jsonl.corrupt-<n>`. A line of an unknown kind stays. A record is never moved to another file and never appended again. No step depends on elapsed time. Only rotation and retention take `journal.maint`, and the hook never runs either.
+```
+
+Section 4.4, journal write budget. Replace:
 
 ```text
 - Journal write budget: the lock is taken without blocking, with retries for at most 20 ms. On failure the record is dropped and hook health is updated. The health update follows the same budget and is best effort.
@@ -258,7 +266,7 @@ Section 4.4, journal write budget. Replaced:
 with:
 
 ```text
-- Journal write budget: an append is a few system calls and takes no lock, so it waits for no other process. The record is dropped when the frame is longer than 65,536 bytes, when the volume is not a local APFS volume, when a write returns fewer bytes than the frame, or when the active file was replaced in 3 attempts in a row. The M1 hook drops it silently, and the health update, which is best effort, is planned for M2.
+- Journal write budget: an append is a few system calls and takes no lock, so it waits for no other process. The record is dropped and hook health is updated when the frame is longer than 65,536 bytes, when the volume is not a local APFS volume, when a write returns fewer bytes than the frame, or when the active file was replaced in 3 attempts in a row. The health update is best effort.
 ```
 
 Section 4.4, health record. Replace "updated under the journal lock" with "kept in `health.json`, which is replaced by writing a temporary file and renaming it over the old one. The last writer wins, so a count can miss an update".
@@ -278,12 +286,28 @@ with:
 Section 7.3, after the paragraph on the data directory. Add:
 
 ```text
-The journal directory must be on a local APFS volume: `statfs` reports `f_fstypename` equal to `apfs` and `MNT_LOCAL` in `f_flags`. On any other volume the hook writes nothing and drops the record silently. Hook health, which records `unsupported_filesystem` and the file system name, and `agentdust status`, which prints the file system name, whether it is local and whether it is supported, are planned for M2. `Journal::status()` returns the same facts.
+The journal directory must be on a local APFS volume: `statfs` reports `f_fstypename` equal to `apfs` and `MNT_LOCAL` in `f_flags`. On any other volume the hook writes nothing and records `unsupported_filesystem` and the file system name in hook health. `agentdust status` prints the file system name, whether it is local and whether it is supported.
 ```
+
+Section 9.1. Add after S21, and extend S18:
+
+```text
+| S22 | A journal record is written by one write call per attempt and a frame is never longer than 65,536 bytes. Concurrent appenders never tear or interleave a line, and a cut write costs one record | performance: 16 writer processes with 4,000 byte records, zero torn or interleaved lines. Byte level cuts after 0, 1, 2, half, all but 2 and all but 1 bytes. An oversized record is dropped and counted |
+| S23 | An acknowledged record is present exactly once after any interleaving of an append with rotation, a read and retention | deterministic interleavings with pause points after the open, before the write and after the write, a reader paused after its open and after its listing, retention deleting and compacting. Rotation stress with a rotator, a reader and 16 writers: zero lost acknowledged records |
+| S24 | The journal writes nothing on a volume that is not a local APFS volume | injected `statfs` results for apfs local, apfs not local, hfs, devfs, nfs, smbfs and autofs. The status value is printed |
+```
+
+S18, tests column: append "A journal line of a future version longer than 65,536 bytes is counted as a newer version, and retention leaves its generation as it is".
+
+S16, tests column: append "a rotation or retention run in a directory that holds any of them refuses and changes nothing".
+
+S13, tests column: append "a hook run in a directory that holds a generation full of droppable records changes no file but the active journal and takes no maintenance lock".
 
 Section 9.2, stress row. Replace "three concurrent journal writers, rotation under load, PID churn" with "3 and 16 concurrent journal writer processes with a rotator, a reader and retention running, PID churn".
 
 Section 10, journal format row. Replace "M1 contention benchmark" with "M1 contention benchmark: one `O_APPEND` file, no lock for appenders and readers, an append recheck (docs/m1/adr-journal-format.md)".
+
+ROADMAP: remove open decision 1, and add a row to the decisions table: `| Journal | One O_APPEND file framed with RS, no lock for appenders and readers, an append recheck, 64 KiB frame cap, local APFS only |`. In the M1 bullet "Locking and the three-writer benchmark that picks the ledger format", replace "Locking and the three-writer benchmark" with "The 3 and 16 writer benchmark".
 
 ## What the remaining journal tasks must change
 
@@ -298,7 +322,7 @@ Grouped by concern.
 - Persist or carry `RetainReport.degraded`, the sessions whose pinned evidence was dropped. It is returned and not stored.
 - Call `prune` from the CLI and the server. Nothing calls it, and the hook never does.
 
-**Hook write path and health** (spec 4.4, planned for M2):
+**Hook write path and health** (spec 4.4):
 
 - Count each kind of drop in hook health: too large, a short write, `Stale`, an unsupported volume, any other error.
 - Write health to a temporary file and rename it, one file per agent, with no lock.

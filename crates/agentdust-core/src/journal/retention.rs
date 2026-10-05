@@ -47,8 +47,6 @@ type Scope<'a> = (Agent, &'a str, &'a str);
 struct ScopeInfo {
     ended: bool,
     newest: u64,
-    first_end: Option<u64>,
-    last_start: Option<u64>,
 }
 
 struct Run<'a> {
@@ -90,31 +88,12 @@ fn scope_of(record: &Record) -> Scope<'_> {
 fn scopes_of<'a>(entries: &[Entry<'a>]) -> HashMap<Scope<'a>, ScopeInfo> {
     let mut scopes: HashMap<Scope<'a>, ScopeInfo> = HashMap::new();
     for entry in entries {
-        let record = entry.record;
-        let info = scopes.entry(scope_of(record)).or_insert(ScopeInfo {
+        let info = scopes.entry(scope_of(entry.record)).or_insert(ScopeInfo {
             ended: false,
             newest: 0,
-            first_end: None,
-            last_start: None,
         });
-        info.newest = info.newest.max(record.wall_ts);
-        match record.kind {
-            Kind::SessionStart => info.last_start = info.last_start.max(Some(record.mono_ts)),
-            Kind::SessionEnd => {
-                info.first_end = Some(
-                    info.first_end
-                        .map_or(record.mono_ts, |first| first.min(record.mono_ts)),
-                );
-            }
-            _ => {}
-        }
-    }
-    for info in scopes.values_mut() {
-        info.ended = match (info.first_end, info.last_start) {
-            (Some(end), Some(start)) => start < end,
-            (Some(_), None) => true,
-            (None, _) => false,
-        };
+        info.ended |= entry.record.kind == Kind::SessionEnd;
+        info.newest = info.newest.max(entry.record.wall_ts);
     }
     scopes
 }

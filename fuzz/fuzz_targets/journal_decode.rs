@@ -22,6 +22,8 @@ fn next_record() -> Record {
         mono_ts: 2,
         boot: "boot".to_owned(),
         cwd_key: None,
+        agent_identity: None,
+        session_tag_key: None,
         exe_base: None,
     }
 }

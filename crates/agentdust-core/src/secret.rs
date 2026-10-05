@@ -8,6 +8,7 @@ use std::path::Path;
 use thiserror::Error;
 
 use crate::digest::to_hex;
+use crate::entropy;
 use crate::journal::volume::{self, FsFacts, SystemVolume, VolumeProbe};
 use crate::safe_open::{self, Access, SafeOpenError};
 
@@ -96,6 +97,11 @@ pub fn load_or_create_with(
     read_secret(&path)
 }
 
+pub fn load_existing(dir: &Path) -> Result<Secret, SecretError> {
+    safe_open::check_dir(dir)?;
+    read_secret(&dir.join(SECRET_FILE))
+}
+
 fn read_secret(path: &Path) -> Result<Secret, SecretError> {
     let mut file = safe_open::open_file(path, Access::Read)?;
     let len = file.metadata()?.len();
@@ -130,13 +136,7 @@ fn install(dir: &Path, path: &Path, probe: &dyn InstallProbe) -> Result<(), Secr
 }
 
 fn random_bytes<const N: usize>() -> Result<[u8; N], SecretError> {
-    let mut bytes = [0u8; N];
-    // SAFETY: the pointer and length describe the writable array, and N is within the 256 byte limit.
-    let status = unsafe { libc::getentropy(bytes.as_mut_ptr().cast(), N) };
-    if status != 0 {
-        return Err(SecretError::Entropy(io::Error::last_os_error()));
-    }
-    Ok(bytes)
+    entropy::bytes::<N>().map_err(SecretError::Entropy)
 }
 
 #[cfg(target_os = "macos")]

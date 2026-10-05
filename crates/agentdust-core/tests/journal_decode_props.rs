@@ -2,7 +2,9 @@ mod journal_support;
 
 use std::io::{self, Read};
 
-use agentdust_core::journal::{Agent, CwdKey, ExeBase, Kind, ReadReport, Record, decode, encode};
+use agentdust_core::journal::{
+    Agent, AgentIdentity, CwdKey, ExeBase, Kind, ReadReport, Record, SessionTagKey, decode, encode,
+};
 use journal_support::frame;
 use proptest::prelude::*;
 use proptest::sample::select;
@@ -41,6 +43,10 @@ fn arb_record() -> impl Strategy<Value = Record> {
             proptest::option::of("[0-9a-f]{1,64}"),
             proptest::option::of("[a-zA-Z0-9 ._()-]{0,64}"),
         ),
+        (
+            proptest::option::of((1..=i32::MAX, any::<u64>(), any::<u32>())),
+            proptest::option::of("[0-9a-f]{64}"),
+        ),
     )
         .prop_map(
             |(
@@ -48,6 +54,7 @@ fn arb_record() -> impl Strategy<Value = Record> {
                 (session_id, subagent_id, tool_use_id),
                 (wall_ts, mono_ts, boot),
                 (cwd, exe),
+                (identity, tag_key),
             )| {
                 Record {
                     v: 1,
@@ -60,6 +67,9 @@ fn arb_record() -> impl Strategy<Value = Record> {
                     mono_ts,
                     boot,
                     cwd_key: cwd.map(|key| CwdKey::try_from(key).unwrap()),
+                    agent_identity: identity
+                        .map(|(pid, start, uid)| AgentIdentity::new(pid, start, uid, None).unwrap()),
+                    session_tag_key: tag_key.map(|key| SessionTagKey::try_from(key).unwrap()),
                     exe_base: exe.map(|name| ExeBase::try_from(name).unwrap()),
                 }
             },

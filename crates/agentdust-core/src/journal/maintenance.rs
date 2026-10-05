@@ -79,7 +79,11 @@ pub(super) fn rotate(
     };
     let _lock = lock(dir)?;
     probe.reached(MaintenancePoint::Locked);
-    drop(retain::open_generations(dir)?);
+    for generation in super::generations::list_generations(dir)? {
+        if let Err(SafeOpenError::ExtendedAcl) = safe_open::open_file(&generation.path, Access::Read) {
+            return Err(refuse(&generation.path, SafeOpenError::ExtendedAcl));
+        }
+    }
     rotate_locked(dir, &dir_handle, probe, now_ms)
 }
 

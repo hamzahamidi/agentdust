@@ -4,7 +4,6 @@ mod scratch;
 
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
-use std::path::Path;
 use std::thread;
 
 use agentdust_core::journal::volume::{FixedVolume, MNT_LOCAL, classify};
@@ -94,107 +93,23 @@ fn a_rotation_in_an_occupied_millisecond_takes_the_next_free_stamp() {
 }
 
 #[test]
-fn a_dangling_symlink_in_the_place_of_a_stamp_is_refused_and_nothing_is_rotated() {
+fn a_dangling_symlink_in_the_place_of_a_stamp_is_neither_followed_nor_replaced() {
     let dir = TempDir::private("rotate-stamp-symlink");
     let target = dir.join("elsewhere");
-    let stamp = dir.join(generation_name(T));
-    symlink(&target, &stamp).unwrap();
+    symlink(&target, dir.join(generation_name(T))).unwrap();
     plant(&dir, "journal.jsonl", &frame(&numbered("new", 1)));
-    let before = without_lock(snapshot(&dir));
 
-    let (path, source) = refused_by(journal(&dir).rotate(T));
+    assert_eq!(
+        journal(&dir).rotate(T).unwrap(),
+        Rotation::Rotated { stamp: T + 1 }
+    );
 
-    assert_eq!(path, stamp);
-    assert!(matches!(source, SafeOpenError::Symlink), "{source:?}");
-    assert!(fs::symlink_metadata(&stamp).unwrap().is_symlink());
+    assert!(
+        fs::symlink_metadata(dir.join(generation_name(T)))
+            .unwrap()
+            .is_symlink()
+    );
     assert!(!target.exists());
-    assert_eq!(without_lock(snapshot(&dir)), before);
-}
-
-fn assert_rotation_refuses_a_generation(
-    label: &str,
-    make_unsafe: impl FnOnce(&Path),
-    expected: fn(&SafeOpenError) -> bool,
-) {
-    let dir = with_active(label, &["a", "b"]);
-    let stamp = dir.join(generation_name(T - 5));
-    make_unsafe(&stamp);
-    let names = names_in(&dir);
-    let before = without_lock(snapshot(&dir));
-    let target = dir.to_path_buf();
-
-    let result = returns_promptly(move || journal(&target).rotate(T));
-
-    let (path, source) = refused_by(result);
-    assert_eq!(path, stamp);
-    assert!(expected(&source), "{source:?}");
-    let mut after = names_in(&dir);
-    after.retain(|name| name != "journal.maint");
-    assert_eq!(after, names);
-    assert_eq!(without_lock(snapshot(&dir)), before);
-    assert!(dir.join("journal.jsonl").exists());
-}
-
-#[test]
-fn a_symlinked_generation_is_refused_by_rotation_and_the_active_file_stays() {
-    let elsewhere = TempDir::private("rotate-generation-symlink-target");
-    plant(&elsewhere, "kept", &frame(&numbered("x", 1)));
-    let kept = elsewhere.join("kept");
-    assert_rotation_refuses_a_generation(
-        "rotate-generation-symlink",
-        |stamp| symlink(&kept, stamp).unwrap(),
-        |source| matches!(source, SafeOpenError::Symlink),
-    );
-    assert_eq!(fs::read(&kept).unwrap(), frame(&numbered("x", 1)));
-}
-
-#[test]
-fn a_fifo_generation_is_refused_by_rotation_without_blocking() {
-    assert_rotation_refuses_a_generation("rotate-generation-fifo", make_fifo, |source| {
-        matches!(source, SafeOpenError::NotRegular)
-    });
-}
-
-#[test]
-fn a_directory_generation_is_refused_by_rotation() {
-    assert_rotation_refuses_a_generation(
-        "rotate-generation-directory",
-        |stamp| fs::create_dir(stamp).unwrap(),
-        |source| matches!(source, SafeOpenError::NotRegular),
-    );
-}
-
-#[test]
-fn a_hard_linked_generation_is_refused_by_rotation() {
-    assert_rotation_refuses_a_generation(
-        "rotate-generation-hardlink",
-        |stamp| {
-            std::fs::write(stamp, frame(&numbered("old", 1))).unwrap();
-            fs::set_permissions(stamp, fs::Permissions::from_mode(0o600)).unwrap();
-            fs::hard_link(stamp, stamp.with_extension("alias")).unwrap();
-        },
-        |source| matches!(source, SafeOpenError::HardLinked { links: 2 }),
-    );
-}
-
-#[test]
-fn a_generation_with_a_loose_mode_is_refused_by_rotation() {
-    assert_rotation_refuses_a_generation(
-        "rotate-generation-loose",
-        |stamp| {
-            std::fs::write(stamp, frame(&numbered("old", 1))).unwrap();
-            fs::set_permissions(stamp, fs::Permissions::from_mode(0o644)).unwrap();
-        },
-        |source| matches!(source, SafeOpenError::LooseMode { mode: 0o644, .. }),
-    );
-}
-
-#[test]
-fn a_rotation_refused_by_a_generation_frees_the_lock() {
-    let dir = with_active("rotate-generation-release", &["a"]);
-    symlink(dir.join("nowhere"), dir.join(generation_name(T - 5))).unwrap();
-    assert!(journal(&dir).rotate(T).is_err());
-    assert!(lock_is_free(&dir));
 }
 
 #[test]

@@ -14,7 +14,7 @@ const VERSION_PREFIX: &[u8] = b"{\"v\":";
 
 #[derive(Debug)]
 pub enum Class {
-    Record(Record),
+    Record(Box<Record>),
     Malformed,
     Torn { tail: bool },
     NewerVersion,
@@ -53,7 +53,7 @@ pub fn encode(record: &Record) -> Result<Vec<u8>, JournalError> {
 pub fn decode(reader: impl Read) -> io::Result<ReadReport> {
     let mut report = ReadReport::default();
     scan(reader, |_, class| match class {
-        Class::Record(record) => report.records.push(record),
+        Class::Record(record) => report.records.push(*record),
         Class::Malformed => report.malformed_lines += 1,
         Class::Torn { tail } => {
             report.torn_frames += 1;
@@ -124,7 +124,7 @@ fn classify(raw: &[u8]) -> Class {
         return Class::Malformed;
     }
     match serde_json::from_slice::<Record>(raw) {
-        Ok(record) if record.v == SCHEMA_VERSION => Class::Record(record),
+        Ok(record) if record.v == SCHEMA_VERSION => Class::Record(Box::new(record)),
         Ok(record) => other_version(u64::from(record.v)),
         Err(_) => classify_unreadable(raw),
     }

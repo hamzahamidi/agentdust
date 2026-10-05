@@ -37,18 +37,6 @@ fn a_missing_data_directory_is_created_with_the_secret() {
 }
 
 #[test]
-fn a_data_directory_below_a_missing_parent_gets_no_secret_and_creates_nothing() {
-    let root = private_dir("secret-no-parent");
-    let result = load_or_create(&root.join("missing/data"));
-    match result {
-        Err(SecretError::Io(err)) => assert_eq!(err.kind(), std::io::ErrorKind::NotFound),
-        other => panic!("{other:?}"),
-    }
-    assert!(names(&root).is_empty());
-    fs::remove_dir_all(&root).unwrap();
-}
-
-#[test]
 fn an_existing_private_directory_gets_the_secret() {
     let dir = private_dir("secret-existing-dir");
     let secret = load_or_create(&dir).unwrap();

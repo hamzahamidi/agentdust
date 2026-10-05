@@ -3,12 +3,30 @@ use std::io;
 use std::path::PathBuf;
 
 pub const DATA_DIR_ENV: &str = "AGENTDUST_DATA_DIR";
+pub const CLAUDE_CONFIG_DIR_ENV: &str = "CLAUDE_CONFIG_DIR";
 
 pub fn data_dir() -> io::Result<PathBuf> {
     resolve_data_dir(
         std::env::var_os(DATA_DIR_ENV).as_deref(),
         std::env::var_os("HOME").as_deref(),
     )
+}
+
+pub fn claude_config_dir() -> io::Result<PathBuf> {
+    resolve_claude_config_dir(
+        std::env::var_os(CLAUDE_CONFIG_DIR_ENV).as_deref(),
+        std::env::var_os("HOME").as_deref(),
+    )
+}
+
+pub fn resolve_claude_config_dir(override_dir: Option<&OsStr>, home: Option<&OsStr>) -> io::Result<PathBuf> {
+    if let Some(dir) = override_dir.filter(|dir| !dir.is_empty()) {
+        return absolute(dir, CLAUDE_CONFIG_DIR_ENV);
+    }
+    let home = home
+        .filter(|home| !home.is_empty())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME is not set"))?;
+    Ok(absolute(home, "HOME")?.join(".claude"))
 }
 
 pub fn resolve_data_dir(override_dir: Option<&OsStr>, home: Option<&OsStr>) -> io::Result<PathBuf> {

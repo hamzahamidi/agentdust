@@ -62,6 +62,8 @@ fn row() -> impl Strategy<Value = Row> {
                     mono_ts: wall_ts,
                     boot: if old_boot { "old" } else { CURRENT }.to_owned(),
                     cwd_key: None,
+                    agent_identity: None,
+                    session_tag_key: None,
                     exe_base: None,
                 },
                 bytes,
@@ -119,27 +121,12 @@ fn scopes(rows: &[Row]) -> Scopes {
         ended: HashSet::new(),
         newest: HashMap::new(),
     };
-    let mut first_end: HashMap<ScopeKey, u64> = HashMap::new();
-    let mut last_start: HashMap<ScopeKey, u64> = HashMap::new();
     for row in rows {
+        if row.record.kind == Kind::SessionEnd {
+            found.ended.insert(scope(row));
+        }
         let newest = found.newest.entry(scope(row)).or_default();
         *newest = (*newest).max(row.record.wall_ts);
-        match row.record.kind {
-            Kind::SessionStart => {
-                let at = last_start.entry(scope(row)).or_insert(row.record.mono_ts);
-                *at = (*at).max(row.record.mono_ts);
-            }
-            Kind::SessionEnd => {
-                let at = first_end.entry(scope(row)).or_insert(row.record.mono_ts);
-                *at = (*at).min(row.record.mono_ts);
-            }
-            _ => {}
-        }
-    }
-    for (key, end) in first_end {
-        if last_start.get(&key).is_none_or(|start| *start < end) {
-            found.ended.insert(key);
-        }
     }
     found
 }

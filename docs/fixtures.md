@@ -1,6 +1,6 @@
 # Ground-truth fixtures
 
-Success criterion 5 of the roadmap says the classifier is judged against fixtures that carry the truth about each process. Spec 9.2 lists the five labels, spec 3.4 defines the classes they map to, and spec section 10 says the suspect age and idleness thresholds come from this corpus. This page describes the schema, the loader, the planner, the materialiser and the corpus in `fixtures/m1/`, and how M2 will use them.
+Success criterion 5 of the roadmap says the classifier is judged against fixtures that carry the truth about each process. Spec 9.2 lists the five labels, spec 3.4 defines the classes they map to, and spec section 10 says the suspect age and idleness thresholds come from this corpus. This page describes the schema, the loader, the planner, the materialiser and the corpus in `fixtures/m1/`, and how the classifier uses them.
 
 The schema, loader, planner and materialiser are in `agentdust-testkit` (`agentdust_testkit::fixture`). The class table is `agentdust_core::class`. The processes a fixture starts run under the [live harness](m1/live-harness.md).
 
@@ -71,7 +71,7 @@ One JSON object per file, `fixtures/m1/<name>.json`, where `<name>` is the `name
 | `journal[]` | `kind` and `session_id` are required. `subagent_id`, `tool_use_id` and `exe_base` are optional and follow the journal record rules. `roles` is allowed on `sample` only and names roles of the fixture. `shell_start` and `shell_end` need a `tool_use_id` |
 | `session_ended` | Whether the agent process is gone when the classifier looks. A `session_end` event in the journal does not imply it: the clear command writes one while the agent keeps running |
 
-A journal event holds no timestamp, no boot, no process id, no working directory key and no path. Their order in the array is their order in time. M2 turns them into journal records with real timestamps when it replays a fixture.
+A journal event holds no timestamp, no boot, no process id, no working directory key and no path. Their order in the array is their order in time. The classifier test turns them into journal records with a timestamp for each event when it replays a fixture.
 
 ## Reading a fixture
 
@@ -79,7 +79,7 @@ A journal event holds no timestamp, no boot, no process id, no working directory
 - The agent is a stand-in: a root role with children, labelled `true_managed` because the deny list names live agent processes. When `session_ended` is true, every root with children is killed before observation and its children are orphaned to launchd. That process is gone and is not classified.
 - A root without children is started directly by the test and is left alone, so it has the test process as its parent.
 - The observed processes (`Fixture::observed`) are all processes except the ended stand-ins, and are the ones a classifier sees.
-- A `record_only` process is never started. It carries its label and class, and M2 feeds recorded attributes to the classifier for it. A test cannot start a launchd job, a service of another user or an application, so only `true_managed` may be record only. Any other label has to be started for real. A record-only root never ends with the session, because it is never started and cannot be orphaned.
+- A `record_only` process is never started. It carries its label and class, and the classifier test feeds recorded attributes to the classifier for it. A test cannot start a launchd job, a service of another user or an application, so only `true_managed` may be record only. Any other label has to be started for real. A record-only root never ends with the session, because it is never started and cannot be orphaned.
 
 ## The loader
 
@@ -171,30 +171,30 @@ The tests in `tests/fixture_corpus.rs` pin the corpus: at least 14 fixtures, eac
 
 The lookalike fixtures stand for the real service or job. They resemble a leftover (parent launchd, long running, idle) and are protected by their identity.
 
-## How M2 uses the corpus
+## How the classifier uses the corpus
 
-M2 materialises each live fixture, builds the journal records from `journal` with real timestamps and the process ids the harness reports, runs the classifier over the observed processes, and compares each class with `expected.class`. Record-only processes are fed to the classifier as recorded attributes.
+`crates/agentdust-testkit/tests/classify_fixtures.rs` materialises each fixture, builds the journal records from `journal` with a timestamp per event, the identity of the stand-in agent and a tag key for each `session_start`, and runs the classifier over the observed processes. The tag reaches the process group whose children a `sample` event names, because release 0.1 has no sampling and the tag is the ownership evidence. Every sample in the corpus names all the live children of its group, so every fixture applies. The k-th `session_start` belongs to the k-th stand-in agent, and the stand-in agents are the roots labelled `true_managed`. Record-only processes get recorded attributes from a table in the test. The result is described in [doctor](m2/doctor.md).
 
-Success criterion 5 then reads as three checks over the result: no process outside `true_owned_ended` is classified `owned-ended`, no `true_managed`, `true_unknown` or `true_live_owned` process is classified `suspect` or `owned-ended`, and every `true_owned_ended` process is classified `owned-ended`. `expected.class` for `true_detached` is the class once the process is old and idle enough, so M2 has to give the classifier an injected clock and an idleness input to place a process at any age without waiting.
+Success criterion 5 reads as three checks over the result, and the tests hold all three: no process outside `true_owned_ended` is classified `owned-ended`, no `true_managed`, `true_unknown` or `true_live_owned` process is classified `suspect` or `owned-ended`, and every `true_owned_ended` process is classified `owned-ended`. The tests are stricter: every observed process gets exactly the class its label names. `expected.class` for `true_detached` is the class once the process is old and idle enough, so the test gives the snapshot a clock moved ahead by a number of minutes and a gap of 150 ms for the idle sample.
 
-### Measuring the suspect thresholds
+### The suspect thresholds
 
-No threshold is set here. M2 sets them from measurements:
+The thresholds are provisional constants (GitHub issue 17). The corpus was measured like this:
 
-1. For every observed process of every live fixture, record the label, the age and idleness the classifier was given, and the class it returned, over a grid of ages and idleness values.
-2. The age threshold and the idleness threshold are the smallest values at which every observed `true_detached` process is classified `suspect` while every process with `must_never_signal` stays out of `suspect`.
-3. If a `must_never_signal` process is classified `suspect` at every age and idleness that make a `true_detached` process suspect, no threshold separates them. That is a finding about the rules, and the measurement does not hide it behind a number.
+1. For the two `true_detached` fixtures and five fixtures that must stay out of `suspect`, the classifier ran at ages of 0, 10, 20, 29, 31, 90 and 600 minutes.
+2. A process is a suspect exactly when it is `true_detached` and the age reaches 30 minutes. No process with `must_never_signal` is a suspect at any age.
+3. The second result is the weak one: every process that must stay out of `suspect` fails a condition that no threshold changes, so the corpus does not say that 30 minutes is the right number. It says that the classifier honours whatever number it is given.
 
 What the corpus cannot do yet:
 
-- It bounds the thresholds from one side only. Every process that must stay out of `suspect` fails a condition that no threshold changes (a live owner, a live non-launchd parent, a deny list entry), so none of them marks the lower edge. M2 has to add `true_detached` and `true_unknown` fixtures that are young or busy before a number can be chosen.
-- `fixture-sleeper` only sleeps, so a busy process cannot be started. A flag that burns CPU is needed for the idleness boundary.
-- A chain with a dead intermediate (an agent, a shell under it, a server under the shell, and the shell gone) cannot be started, because the harness starts one level. The launcher-chain threshold has no live fixture: `unrelated_process_with_live_launcher` holds a live chain only.
+- It bounds the thresholds from one side only. Every process that must stay out of `suspect` fails a condition that no threshold changes (a live owner, a live non-launchd parent, a deny list entry), so none of them marks the lower edge. `true_detached` and `true_unknown` fixtures that are young or busy are needed before a number can be chosen.
+- `fixture-sleeper` only sleeps, so a busy process cannot be started. A flag that burns CPU is needed for the idleness boundary, which table tests on scripted samples pin for now.
+- A chain with a dead intermediate (an agent, a shell under it, a server under the shell, and the shell gone) cannot be started, because the harness starts one level. On macOS the dead chain is a parent that is PID 1, so the classifier needs no other launcher rule, and `unrelated_process_with_live_launcher` holds a live chain only.
 
 ## Limits
 
-- A fixture holds labels and structure, not kernel attributes. A record-only process has no recorded user id, executable path or parent id, so M2 has to define that recording before the protected cases reach the classifier.
-- Journal events are ordered, not timed, and carry no working directory key, so `likely-owned` has no fixture. Replaying them with spacing that matters (an idle window) is M2's work.
+- A fixture holds labels and structure, not kernel attributes. A record-only process has no recorded user id, executable path or parent id, so `classify_fixtures.rs` holds a table of recorded attributes for the five record-only roles, and a new record-only role fails the test until it has an entry.
+- Journal events are ordered, not timed, and carry no working directory key, so `likely-owned` has no fixture.
 - Children inherit the parent's flags, so a fixture cannot mix a cooperative stand-in agent with SIGTERM-ignoring children, or a plain leftover with a detached one in the same tree. Two stand-ins in one fixture (as in `resumed_session_leftovers`) start two trees.
 - `session_ended` is one value per fixture. The resumed session fixture has both agents ended.
 - The corpus is Claude Code only (`agent` is `claude` in every fixture). Codex and Cursor fixtures come with their adapters.
@@ -203,4 +203,4 @@ What the corpus cannot do yet:
 
 ## Tests
 
-`cargo test -p agentdust-testkit --test fixture_schema --test fixture_validate --test fixture_plan --test fixture_corpus --test fixture_materialise` runs all of them, and `cargo test -p agentdust-core --test class` runs the class table. `fixture_materialise` is macOS only.
+`cargo test -p agentdust-testkit --test fixture_schema --test fixture_validate --test fixture_plan --test fixture_corpus --test fixture_materialise --test classify_fixtures` runs all of them, and `cargo test -p agentdust-core --test class` runs the class table. `fixture_materialise` and `classify_fixtures` are macOS only.

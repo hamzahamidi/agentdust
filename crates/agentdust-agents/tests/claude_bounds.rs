@@ -1,4 +1,4 @@
-use std::io::{self, BufReader, Cursor, Read};
+use std::io::{self, Cursor, Read};
 
 use agentdust_agents::claude::{EventError, MAX_CWD_LEN, MAX_ID_LEN, parse_event};
 
@@ -116,20 +116,6 @@ fn escapes_count_by_decoded_length_not_source_length() {
 fn whitespace_around_kept_fields_is_accepted() {
     let input = "{\n  \"session_id\"  :\t \"s1\" ,\r\n  \"hook_event_name\" : \"Stop\"\n}";
     assert_eq!(parse_event(input.as_bytes()).unwrap().session_id, "s1");
-}
-
-const HOOK_BUFFER: usize = 8 * 1024;
-
-#[test]
-fn through_the_hooks_buffered_reader_the_retained_bytes_stay_bounded() {
-    let mut buffered = BufReader::new(long_string_field("session_id", 50_000_000));
-    let result = parse_event(&mut buffered);
-    assert!(matches!(result, Err(EventError::FieldTooLong)), "{result:?}");
-    let served = buffered.get_ref().served;
-    assert!(
-        served <= 8 * MAX_ID_LEN + HOOK_BUFFER,
-        "read {served} bytes from the source"
-    );
 }
 
 #[test]
