@@ -206,15 +206,6 @@ impl Scanner {
                 continue;
             }
             self.entries += 1;
-            let child_category = if classify && depth == 0 {
-                classify_name(name.as_bytes())
-            } else if classify && depth == 1 && cache && name.as_bytes() == b"changelog.md" {
-                Category::Rebuildable
-            } else if projects && depth == 2 && name.as_bytes() == b"memory" {
-                Category::ApplicationState
-            } else {
-                category
-            };
             let metadata = match stat_at(file.as_raw_fd(), &name) {
                 Ok(metadata) => metadata,
                 Err(_) => {
@@ -231,6 +222,20 @@ impl Scanner {
                 result.skipped.special_files += 1;
                 continue;
             }
+            let child_category = if classify && depth == 0 {
+                classify_name(name.as_bytes(), kind == libc::S_IFREG)
+            } else if classify
+                && depth == 1
+                && cache
+                && name.as_bytes() == b"changelog.md"
+                && kind == libc::S_IFREG
+            {
+                Category::Rebuildable
+            } else if projects && depth == 2 && name.as_bytes() == b"memory" {
+                Category::ApplicationState
+            } else {
+                category
+            };
             if metadata.st_dev as u64 != device {
                 result.skipped.other_filesystems += 1;
                 continue;
@@ -276,9 +281,9 @@ impl Scanner {
     }
 }
 
-fn classify_name(name: &[u8]) -> Category {
+fn classify_name(name: &[u8], regular: bool) -> Category {
     match name {
-        b"remote-settings.json" | b"policy-limits.json" | b"policy-limits.json.stamp.json" => {
+        b"remote-settings.json" | b"policy-limits.json" | b"policy-limits.json.stamp.json" if regular => {
             Category::Rebuildable
         }
         b"projects" | b"file-history" | b"history.jsonl" | b"plans" | b"backups" | b"uploads"
