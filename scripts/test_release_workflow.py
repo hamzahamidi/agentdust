@@ -258,13 +258,13 @@ class PackageTest(unittest.TestCase):
         self.assertIn('epoch="$(git log -1 --format=%ct)"', self.script)
 
     def test_the_checksum_lists_the_tarball_and_is_verified(self):
-        self.assertIn("shasum -a 256 *.tar.gz *.sbom.cdx.json > SHA256SUMS", self.script)
+        self.assertIn("shasum -a 256 *.tar.gz *-sbom.cdx.json > SHA256SUMS", self.script)
         self.assertIn("shasum -a 256 -c SHA256SUMS", self.script)
 
     def test_the_binary_and_the_tarball_are_attested(self):
         attest = step_with(self.package, "actions/attest-build-provenance")
         subjects = attest["with"]["subject-path"].split()
-        self.assertEqual(subjects, ["builds/build-a/target/release/agentdust", "dist/*.tar.gz", "dist/*.sbom.cdx.json"])
+        self.assertEqual(subjects, ["builds/build-a/target/release/agentdust", "dist/*.tar.gz", "dist/*-sbom.cdx.json"])
 
     def test_the_attestation_comes_after_the_comparison_and_the_checksum(self):
         attest = step_index(self.package, "actions/attest-build-provenance")
@@ -414,9 +414,9 @@ class DryRunTest(unittest.TestCase):
         sbom = step_with(self.package, "anchore/sbom-action")
         self.assertEqual(sbom["with"]["format"], "cyclonedx-json")
         self.assertEqual(sbom["with"]["output-file"], "dist/agentdust-${{ env.VERSION }}-sbom.cdx.json")
-        self.assertIn("*.sbom.cdx.json", runs(self.package))
+        self.assertIn("*-sbom.cdx.json", runs(self.package))
         attest = step_with(self.package, "actions/attest-build-provenance")
-        self.assertIn("dist/*.sbom.cdx.json", attest["with"]["subject-path"])
+        self.assertIn("dist/*-sbom.cdx.json", attest["with"]["subject-path"])
 
     def test_the_toolchain_is_recorded_before_it_is_checked(self):
         self.assertLess(step_index(self.build, "toolchain.py record"), step_index(self.build, "toolchain.py check"))

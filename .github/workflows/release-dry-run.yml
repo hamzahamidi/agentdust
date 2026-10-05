@@ -57,13 +57,13 @@ jobs:
           output-file: dist/agentdust-${{ env.VERSION }}-sbom.cdx.json
           upload-artifact: false
           upload-release-assets: false
-      - run: cd dist && shasum -a 256 *.tar.gz *.sbom.cdx.json > SHA256SUMS && shasum -a 256 -c SHA256SUMS
+      - run: cd dist && shasum -a 256 *.tar.gz *-sbom.cdx.json > SHA256SUMS && shasum -a 256 -c SHA256SUMS
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             builds/build-a/target/release/agentdust
             dist/*.tar.gz
-            dist/*.sbom.cdx.json
+            dist/*-sbom.cdx.json
       - run: python3 scripts/formula.py --tarball "dist/agentdust-$VERSION-darwin-arm64.tar.gz" --version "$VERSION" --url "file://$PWD/dist/agentdust-$VERSION-darwin-arm64.tar.gz" --out dist/agentdust.rb
       - run: python3 scripts/brew_smoke.py dist/agentdust.rb "$VERSION"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
