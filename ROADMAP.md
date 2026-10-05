@@ -113,9 +113,9 @@ Exit: on a clean account, install, setup, a controlled stale process found by a 
 
 ### M8 Plugins, listings and upstream (S, external latency)
 
-- Thin plugins for the three agents. Submission to Anthropic's directory and the Cursor marketplace. One technical comment on anthropics/claude-code#1935. A request for a lifecycle event carrying the PID and session of spawned processes.
+- Submit the optional Claude Code cleanup plugin, shipped in 0.1, to Anthropic's directory. Add thin Codex and Cursor plugins after their adapters and setup paths ship, then submit the Cursor plugin to its marketplace. One technical comment on anthropics/claude-code#1935. A request for a lifecycle event carrying the PID and session of spawned processes.
 
-Exit: submitted and validated locally. Acceptance by third parties is not a gate.
+Exit: the Claude Code plugin is submitted and the other plugins are validated locally. Acceptance by third parties is not a gate.
 
 ### M9 1.0 readiness
 
