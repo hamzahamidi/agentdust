@@ -9,6 +9,7 @@ pub mod code;
 pub mod config;
 pub mod cwd;
 pub mod digest;
+pub mod disk;
 pub mod doctor;
 mod entropy;
 pub mod finding;

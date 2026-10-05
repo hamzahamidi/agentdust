@@ -1,7 +1,7 @@
 {
   "name": "agentdust",
-  "description": "Optional Claude Code skill for reviewing and cleaning leftover processes",
-  "version": "0.1.0",
+  "description": "Claude Code process cleanup and read-only disk reports with AgentDust",
+  "version": "0.2.0",
   "author": {
     "name": "Hamza Hamidi",
     "url": "https://github.com/hamzahamidi"
@@ -12,6 +12,7 @@
   "keywords": [
     "agentdust",
     "claude-code",
-    "process-cleanup"
+    "process-cleanup",
+    "disk-usage"
   ]
 }

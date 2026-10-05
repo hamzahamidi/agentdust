@@ -1,4 +1,5 @@
 mod apply;
+mod disk;
 mod doctor;
 mod hook;
 mod setup;
@@ -15,6 +16,8 @@ fn main() -> ExitCode {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
         ["mcp"] => mcp(),
+        ["disk"] => disk::run(false),
+        ["disk", "--json"] => disk::run(true),
         ["doctor"] => doctor::run(false),
         ["doctor", "--json"] => doctor::run(true),
         ["apply"] => apply::run(),
@@ -30,7 +33,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: agentdust hook claude | agentdust mcp | agentdust doctor [--json] | agentdust apply | agentdust setup [--check | --remove] [--yes] | agentdust status | agentdust version"
+                "usage: agentdust hook claude | agentdust mcp | agentdust doctor [--json] | agentdust disk [--json] | agentdust apply | agentdust setup [--check | --remove] [--yes] | agentdust status | agentdust version"
             );
             ExitCode::from(2)
         }

@@ -1,6 +1,6 @@
 {
   "name": "agentdust",
-  "description": "Claude Code cleanup workflow for AgentDust",
+  "description": "Claude Code process cleanup and read-only disk reports with AgentDust",
   "owner": {
     "name": "Hamza Hamidi",
     "url": "https://github.com/hamzahamidi"
@@ -9,7 +9,7 @@
     {
       "name": "agentdust",
       "source": "./plugins/agentdust",
-      "description": "Optional Claude Code skill for reviewing and cleaning leftover processes"
+      "description": "Claude Code process cleanup and read-only disk reports with AgentDust"
     }
   ]
 }

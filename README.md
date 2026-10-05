@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/hamzahamidi/agentdust/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hamzahamidi/agentdust/actions/workflows/ci.yml) [![Latest release](https://img.shields.io/github/v/release/hamzahamidi/agentdust)](https://github.com/hamzahamidi/agentdust/releases/latest) [![License](https://img.shields.io/github/license/hamzahamidi/agentdust)](LICENSE) [![Homebrew custom tap](https://img.shields.io/badge/Homebrew-custom%20tap-FBB040?logo=homebrew&logoColor=black)](https://github.com/hamzahamidi/homebrew-agentdust)
 
-AgentDust is a macOS tool that finds processes left running after Claude Code sessions and stops them only after you approve each one with a typed code. Codex and Cursor support are planned for later releases.
+AgentDust is a macOS tool that finds processes left running after Claude Code sessions and stops them only after you approve each one with a typed code. It also reports Claude Code disk usage without deleting files. Codex and Cursor support are deferred.
 
-**Release 0.1.0 supports Claude Code on Apple silicon and is available through Homebrew.** See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
+**Release 0.2.0 supports Claude Code on Apple silicon and is available through Homebrew.** See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
 
 Agents start dev servers, MCP servers and helpers. When a session ends or crashes, some of them keep running under `launchd`, holding memory, ports and sometimes CPU. The upstream reports are open: [anthropics/claude-code#1935](https://github.com/anthropics/claude-code/issues/1935) and [openai/codex#21008](https://github.com/openai/codex/issues/21008).
 
@@ -12,7 +12,7 @@ Security and privacy: [SECURITY.md](SECURITY.md), the [threat model](docs/threat
 
 ## Status
 
-Release 0.1 adds the analysis and the approved cleanup for Claude Code. The Codex and Cursor adapters follow, and 0.2 is the hardened beta. The milestones are in [ROADMAP.md](ROADMAP.md).
+Release 0.1 provides analysis and approved cleanup for Claude Code. M7 adds a read-only disk report. Codex, Cursor and broader beta hardening are deferred. The milestones are in [ROADMAP.md](ROADMAP.md).
 
 | Part | State |
 | --- | --- |
@@ -25,7 +25,17 @@ Release 0.1 adds the analysis and the approved cleanup for Claude Code. The Code
 | Release workflow: tag gate, audit, two builds, tarball, SBOM, attestation, draft release, formula | Built ([release process](docs/release.md)) |
 | `agentdust setup` for Claude Code (hooks in `settings.json`, the MCP server through the `claude` CLI, a diff and consent, `--check`, `--remove`) and `agentdust status` | Built ([setup](docs/m3/setup.md)) |
 | `agentdust doctor`, the MCP doctor and plan tools, and cleanup through the MCP form or terminal approval | Built for release 0.1.0 ([apply design and limits](docs/m3/apply.md)) |
-| Optional Claude Code cleanup skill | Available as the `agentdust` plugin marketplace below |
+| Read-only Claude Code disk report and skill | `agentdust disk [--json]`, `agentdust_disk` and `/agentdust:disk` ([scope and limits](docs/m7/disk.md)) |
+| Optional Claude Code skills | Available as the `agentdust` plugin marketplace below |
+
+## Inspect Claude Code disk usage
+
+```bash
+agentdust disk
+agentdust disk --json
+```
+
+In Claude Code, ask “Use AgentDust to show where Claude Code uses disk space”, or use `/agentdust:disk` from the optional plugin. The `agentdust_disk` tool reads metadata under the Claude configuration root and the current project's `.claude/worktrees`. It reports logical and allocated bytes by purpose, marks partial scans and deletes nothing. Allocated bytes are not reclaimable space. See [scope, categories and limits](docs/m7/disk.md).
 
 ## How cleanup works
 
@@ -63,9 +73,9 @@ Cleanup controls:
 
 Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
 
-## Using AgentDust 0.1.0
+## Using AgentDust 0.2.0
 
-Release 0.1.0 supports Apple silicon with Claude Code. The Status table above lists the included features.
+Release 0.2.0 supports Apple silicon with Claude Code. It adds the M7 read-only disk report. The Status table above lists the included features.
 
 ### Install and connect
 
@@ -80,14 +90,14 @@ agentdust setup
 
 ### Add the optional Claude Code skill
 
-The MCP server exposes the tools. The optional plugin adds `/agentdust:cleanup`, a reusable workflow for inspecting and cleaning leftover processes. It does not install the server or start cleanup by itself.
+The MCP server exposes the tools. The optional plugin adds `/agentdust:cleanup` for processes and `/agentdust:disk` for read-only disk usage. It does not install the server or start cleanup by itself.
 
 ```bash
 claude plugin marketplace add hamzahamidi/agentdust
 claude plugin install agentdust@agentdust --scope user
 ```
 
-Start a new Claude Code session, then run `/agentdust:cleanup` or ask Claude to inspect processes left by a Claude Code session. `agentdust_doctor` only reads the inventory. When you ask to clean up, the skill creates a fresh plan, shows its eligible items and evidence, then calls `agentdust_apply` to show AgentDust's typed approval form. Type the generated code yourself to approve. The skill never supplies an approval code. The plugin contains only this skill; `agentdust setup` separately registers the MCP server and hooks.
+Start a new Claude Code session, then run `/agentdust:cleanup` or ask Claude to inspect processes left by a Claude Code session. `agentdust_doctor` only reads the inventory. When you ask to clean up, the skill creates a fresh plan, shows its eligible items and evidence, then calls `agentdust_apply` to show AgentDust's typed approval form. Type the generated code yourself to approve. The skill never supplies an approval code. The plugin contains these two skills; `agentdust setup` separately registers the MCP server and hooks.
 
 The plugin can also be reviewed or tested from a checkout of this repository with `claude plugin validate .`. See [Claude Code plugin installation](https://code.claude.com/docs/en/plugins/install) for install scopes and management.
 
@@ -128,7 +138,7 @@ agentdust status
 
 ## Running the development probe
 
-Run the probe to check whether your agent client can collect a typed approval. It shows a typed-code form and reports how the client answered. It changes nothing on your machine. Building it needs Rust 1.99.0 (pinned in `rust-toolchain.toml`); release 0.1.0 is a prebuilt binary that needs no Rust.
+Run the probe to check whether your agent client can collect a typed approval. It shows a typed-code form and reports how the client answered. It changes nothing on your machine. Building it needs Rust 1.99.0 (pinned in `rust-toolchain.toml`); release 0.2.0 is a prebuilt binary that needs no Rust.
 
 ```bash
 cargo build --release
