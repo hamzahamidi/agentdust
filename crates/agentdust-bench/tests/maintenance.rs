@@ -52,7 +52,7 @@ fn ino(path: &Path) -> u64 {
 
 fn newer_version_line(pad: usize) -> Vec<u8> {
     format!(
-        "{{\"v\":2,\"kind\":\"future\",\"pad\":\"{}\"}}\n",
+        "{{\"v\":3,\"kind\":\"future\",\"pad\":\"{}\"}}\n",
         "a".repeat(pad)
     )
     .into_bytes()

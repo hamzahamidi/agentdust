@@ -104,6 +104,13 @@ fn a_model_view_of_another_class_is_not_accepted() {
 }
 
 #[test]
+fn an_owned_ended_finding_without_exact_owners_cannot_be_planned() {
+    let mut found = finding(4242, Class::OwnedEnded);
+    found.attribution_owners = None;
+    assert!(PlanItem::from_finding(&found, describe(&found)).is_none());
+}
+
+#[test]
 fn a_plan_keeps_the_actionable_findings_owned_ended_first_then_by_pid() {
     let fixture = Fixture::new();
     let store = fixture.store();

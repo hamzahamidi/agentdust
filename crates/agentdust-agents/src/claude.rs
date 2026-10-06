@@ -61,6 +61,8 @@ pub fn journal_kind(event: &HookEvent) -> Option<Kind> {
     match event.hook_event_name.as_str() {
         "SessionStart" => Some(Kind::SessionStart),
         "SessionEnd" => Some(Kind::SessionEnd),
+        "SubagentStart" => Some(Kind::SubagentStart),
+        "SubagentStop" => Some(Kind::SubagentStop),
         "PreToolUse" if shell => Some(Kind::ShellStart),
         "PostToolUse" if shell => Some(Kind::ShellEnd),
         _ => None,

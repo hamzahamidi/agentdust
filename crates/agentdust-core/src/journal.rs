@@ -30,7 +30,8 @@ pub use maintenance::{
 pub use retain::RetainReport;
 pub use volume::{FixedVolume, FsFacts, SystemVolume, VolumeProbe};
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
+pub const MIN_READABLE_SCHEMA_VERSION: u32 = 1;
 pub const ACTIVE_FILE: &str = "journal.jsonl";
 pub const RECORD_KEYS: [&str; 13] = [
     "v",
@@ -54,6 +55,9 @@ pub const AGENT_IDENTITY_KEYS: [&str; 4] = ["pid", "start_time_us", "uid", "exe_
 pub enum Kind {
     SessionStart,
     SessionEnd,
+    SubagentStart,
+    SubagentStop,
+    SubagentAttributionUnknown,
     ShellStart,
     ShellEnd,
     Sample,

@@ -14,7 +14,7 @@ use agentdust_core::clock::wall_ms;
 use agentdust_core::darwin::boot_session_uuid;
 use agentdust_core::identity::ProcessIdentity;
 use agentdust_core::journal::retention::Policy;
-use agentdust_core::journal::{self, Agent, Kind, Record};
+use agentdust_core::journal::{self, Agent, Kind, Record, SCHEMA_VERSION};
 use agentdust_core::secret::SECRET_FILE;
 use common::chain::{Chain, run_hop};
 use common::private_dir;
@@ -71,7 +71,19 @@ fn tool_use(s: &Sentinels, name: &str, extra: &str) -> Vec<u8> {
         s,
         name,
         &format!(
-            r#","tool_name":"Bash","tool_use_id":"toolu_privacy_1","agent_id":"agent_privacy_1"{extra}"#
+            r#","tool_name":"Bash","tool_use_id":"toolu_privacy_1","agent_id":"{}"{extra}"#,
+            s.subagent_id
+        ),
+    )
+}
+
+fn subagent(s: &Sentinels, name: &str) -> Vec<u8> {
+    event(
+        s,
+        name,
+        &format!(
+            r#","agent_id":"{}","agent_type":"{}","agent_transcript_path":"/Users/{}/subagents/{}.jsonl","last_assistant_message":"{}","stop_hook_active":true"#,
+            s.subagent_id, s.agent_type, s.user, s.transcript, s.command
         ),
     )
 }
@@ -93,6 +105,8 @@ fn payloads(s: &Sentinels) -> Vec<(&'static str, Vec<u8>)> {
             tool_use(s, "PostToolUse", &(command.clone() + &response)),
         ),
         ("SessionEnd", event(s, "SessionEnd", r#","reason":"other""#)),
+        ("SubagentStart", subagent(s, "SubagentStart")),
+        ("SubagentStop", subagent(s, "SubagentStop")),
     ]
 }
 
@@ -151,7 +165,7 @@ fn assert_stage(dir: &Path, stage: &str, records: usize, s: &Sentinels) -> Scan 
 
 fn earlier_boot_marker() -> Record {
     Record {
-        v: 1,
+        v: SCHEMA_VERSION,
         kind: Kind::SessionStart,
         agent: Agent::Claude,
         session_id: "marker-session".to_owned(),
@@ -182,7 +196,7 @@ fn no_command_output_path_environment_or_unknown_field_reaches_the_data_or_the_t
     s.also_never_stored(generated_tag(&env_file));
     s.also_never_stored(agents[0].evidence.exe_path.to_string_lossy().into_owned());
 
-    let after_hooks = assert_stage(&dir, "after the hooks", 4, &s);
+    let after_hooks = assert_stage(&dir, "after the hooks", 6, &s);
     assert_eq!(
         after_hooks.names,
         BTreeSet::from(["journal.jsonl".to_owned(), SECRET_FILE.to_owned()])
@@ -204,7 +218,7 @@ fn no_command_output_path_environment_or_unknown_field_reaches_the_data_or_the_t
     journal::append(&dir, &earlier_boot_marker()).unwrap();
     let boot = boot_session_uuid().unwrap();
     journal::rotate(&dir, wall_ms()).unwrap();
-    let rotated = assert_stage(&dir, "after a rotation", 5, &s);
+    let rotated = assert_stage(&dir, "after a rotation", 7, &s);
     assert!(rotated.names.contains("journal.maint"));
     assert!(!rotated.names.contains("journal.jsonl"));
     assert_eq!(rotated.journal_files, 1);
@@ -214,7 +228,7 @@ fn no_command_output_path_environment_or_unknown_field_reaches_the_data_or_the_t
         (report.rewritten, report.deleted, report.dropped_earlier_boot),
         (1, 0, 1)
     );
-    let compacted = assert_stage(&dir, "after a compaction", 4, &s);
+    let compacted = assert_stage(&dir, "after a compaction", 6, &s);
     assert!(compacted.names.contains("journal.maint"));
     assert_eq!(compacted.journal_files, 1);
 
@@ -248,7 +262,7 @@ fn a_hook_given_an_empty_temp_directory_home_and_working_directory_leaves_all_th
         &[("TMPDIR", tmp.as_os_str()), ("HOME", home.as_os_str())],
     );
 
-    assert_eq!(journal::read(&data).unwrap().records.len(), 4);
+    assert_eq!(journal::read(&data).unwrap().records.len(), 6);
     for (what, dir) in [("TMPDIR", &tmp), ("HOME", &home), ("working directory", &cwd)] {
         assert_eq!(
             entries(dir),
@@ -329,7 +343,7 @@ fn the_scan_refuses_a_journal_segment_that_is_not_a_record() {
     for content in [
         "not json\n",
         "\u{1e}{\"v\":1,\"kind\":\"session_start\"",
-        "\u{1e}{\"v\":2,\"kind\":\"future\"}\n",
+        "\u{1e}{\"v\":3,\"kind\":\"future\"}\n",
     ] {
         assert!(scan_refuses("journal.jsonl", content, &s), "{content:?}");
     }

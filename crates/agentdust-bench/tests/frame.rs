@@ -15,7 +15,7 @@ fn sessions(records: &[Record]) -> Vec<&str> {
 
 fn newer_version_line(pad: usize) -> Vec<u8> {
     format!(
-        "{{\"v\":2,\"kind\":\"future\",\"pad\":\"{}\"}}\n",
+        "{{\"v\":3,\"kind\":\"future\",\"pad\":\"{}\"}}\n",
         "a".repeat(pad)
     )
     .into_bytes()
@@ -158,7 +158,7 @@ fn bytes_that_are_not_utf8_or_not_json_are_malformed() {
 #[test]
 fn a_line_of_a_newer_version_is_counted_and_never_interpreted() {
     let mut line = serde_json::to_value(rec(1)).unwrap();
-    line["v"] = serde_json::json!(2);
+    line["v"] = serde_json::json!(3);
     let decoded = decode(format!("{line}\n").as_bytes()).unwrap();
     assert!(decoded.records.is_empty());
     assert_eq!((decoded.newer_version, decoded.malformed), (1, 0));

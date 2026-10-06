@@ -3,9 +3,10 @@ mod inventory_support;
 use std::path::Path;
 
 use agentdust_core::class::Class;
-use agentdust_core::classifier::{Evidence, Finding};
+use agentdust_core::classifier::{AttributionOwner, Evidence, Finding};
 use agentdust_core::cwd::CwdRelation;
 use agentdust_core::finding::{ModelFinding, exe_base_for_model, item_id};
+use agentdust_core::journal::Agent;
 use inventory_support::{Edit, START, kernel, raw};
 
 fn finding_at(path: &str) -> Finding {
@@ -14,6 +15,11 @@ fn finding_at(path: &str) -> Finding {
         class: Class::OwnedEnded,
         evidence: vec![Evidence::OwnedTag, Evidence::OwnedAgentGone],
         age_us: 7_500_999_999,
+        attribution_owners: Some(vec![AttributionOwner {
+            agent: Agent::Claude,
+            session_id: "s1".to_owned(),
+            identity: kernel(4243),
+        }]),
     }
 }
 

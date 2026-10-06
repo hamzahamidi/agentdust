@@ -187,7 +187,7 @@ fn a_journal_of_a_newer_version_makes_owned_classes_unavailable() {
     agent.end();
     fs::write(
         world.data.join("journal.jsonl"),
-        b"\x1e{\"v\":2,\"kind\":\"session_start\"}\n",
+        b"\x1e{\"v\":3,\"kind\":\"session_start\"}\n",
     )
     .unwrap();
     let leftover = world.leftover(true, &[]);

@@ -1,4 +1,4 @@
-# Journal schema version 1 and its store
+# Journal schema versions 1 and 2 and their store
 
 This page describes `agentdust_core::journal` as it is built. [ADR-1](adr-journal-format.md) gives the reasons for the storage choice and holds the spec edits. The spec (section 3.2) is not edited here, and the last section lists where the code differs from it.
 
@@ -8,11 +8,11 @@ One JSON object per frame. Fields are written in this order, and an absent optio
 
 | Field | Type | Rule |
 | --- | --- | --- |
-| `v` | number | 1 on write. A record with another value is refused by `encode` |
-| `kind` | string | `session_start`, `session_end`, `shell_start`, `shell_end`, `sample`, `server_start` |
+| `v` | number | 2 on write. The reader accepts versions 1 and 2. A record with another value is refused by `encode` |
+| `kind` | string | `session_start`, `session_end`, `subagent_start`, `subagent_stop`, `subagent_attribution_unknown`, `shell_start`, `shell_end`, `sample`, `server_start` |
 | `agent` | string | `claude`, `codex`, `cursor` |
 | `session_id` | string | |
-| `subagent_id` | string, optional | |
+| `subagent_id` | string, optional | HMAC of Claude Code's `agent_id` under the install secret and the `AGENTDUST-SUBAGENT-v1` domain. Older records may contain the raw identifier |
 | `agent_identity` | object, optional | The agent process: `pid`, `start_time_us`, `uid` and `exe_base`, at most 160 bytes encoded. No path and no boot. See [provenance.md](../m2/provenance.md) |
 | `tool_use_id` | string, optional | |
 | `wall_ts` | unsigned 64-bit | Milliseconds since the Unix epoch, for display |
@@ -22,9 +22,9 @@ One JSON object per frame. Fields are written in this order, and an absent optio
 | `cwd_key` | string, optional | Lowercase hex, 1 to 64 characters |
 | `exe_base` | string, optional | At most 64 bytes, no C0, C1 or bidi control characters |
 
-The keys are listed once, in `journal::RECORD_KEYS`, and the keys of the nested identity in `journal::AGENT_IDENTITY_KEYS`. The [privacy test](privacy-test.md) fails on a key in a journal file that is not in the lists, so adding a field means editing a list.
+The keys are listed once, in `journal::RECORD_KEYS`, and the keys of the nested identity in `journal::AGENT_IDENTITY_KEYS`. The [privacy test](privacy-test.md) fails on a key in a journal file that is not in the lists, so adding a field means editing a list. `SubagentStart` and `SubagentStop` store the keyed `agent_id` in `subagent_id`. The journal does not store `agent_type`, transcript paths or transcript content.
 
-`procs` is not part of the record. A `null` optional field reads as absent, and a field this build does not know is ignored on a version 1 line. `ExeBase`, `CwdKey`, `SessionTagKey` and `AgentIdentity` check their rules in the constructor and in `Deserialize`, so a line that breaks one is malformed on read and no writer can produce it. An identity needs a positive `pid` that fits an `i32`. The hook writes `agent_identity` on every record it journals when it finds an agent above it, `session_tag_key` on a `session_start`, and `cwd_key`, an HMAC under the install secret ([install-secret.md](install-secret.md)). It leaves `exe_base` empty. [provenance.md](../m2/provenance.md) describes how the first two are found and used.
+`procs` is not part of the record. A `null` optional field reads as absent, and unknown fields are ignored on supported version lines. Version 1 remains readable. Every new write uses version 2, so a version 1 reader flags the journal as unsupported and makes owned classifications unavailable. This also fences old readers when a v2 subagent event is the only record of a live additional owner. `ExeBase`, `CwdKey`, `SessionTagKey` and `AgentIdentity` check their rules in the constructor and in `Deserialize`, so a line that breaks one is malformed on read and no writer can produce it. An identity needs a positive `pid` that fits an `i32`. The hook writes `agent_identity` on every record it journals when it finds an agent above it, `session_tag_key` on a `session_start`, and `cwd_key`, an HMAC under the install secret ([install-secret.md](install-secret.md)). It leaves `exe_base` empty. [provenance.md](../m2/provenance.md) describes how the first two are found and used.
 
 ## Frame
 
@@ -34,15 +34,15 @@ A frame is the byte `0x1E`, the record as compact JSON and the byte `0x0A`. It i
 
 | Class | Segment |
 | --- | --- |
-| record | Ends with `0x0A`, is a JSON object, has `v` 1 and passes the field rules |
-| malformed | Ends with `0x0A` and is not valid UTF-8, is not a JSON object, repeats a field, lacks a field, has a mistyped field, has `v` of 0 or a `v` that is not an integer, breaks the `exe_base` or `cwd_key` rule, or is over the 65,534 byte limit without a newer version |
-| newer version | Ends with `0x0A` and has an integer `v` above 1. It is never interpreted, even when shaped like version 1 |
-| unknown kind | Ends with `0x0A`, has `v` 1 and a `kind` this build does not know |
+| record | Ends with `0x0A`, is a JSON object, has a supported version and passes the field rules |
+| malformed | Ends with `0x0A` and is not valid UTF-8, is not a JSON object, repeats a field, lacks a field, has a mistyped field, has `v` below 1 or a `v` that is not an integer, breaks the `exe_base` or `cwd_key` rule, or is over the 65,534 byte limit without a newer version |
+| newer version | Ends with `0x0A` and has an integer `v` above 2. It is never interpreted, even when shaped like a supported version |
+| unknown kind | Ends with `0x0A`, has a supported version and a `kind` this build does not know |
 | torn | Ends at `0x1E` or at the end of the file. It is never parsed, even when it happens to be complete JSON |
 
 An empty segment is ignored. A line without the leading `0x1E` still decodes, so a file of bare lines reads as records.
 
-A segment over the limit is held only up to 65,535 bytes. Its version comes from its first bytes: `{"v":`, a number without leading zeros of up to 20 digits, then `,` or `}`. A line over the cap that starts that way with a value above 1 is a newer-version line, and any other line over the cap is malformed. Every future schema therefore keeps `v` as its first key.
+A segment over the limit is held only up to 65,535 bytes. Its version comes from its first bytes: `{"v":`, a number without leading zeros of up to 20 digits, then `,` or `}`. A line over the cap that starts that way with a value above 2 is a newer-version line, and any other line over the cap is malformed. Every future schema therefore keeps `v` as its first key.
 
 ## Writing
 

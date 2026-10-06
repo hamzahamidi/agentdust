@@ -56,6 +56,9 @@ pub fn scope(agent_pid: Option<i32>, liveness: Option<Liveness>, session_ended: 
         liveness,
         tag_keys: keys.iter().map(|n| key(*n)).collect(),
         subagent_ids: BTreeSet::new(),
+        subagents: Default::default(),
+        additional_owners: Vec::new(),
+        attribution_ambiguous: false,
     }
 }
 

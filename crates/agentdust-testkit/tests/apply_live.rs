@@ -241,6 +241,27 @@ impl Live {
         self.harness.lock().unwrap().revalidate(handle)
     }
 
+    fn add_owner(&self, session_id: &str, identity: &agentdust_core::identity::KernelIdentity) {
+        let tag = SessionTag::from_bytes([0xc3; 16]);
+        self.shared.records.lock().unwrap().push(Record {
+            v: SCHEMA_VERSION,
+            kind: Kind::SessionStart,
+            agent: Agent::Claude,
+            session_id: session_id.to_owned(),
+            subagent_id: None,
+            agent_identity: Some(
+                AgentIdentity::new(identity.pid, identity.start_time_us, identity.uid, None).unwrap(),
+            ),
+            tool_use_id: None,
+            wall_ts: 2,
+            mono_ts: 2,
+            boot: identity.boot_session_uuid.clone(),
+            session_tag_key: Some(tag.key(&self.shared.secret)),
+            cwd_key: None,
+            exe_base: None,
+        });
+    }
+
     fn exited(&self, handle: ProcHandle) -> bool {
         wait_until(|| self.state(handle) == Revalidation::Gone, WAIT)
     }
@@ -379,6 +400,64 @@ fn a_process_that_loses_its_evidence_during_approval_is_not_signalled() {
     assert_eq!(
         results(&report),
         vec![(Outcome::RevalidationFailed, Some(Reason::ClassChanged)); 2]
+    );
+    assert!(live.terms().is_empty());
+}
+
+#[test]
+fn an_owner_that_resumes_during_approval_keeps_the_candidate_live() {
+    let live = live();
+    let server = live.server();
+    let created = server.plan().unwrap();
+    let handle = live.ended_children[0];
+    let pid = live.pid(handle);
+    let the_call = call_for(&created, &[pid]);
+    let Step::Ask(challenge) = server.begin(&the_call).unwrap() else {
+        panic!("a prompt is expected");
+    };
+    let owner = live.harness.lock().unwrap().identity(live.spare).kernel.clone();
+    live.add_owner("resumed-owner", &owner);
+    let Step::Done(report) = server
+        .answer(&the_call, &challenge.nonce, accept(&challenge))
+        .unwrap()
+    else {
+        panic!("the call has one unit");
+    };
+    assert_eq!(
+        results(&report),
+        [(Outcome::RevalidationFailed, Some(Reason::ClassChanged))]
+    );
+    assert!(live.terms().is_empty());
+}
+
+#[test]
+fn an_owner_set_change_during_approval_aborts_even_when_every_owner_is_gone() {
+    let live = live();
+    let server = live.server();
+    let created = server.plan().unwrap();
+    let handle = live.ended_children[0];
+    let pid = live.pid(handle);
+    let the_call = call_for(&created, &[pid]);
+    let Step::Ask(challenge) = server.begin(&the_call).unwrap() else {
+        panic!("a prompt is expected");
+    };
+    let owner = live.harness.lock().unwrap().identity(live.spare).kernel.clone();
+    live.harness
+        .lock()
+        .unwrap()
+        .signal(live.spare, Signal::Kill)
+        .unwrap();
+    assert!(live.exited(live.spare));
+    live.add_owner("gone-owner", &owner);
+    let Step::Done(report) = server
+        .answer(&the_call, &challenge.nonce, accept(&challenge))
+        .unwrap()
+    else {
+        panic!("the call has one unit");
+    };
+    assert_eq!(
+        results(&report),
+        [(Outcome::RevalidationFailed, Some(Reason::OwnershipChanged))]
     );
     assert!(live.terms().is_empty());
 }

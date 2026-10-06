@@ -1,6 +1,6 @@
 # `agentdust setup` and `agentdust status`
 
-`setup` connects AgentDust to Claude Code: four hook entries in `settings.json` and one MCP server registered through the `claude` CLI. It is spec 8.1 and 8.2, and the tests for S17 and S18. `status` is a read-only report. Neither command signals a process.
+`setup` connects AgentDust to Claude Code: six hook entries in `settings.json` and one MCP server registered through the `claude` CLI. It is spec 8.1 and 8.2, and the tests for S17 and S18. `status` is a read-only report. Neither command signals a process.
 
 ```
 agentdust setup [--check | --remove] [--yes]
@@ -17,7 +17,7 @@ agentdust status
 
 | Resource | Owner of the change | Where |
 | --- | --- | --- |
-| Four hook groups: `SessionStart`, `SessionEnd`, `PreToolUse` and `PostToolUse` (matcher `Bash`) | `agentdust`, by splicing text into the file | `settings.json` in `CLAUDE_CONFIG_DIR`, or `~/.claude` when it is unset |
+| Six hook groups: `SessionStart`, `SessionEnd`, `SubagentStart`, `SubagentStop`, `PreToolUse` and `PostToolUse` (Bash matcher on tool events) | `agentdust`, by splicing text into the file | `settings.json` in `CLAUDE_CONFIG_DIR`, or `~/.claude` when it is unset |
 | The MCP server `agentdust` | the `claude` CLI: `claude mcp add --scope user agentdust -- <binary> mcp` | the CLI's user configuration |
 | The ownership manifest | `agentdust` | `manifest.json` in the data directory, mode 0600 |
 

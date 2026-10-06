@@ -69,6 +69,28 @@ const EXPECTED_FRESH: &str = r#"{
         ]
       }
     ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/homebrew/bin/agentdust hook claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/homebrew/bin/agentdust hook claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -125,13 +147,15 @@ const SETTINGS: &str = r#"{
 "#;
 
 #[test]
-fn the_four_hooks_are_the_ones_the_task_names() {
+fn the_six_hooks_cover_session_shell_and_subagent_lifecycle_events() {
     let specs: Vec<_> = HOOK_SPECS.iter().map(|spec| (spec.event, spec.matcher)).collect();
     assert_eq!(
         specs,
         [
             ("SessionStart", None),
             ("SessionEnd", None),
+            ("SubagentStart", None),
+            ("SubagentStop", None),
             ("PreToolUse", Some("Bash")),
             ("PostToolUse", Some("Bash")),
         ]
@@ -214,7 +238,7 @@ fn the_hash_ignores_key_order_and_whitespace_and_nothing_else() {
 }
 
 #[test]
-fn a_fresh_install_writes_the_four_hooks_in_the_usual_layout() {
+fn a_fresh_install_writes_the_six_hooks_in_the_usual_layout() {
     for input in [None, Some(""), Some("  \n"), Some("{}\n")] {
         let result = fresh(input);
         assert_eq!(result.text, EXPECTED_FRESH, "{input:?}");
@@ -226,7 +250,7 @@ fn a_fresh_install_writes_the_four_hooks_in_the_usual_layout() {
 #[test]
 fn a_fresh_install_records_what_it_created() {
     let result = fresh(None);
-    assert_eq!(result.entries.len(), 4);
+    assert_eq!(result.entries.len(), 6);
     for spec in HOOK_SPECS {
         let entry = entry_for(&result.entries, spec.event);
         assert_eq!(entry.resource, Resource::Hook);
@@ -321,6 +345,8 @@ fn an_equivalent_hook_the_user_already_has_is_recorded_and_not_duplicated() {
         [
             ("SessionStart", HookState::PreExisting),
             ("SessionEnd", HookState::Absent),
+            ("SubagentStart", HookState::Absent),
+            ("SubagentStop", HookState::Absent),
             ("PreToolUse", HookState::PreExisting),
             ("PostToolUse", HookState::Absent),
         ]
@@ -341,7 +367,16 @@ fn a_pre_existing_hook_is_never_removed() {
     let removed = remove(Some(&result.text), TARGET, &result.entries).unwrap();
     assert_eq!(parsed(&removed.text), parsed(&text));
     assert_eq!(removed.released, ["PreToolUse"]);
-    assert_eq!(removed.removed, ["SessionStart", "SessionEnd", "PostToolUse"]);
+    assert_eq!(
+        removed.removed,
+        [
+            "SessionStart",
+            "SessionEnd",
+            "SubagentStart",
+            "SubagentStop",
+            "PostToolUse"
+        ]
+    );
     assert!(removed.kept.is_empty());
 }
 
@@ -382,7 +417,7 @@ fn a_hand_edited_group_is_reported_as_modified_and_left_alone() {
     let edited = first.text.replacen("\"timeout\": 10", "\"timeout\": 99", 1);
     assert_ne!(edited, first.text);
     let report = inspect(Some(&edited), TARGET, &first.entries, CMD).unwrap();
-    assert_eq!(report[2].state, HookState::Modified);
+    assert_eq!(report[4].state, HookState::Modified);
     assert_eq!(report[0].state, HookState::Installed);
     let again = install(Some(&edited), TARGET, &first.entries, CMD).unwrap();
     assert_eq!(again.text, edited);
@@ -405,7 +440,7 @@ fn a_group_whose_command_was_changed_counts_as_missing_not_as_ours() {
     let first = fresh(Some(SETTINGS));
     let edited = first.text.replacen(CMD, "/usr/bin/true", 1);
     let report = inspect(Some(&edited), TARGET, &first.entries, CMD).unwrap();
-    assert_eq!(report[2].state, HookState::Missing);
+    assert_eq!(report[4].state, HookState::Missing);
     assert_eq!(report[0].state, HookState::Installed);
     let removed = remove(Some(&edited), TARGET, &first.entries).unwrap();
     assert_eq!(removed.gone, ["PreToolUse"]);
@@ -446,7 +481,7 @@ fn an_entry_written_for_another_binary_is_stale_and_install_does_not_double_it()
     assert_eq!(again.text, first.text);
     assert_eq!(again.entries, first.entries);
     let removed = remove(Some(&first.text), TARGET, &first.entries).unwrap();
-    assert_eq!(removed.removed.len(), 4);
+    assert_eq!(removed.removed.len(), 6);
 }
 
 #[test]
@@ -463,7 +498,7 @@ fn entries_for_another_settings_file_are_ignored() {
 fn removing_from_a_missing_file_reports_everything_gone() {
     let first = fresh(None);
     let removed = remove(None, TARGET, &first.entries).unwrap();
-    assert_eq!(removed.gone.len(), 4);
+    assert_eq!(removed.gone.len(), 6);
     assert!(removed.removed.is_empty());
     assert!(removed.kept.is_empty());
 }
@@ -473,7 +508,7 @@ fn removing_what_setup_created_from_a_fresh_file_leaves_an_empty_object() {
     let first = fresh(None);
     let removed = remove(Some(&first.text), TARGET, &first.entries).unwrap();
     assert_eq!(parsed(&removed.text), json!({}));
-    assert_eq!(removed.removed.len(), 4);
+    assert_eq!(removed.removed.len(), 6);
 }
 
 #[test]

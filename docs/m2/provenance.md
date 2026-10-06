@@ -4,7 +4,7 @@ This page describes what the Claude Code hook records about the agent behind a s
 
 ## What the hook writes
 
-Only four events are journaled. Every other event and every other tool writes nothing and creates nothing.
+Six events are journaled. Every other event and every other tool writes nothing and creates nothing.
 
 | Event | Record kind | `agent_identity` | `session_tag_key` | Line in `CLAUDE_ENV_FILE` |
 | --- | --- | --- | --- | --- |
@@ -12,8 +12,12 @@ Only four events are journaled. Every other event and every other tool writes no
 | `PreToolUse` for `Bash` | `shell_start` | when an agent is found | never | never |
 | `PostToolUse` for `Bash` | `shell_end` | when an agent is found | never | never |
 | `SessionEnd` | `session_end` | when an agent is found | never | never |
+| `SubagentStart` | `subagent_start` | when an agent is found | never | never |
+| `SubagentStop` | `subagent_stop` | when an agent is found | never | never |
 
 The hook still exits 0 and prints nothing in every case below. A failed step costs the evidence it would have written and nothing else.
+
+Records route by agent and raw `session_id`; exact process identity resolves resumed scopes and additional owners. The hook stores `agent_id` as a keyed digest to correlate subagent lifecycle activity, not as a process identity. The hook payload has no subagent PID, but the hook's process ancestry can identify a separate Claude process on an event associated with a subagent. When that happens, the scope tracks the exact process identity as an additional owner. `SubagentStop` is an activity observation. It never proves that an owner ended. Agent Team teammates are separate Claude Code instances and use independent session and process scopes when those identities appear in the hook records.
 
 ## The agent identity
 
@@ -87,15 +91,16 @@ The `AGENTDUST_SESSION` variable of the hook process itself is never read.
 A scope belongs to one agent and one session ID. These rules decide which scope a record joins:
 
 - The first record of a session opens a scope, with the identity of the record if it has one.
-- A record with an identity joins the scope with that kernel identity (boot, PID, start time, user). When no scope has it, a new scope opens. This is the resumed scope of spec 3.3. A late record of an old agent joins its own old scope.
-- A record without an identity joins the latest scope. A `session_start` without an identity does the same when the latest scope has no identity, and opens a scope of its own when it has one. A scope never receives an identity it did not start with.
-- A record with a `subagent_id` joins the scope of its identity, or the latest scope, and never opens one. It adds its ID to `subagent_ids`. It never ends the session and never adds a tag key.
+- A record with an identity joins the scope with that kernel identity (boot, PID, start time, user). When no scope has it, a new scope opens, except a record with a subagent ID joins the only possible parent scope and adds its different exact identity as an additional owner. This is the resumed scope of spec 3.3. A late record of an old agent joins its own old scope.
+- A record without an identity joins the latest scope only when that choice is unique. A start without an identity opens a degraded scope when the latest scope has an identity. A session end without an identity does not close one of several resumed scopes.
+- A record with a `subagent_id` joins a matching owner scope. If exactly one scope exists for its session, a different exact process identity is added as another owner. If several resumed scopes could match and no identity resolves the choice, those scopes become ambiguous and the event is not attributed. A child event that arrives before any parent scope, a lifecycle event without an ID, or `subagent_attribution_unknown` makes every scope for that session ambiguous, including scopes opened later.
+- `SubagentStart`, `SubagentStop`, and child session events add activity counts keyed by the subagent digest. A child session start may attach its tag to the resolved parent scope. A child session end and a subagent stop never end an owner scope. Missing subagent attribution never establishes that every owner is gone.
 - A repeated `session_start` with the same identity opens nothing. It adds its tag key to the scope.
 
 | State | When |
 | --- | --- |
-| `Ended` | A `session_end` record joined the scope, or the probe says the recorded process is gone |
-| `Active` | Not ended, and a `session_start` joined the scope or the probe says the process is alive |
+| `Ended` | A `session_end` record joined the scope, or the probe says the primary process is gone |
+| `Active` | Not ended, and a `session_start` joined the scope or the probe says the primary process is alive |
 | `Unknown` | Anything else |
 
 `Ended` is absorbing: records added to the journal never move a scope out of it, and a late event of an ended scope does not reopen it. A property test checks this over random records. Two fields keep the two ways of ending apart, because a `session_end` alone never makes a process actionable (spec 3.3):
@@ -104,9 +109,10 @@ A scope belongs to one agent and one session ID. These rules decide which scope 
 | --- | --- |
 | `session_ended` | A `session_end` record joined the scope |
 | `liveness` | `Some(Alive)`, `Some(Gone)` or `Some(Unknown)` when the scope has an identity, `None` when it has none |
-| `agent_gone()` | `liveness` is `Some(Gone)`. The classifier needs this and not `state` for owned-ended |
-| `degraded()` | The scope has no identity, so no liveness evidence is possible |
-| `tag_keys`, `subagent_ids`, `exe_base`, `identity` | Collected from the records of the scope |
+| `additional_owners` | Other exact process identities observed with subagent records and their fresh liveness |
+| `agent_gone()` | The primary and every additional owner have liveness `Gone`. The classifier needs this evidence and not `state` for owned-ended |
+| `degraded()` | The primary identity is absent or ownership attribution is ambiguous |
+| `tag_keys`, `subagent_ids`, `subagents`, `exe_base`, `identity` | Collected from the records of the scope. Subagent IDs are keyed digests |
 
 `ProviderLiveness` is the probe over a `ProcessProvider`:
 
@@ -137,6 +143,7 @@ Each cell is one of two runs. At that load the previous binary is over the 20 ms
 - Spec 4.1 says known executables start from `setup` and are refreshed by every genuine adapter invocation. The hook uses the fixed rule above. `setup` does not exist yet.
 - Spec 3.3 says a duplicate `session_start` with the same identity is ignored. It opens no scope and changes no state. Its tag key is added to the scope, because a process started after the second start can carry either tag.
 - The hook records `session_tag_key` on every `SessionStart` whose secret is usable, also when the variable `CLAUDE_ENV_FILE` is missing. The key then matches no process.
+- `SubagentStart` and `SubagentStop` are activity observations keyed by a digest. The hook payload has no subagent PID. Hook ancestry can still yield an exact Claude process identity; when it differs from the parent, it is tracked as an additional owner. Stop events and abrupt exits never prove that an owner is gone.
 - A missing environment file is created with mode 0600, as a shell `>>` would.
 - The hook records `agent_identity` on `shell_start`, `shell_end` and `session_end` as well as on `session_start`, which is what the spec means by any event with a live agent identity (3.3).
 

@@ -3,24 +3,27 @@ mod journal_support;
 use std::io::{self, Read};
 
 use agentdust_core::journal::{
-    Agent, AgentIdentity, CwdKey, ExeBase, Kind, ReadReport, Record, SessionTagKey, decode, encode,
+    Agent, AgentIdentity, CwdKey, ExeBase, Kind, ReadReport, Record, SCHEMA_VERSION, SessionTagKey, decode,
+    encode,
 };
 use journal_support::frame;
 use proptest::prelude::*;
 use proptest::sample::select;
 use serde_json::json;
 
-const KINDS: [Kind; 6] = [
+const KINDS: [Kind; 7] = [
     Kind::SessionStart,
     Kind::SessionEnd,
+    Kind::SubagentAttributionUnknown,
     Kind::ShellStart,
     Kind::ShellEnd,
     Kind::Sample,
     Kind::ServerStart,
 ];
-const KNOWN_KIND_NAMES: [&str; 6] = [
+const KNOWN_KIND_NAMES: [&str; 7] = [
     "session_start",
     "session_end",
+    "subagent_attribution_unknown",
     "shell_start",
     "shell_end",
     "sample",
@@ -57,7 +60,7 @@ fn arb_record() -> impl Strategy<Value = Record> {
                 (identity, tag_key),
             )| {
                 Record {
-                    v: 1,
+                    v: SCHEMA_VERSION,
                     kind,
                     agent,
                     session_id,
@@ -223,7 +226,7 @@ proptest! {
     }
 
     #[test]
-    fn a_newer_version_line_never_yields_a_record(record in arb_record(), v in 2..=u64::MAX) {
+    fn a_newer_version_line_never_yields_a_record(record in arb_record(), v in u64::from(SCHEMA_VERSION) + 1..=u64::MAX) {
         let bytes = render(&Planned::Newer(record, v));
         let report = decode(&bytes[..]).unwrap();
         prop_assert!(report.records.is_empty());

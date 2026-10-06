@@ -1,6 +1,6 @@
 use std::io::{self, BufRead, BufReader, Read};
 
-use agentdust_core::journal::{Kind, Record, SCHEMA_VERSION};
+use agentdust_core::journal::{Kind, MIN_READABLE_SCHEMA_VERSION, Record, SCHEMA_VERSION};
 use serde::Deserialize;
 use serde::de::IntoDeserializer;
 use serde::de::value::{Error as ValueError, StrDeserializer};
@@ -152,7 +152,9 @@ fn classify(raw: &[u8]) -> Class {
         return Class::Malformed;
     }
     match serde_json::from_slice::<Record>(raw) {
-        Ok(record) if record.v == SCHEMA_VERSION => Class::Record(Box::new(record)),
+        Ok(record) if record.v >= MIN_READABLE_SCHEMA_VERSION && record.v <= SCHEMA_VERSION => {
+            Class::Record(Box::new(record))
+        }
         Ok(record) => other_version(u64::from(record.v)),
         Err(_) => classify_unreadable(raw),
     }
@@ -162,7 +164,7 @@ fn classify_unreadable(raw: &[u8]) -> Class {
     let Ok(VersionOnly { v }) = serde_json::from_slice(raw) else {
         return Class::Malformed;
     };
-    if v != u64::from(SCHEMA_VERSION) {
+    if v < u64::from(MIN_READABLE_SCHEMA_VERSION) || v > u64::from(SCHEMA_VERSION) {
         return other_version(v);
     }
     match serde_json::from_slice::<KindOnly>(raw) {

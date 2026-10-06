@@ -13,11 +13,12 @@ use agentdust_core::apply::exec::{Deps, Executor, Settings};
 use agentdust_core::apply::signal::{SignalResult, Signaller};
 use agentdust_core::apply::timer::Timer;
 use agentdust_core::class::Class;
-use agentdust_core::classifier::{Evidence, Finding};
+use agentdust_core::classifier::{AttributionOwner, Evidence, Finding};
 use agentdust_core::cwd::CwdRelation;
 use agentdust_core::finding::ModelFinding;
 use agentdust_core::identity::KernelIdentity;
 use agentdust_core::inventory::RawIdentity;
+use agentdust_core::journal::Agent;
 use agentdust_core::plan::PlanItem;
 use agentdust_core::provider::{ProcessProvider, ProcessRead};
 use agentdust_core::survey::Surveyor;
@@ -64,6 +65,13 @@ pub fn finding_at(pid: i32, class: Class, exe: &str) -> Finding {
         class,
         evidence: evidence_of(class),
         age_us: 3 * 3600 * 1_000_000,
+        attribution_owners: (class == Class::OwnedEnded).then(|| {
+            vec![AttributionOwner {
+                agent: Agent::Claude,
+                session_id: format!("session-{pid}"),
+                identity: kernel(pid + 100_000),
+            }]
+        }),
     }
 }
 
@@ -289,6 +297,7 @@ impl Rig {
                     class: same.model.class,
                     evidence: same.model.evidence.clone(),
                     age_us: 1,
+                    attribution_owners: same.attribution_owners.clone(),
                 }])
             }),
             read: Box::new(move |call| {

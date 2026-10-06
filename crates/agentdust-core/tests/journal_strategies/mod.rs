@@ -7,9 +7,11 @@ use proptest::collection::vec;
 use proptest::prelude::*;
 use proptest::sample::select;
 
-pub const KINDS: [Kind; 6] = [
+pub const KINDS: [Kind; 8] = [
     Kind::SessionStart,
     Kind::SessionEnd,
+    Kind::SubagentStart,
+    Kind::SubagentStop,
     Kind::ShellStart,
     Kind::ShellEnd,
     Kind::Sample,

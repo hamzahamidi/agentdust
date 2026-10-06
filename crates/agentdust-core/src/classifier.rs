@@ -9,7 +9,7 @@ use crate::ancestry;
 use crate::class::{Actionability, Class, actionable_as};
 use crate::identity::KernelIdentity;
 use crate::inventory::{Launchd, RawIdentity, RawProcess, Snapshot, Tag};
-use crate::journal::SessionTagKey;
+use crate::journal::{Agent, SessionTagKey};
 use crate::session::{Liveness, Scope};
 
 pub const SUSPECT_MIN_AGE: Duration = Duration::from_secs(30 * 60);
@@ -135,6 +135,14 @@ pub struct Finding {
     pub class: Class,
     pub evidence: Vec<Evidence>,
     pub age_us: u64,
+    pub attribution_owners: Option<Vec<AttributionOwner>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttributionOwner {
+    pub agent: Agent,
+    pub session_id: String,
+    pub identity: KernelIdentity,
 }
 
 impl Finding {
@@ -155,6 +163,7 @@ pub fn classify(snapshot: &Snapshot, provenance: &Provenance, policy: &Policy) -
                 class,
                 evidence,
                 age_us: context.age_us(process),
+                attribution_owners: context.attribution_owners(process),
             }
         })
         .collect()
@@ -181,6 +190,7 @@ impl<'a> Context<'a> {
         let mut by_key: HashMap<&SessionTagKey, Vec<&Scope>> = HashMap::new();
         for scope in scopes.unwrap_or_default() {
             agents.extend(scope.identity.as_ref());
+            agents.extend(scope.additional_owners.iter().map(|owner| &owner.identity));
             for key in &scope.tag_keys {
                 by_key.entry(key).or_default().push(scope);
             }
@@ -208,6 +218,50 @@ impl<'a> Context<'a> {
     fn age_us(&self, process: &RawProcess) -> u64 {
         self.taken_at_us
             .saturating_sub(process.identity.kernel.start_time_us)
+    }
+
+    fn attribution_owners(&self, process: &RawProcess) -> Option<Vec<AttributionOwner>> {
+        let Tag::Keyed(key) = &process.tag else {
+            return None;
+        };
+        self.scopes?;
+        let matching = self.by_key.get(key)?;
+        if matching.is_empty() || matching.iter().any(|scope| scope.degraded()) {
+            return None;
+        }
+        let mut owners: Vec<AttributionOwner> = matching
+            .iter()
+            .flat_map(|scope| {
+                scope.owner_states().into_iter().map(|owner| AttributionOwner {
+                    agent: scope.agent,
+                    session_id: scope.session_id.clone(),
+                    identity: owner.identity,
+                })
+            })
+            .collect();
+        if owners.is_empty() {
+            return None;
+        }
+        owners.sort_by(|left, right| {
+            (
+                left.agent,
+                left.session_id.as_str(),
+                left.identity.boot_session_uuid.as_str(),
+                left.identity.pid,
+                left.identity.start_time_us,
+                left.identity.uid,
+            )
+                .cmp(&(
+                    right.agent,
+                    right.session_id.as_str(),
+                    right.identity.boot_session_uuid.as_str(),
+                    right.identity.pid,
+                    right.identity.start_time_us,
+                    right.identity.uid,
+                ))
+        });
+        owners.dedup();
+        Some(owners)
     }
 
     fn decide(&self, process: &RawProcess) -> (Class, Vec<Evidence>) {
@@ -280,10 +334,12 @@ impl<'a> Context<'a> {
         if anchored.is_empty() {
             return (Class::Unknown, vec![Evidence::TagDegraded]);
         }
-        if anchored.iter().any(|scope| !scope.agent_gone()) {
-            let alive = anchored
-                .iter()
-                .any(|scope| scope.liveness == Some(Liveness::Alive));
+        let owner_states: Vec<_> = anchored.iter().flat_map(|scope| scope.owner_states()).collect();
+        if owner_states.is_empty() {
+            return (Class::Unknown, vec![Evidence::TagDegraded]);
+        }
+        if owner_states.iter().any(|owner| owner.liveness != Liveness::Gone) {
+            let alive = owner_states.iter().any(|owner| owner.liveness == Liveness::Alive);
             let mut evidence = vec![
                 Evidence::OwnedTag,
                 if alive {

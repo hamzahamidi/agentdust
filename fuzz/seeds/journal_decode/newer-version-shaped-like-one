@@ -1,2 +1,2 @@
-{"v":2,"kind":"session_start","agent":"claude","session_id":"n","wall_ts":1800000000000,"mono_ts":100,"boot":"boot-a"}
+{"v":3,"kind":"session_start","agent":"claude","session_id":"n","wall_ts":1800000000000,"mono_ts":100,"boot":"boot-a"}
 {"v":4294967296,"kind":"session_start","agent":"claude","session_id":"n","wall_ts":1800000000000,"mono_ts":100,"boot":"boot-a"}

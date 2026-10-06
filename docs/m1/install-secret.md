@@ -90,9 +90,9 @@ A path that does not exist is returned normalised and its existing parents are n
 
 `HookEvent.cwd` is read with its own limit of 4096 decoded bytes, enforced while reading like the 256 byte identifier limit. An oversized `cwd` refuses the whole event, so nothing is recorded and no file is created.
 
-For `SessionStart`, `PreToolUse` and `PostToolUse` on `Bash`, and `SessionEnd`, the hook loads the secret, computes `cwd_key` and writes it into the record. The path is digested and dropped. Events that are not journaled touch nothing. The secret is only touched when the `cwd` is an absolute path without a NUL byte, so an absent, null, empty or relative `cwd` creates no secret.
+For `SessionStart`, `SessionEnd`, `SubagentStart`, `SubagentStop`, and Bash `PreToolUse` and `PostToolUse`, the hook loads the secret when it needs to write `session_tag_key`, `subagent_id`, or `cwd_key`. `session_id` remains as supplied. New `subagent_id` values and the working directory are keyed digests; the working directory is dropped. Older version 1 records may contain raw subagent IDs. Events that are not journaled touch nothing. The secret is also touched when a journaled event has an `agent_id`, even when `cwd` is absent.
 
-If the secret cannot be used, the record is written without `cwd_key`. This is the "lost install secret" case of spec 6.5: provenance gets weaker and the record still reaches the journal. On a volume that is not local APFS neither the secret nor the record is written. The hook exits 0 and prints nothing in every case.
+If the secret cannot be used for an event with `agent_id`, the hook writes `subagent_attribution_unknown` without the raw ID. This makes ownership for that session non-actionable. A `SubagentStart` or `SubagentStop` without an ID also makes the session non-actionable. Other records are written without the `cwd_key`, `session_tag_key` or keyed `subagent_id` that depended on the secret. On a volume that is not local APFS neither the secret nor the record is written. The hook exits 0 and prints nothing in every case.
 
 ## Checks
 

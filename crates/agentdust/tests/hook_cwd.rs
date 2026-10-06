@@ -370,6 +370,23 @@ fn an_unusable_secret_costs_the_key_and_never_the_record_or_the_secret() {
 }
 
 #[test]
+fn a_missing_subagent_digest_is_recorded_as_unresolved_without_the_raw_id() {
+    let dir = private_dir("cwd-unresolved-subagent");
+    write_secret(&dir, &[1; 31], 0o600);
+    let input = br#"{"session_id":"s1","hook_event_name":"PreToolUse","tool_name":"Bash","tool_use_id":"toolu_1","agent_id":"private-agent-id"}"#;
+    let output = run_hook_within(&dir, input, HANG_GUARD).unwrap();
+    assert_silent_success(&output);
+
+    let report = journal::read(&dir).unwrap();
+    assert_eq!(report.records.len(), 1);
+    assert_eq!(report.records[0].kind, Kind::SubagentAttributionUnknown);
+    assert!(report.records[0].subagent_id.is_none());
+    let journal = fs::read(dir.join("journal.jsonl")).unwrap();
+    assert!(!contains(&journal, b"private-agent-id"));
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn no_file_in_the_data_directory_holds_the_working_directory() {
     let dir = scratch_dir("cwd-privacy");
     let cwd = format!("/Users/{SENTINEL_DIR}/{SENTINEL_NAME}");

@@ -97,8 +97,24 @@ fn session_events_map_whatever_the_tool_name() {
             Some(Kind::SessionStart)
         );
         assert_eq!(journal_kind(&event("SessionEnd", tool)), Some(Kind::SessionEnd));
+        assert_eq!(
+            journal_kind(&event("SubagentStart", tool)),
+            Some(Kind::SubagentStart)
+        );
+        assert_eq!(
+            journal_kind(&event("SubagentStop", tool)),
+            Some(Kind::SubagentStop)
+        );
         assert_eq!(journal_kind(&event("Stop", tool)), None);
     }
+}
+
+#[test]
+fn subagent_payloads_keep_only_the_opaque_agent_id_and_ignore_transcript_data() {
+    let input = br#"{"session_id":"s1","hook_event_name":"SubagentStart","agent_id":"agent-7","agent_type":"custom-reviewer","transcript_path":"/private/transcript.jsonl"}"#;
+    let event = parse_event(&input[..]).unwrap();
+    assert_eq!(event.agent_id.as_deref(), Some("agent-7"));
+    assert_eq!(journal_kind(&event), Some(Kind::SubagentStart));
 }
 
 #[test]

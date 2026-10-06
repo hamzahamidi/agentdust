@@ -46,15 +46,15 @@ fn full() -> Record {
 }
 
 #[test]
-fn the_schema_version_is_one() {
-    assert_eq!(SCHEMA_VERSION, 1);
+fn the_schema_version_is_two_on_write() {
+    assert_eq!(SCHEMA_VERSION, 2);
 }
 
 #[test]
 fn a_minimal_record_serialises_to_the_spec_field_names_and_nothing_else() {
     assert_eq!(
         serde_json::to_string(&minimal()).unwrap(),
-        r#"{"v":1,"kind":"session_start","agent":"claude","session_id":"s1","wall_ts":1800000000123,"mono_ts":42,"boot":"b"}"#
+        r#"{"v":2,"kind":"session_start","agent":"claude","session_id":"s1","wall_ts":1800000000123,"mono_ts":42,"boot":"b"}"#
     );
 }
 
@@ -63,7 +63,7 @@ fn a_full_record_serialises_in_spec_order() {
     assert_eq!(
         serde_json::to_string(&full()).unwrap(),
         format!(
-            r#"{{"v":1,"kind":"shell_start","agent":"claude","session_id":"s1","subagent_id":"agent-7","agent_identity":{{"pid":4242,"start_time_us":1800000000000000,"uid":501,"exe_base":"claude"}},"tool_use_id":"toolu_1","wall_ts":1800000000123,"mono_ts":42,"boot":"b","session_tag_key":"{KEY}","cwd_key":"{KEY}","exe_base":"node"}}"#
+            r#"{{"v":2,"kind":"shell_start","agent":"claude","session_id":"s1","subagent_id":"agent-7","agent_identity":{{"pid":4242,"start_time_us":1800000000000000,"uid":501,"exe_base":"claude"}},"tool_use_id":"toolu_1","wall_ts":1800000000123,"mono_ts":42,"boot":"b","session_tag_key":"{KEY}","cwd_key":"{KEY}","exe_base":"node"}}"#
         )
     );
 }

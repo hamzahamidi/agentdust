@@ -4,7 +4,7 @@ mod scratch;
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use agentdust_core::journal::{ReadReport, Record, decode, encode};
+use agentdust_core::journal::{ReadReport, Record, SCHEMA_VERSION, decode, encode};
 use journal_support::{Dribble, journal, non_empty_segments, plant, presentation_order_violation, sessions};
 use scratch::TempDir;
 
@@ -88,10 +88,12 @@ fn every_decode_seed_is_decoded_and_every_segment_counted_once() {
             );
         }
         for record in &report.records {
-            let again = encode(record).unwrap();
+            let mut current_record = record.clone();
+            current_record.v = SCHEMA_VERSION;
+            let again = encode(&current_record).unwrap();
             assert_eq!(
                 decode(&again[..]).unwrap().records,
-                std::slice::from_ref(record),
+                std::slice::from_ref(&current_record),
                 "{name}"
             );
         }

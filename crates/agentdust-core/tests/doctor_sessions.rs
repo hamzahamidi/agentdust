@@ -70,7 +70,7 @@ fn a_journal_of_a_newer_version_makes_owned_classes_unavailable() {
     plant(
         &dir,
         "journal.jsonl",
-        b"\x1e{\"v\":2,\"kind\":\"session_start\"}\n",
+        b"\x1e{\"v\":3,\"kind\":\"session_start\"}\n",
     );
     let found = load_sessions(&dir, &apfs(), true, &Table::new());
     assert_eq!(found.unavailable, Some(Unavailable::UnsupportedVersion));
@@ -121,7 +121,7 @@ fn a_secret_that_cannot_be_used_makes_owned_classes_unavailable() {
 #[test]
 fn an_unsupported_version_is_reported_before_a_missing_secret() {
     let dir = TempDir::private("doc-order");
-    plant(&dir, "journal.jsonl", b"\x1e{\"v\":2}\n");
+    plant(&dir, "journal.jsonl", b"\x1e{\"v\":3}\n");
     let found = load_sessions(&dir, &apfs(), false, &Table::new());
     assert_eq!(found.unavailable, Some(Unavailable::UnsupportedVersion));
 }

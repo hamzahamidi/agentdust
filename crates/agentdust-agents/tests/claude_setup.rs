@@ -138,7 +138,7 @@ fn a_fresh_install_writes_hooks_registers_the_server_and_records_both() {
         ]
     );
     let manifest = world.manifest().unwrap();
-    assert_eq!(hook_entries(&manifest).len(), 4);
+    assert_eq!(hook_entries(&manifest).len(), 6);
     assert!(
         manifest
             .entries
@@ -265,7 +265,7 @@ fn check_reports_installed_after_setup_and_not_installed_before() {
         .iter()
         .map(|hook| hook.state)
         .collect();
-    assert_eq!(states, vec![HookState::Installed; 4]);
+    assert_eq!(states, vec![HookState::Installed; 6]);
 }
 
 #[test]
@@ -927,7 +927,7 @@ fn a_removal_that_cannot_edit_the_settings_keeps_the_ownership_record() {
         other => panic!("{other:?}"),
     }
     assert!(world.settings_json()["hooks"]["SessionStart"].is_array());
-    assert_eq!(hook_entries(&world.manifest().unwrap()).len(), 4);
+    assert_eq!(hook_entries(&world.manifest().unwrap()).len(), 6);
     let again = remove(&world.env(Some(&fake)), &mut approve).unwrap();
     match again {
         RemoveOutcome::Applied(report) => assert!(report.complete, "{}", report.text),

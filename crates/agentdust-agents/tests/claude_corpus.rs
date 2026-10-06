@@ -62,6 +62,8 @@ fn the_payload_seeds_reach_every_outcome_of_the_parser() {
     for kind in [
         Kind::SessionStart,
         Kind::SessionEnd,
+        Kind::SubagentStart,
+        Kind::SubagentStop,
         Kind::ShellStart,
         Kind::ShellEnd,
     ] {

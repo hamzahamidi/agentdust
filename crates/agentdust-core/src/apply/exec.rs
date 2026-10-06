@@ -65,6 +65,7 @@ impl Outcome {
 #[serde(rename_all = "snake_case")]
 pub enum Reason {
     ClassChanged,
+    OwnershipChanged,
     IdentityChanged,
     PathChanged,
     Unreadable,
@@ -75,6 +76,7 @@ impl Reason {
     pub const fn code(self) -> &'static str {
         match self {
             Reason::ClassChanged => "class_changed",
+            Reason::OwnershipChanged => "ownership_changed",
             Reason::IdentityChanged => "identity_changed",
             Reason::PathChanged => "path_changed",
             Reason::Unreadable => "unreadable",
@@ -266,6 +268,9 @@ fn reclassify(item: &PlanItem, fresh: &[Finding]) -> Option<Verdict> {
     };
     if found.class != item.model.class {
         return Some(Verdict::failed(Reason::ClassChanged));
+    }
+    if found.attribution_owners != item.attribution_owners {
+        return Some(Verdict::failed(Reason::OwnershipChanged));
     }
     match found.identity.exe_path.as_deref() {
         None => Some(Verdict::failed(Reason::Unreadable)),

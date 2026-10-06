@@ -7,7 +7,7 @@ use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::Path;
 use std::thread;
 
-use agentdust_core::journal::{JournalError, MAX_FRAME_LEN, Record};
+use agentdust_core::journal::{JournalError, MAX_FRAME_LEN, Record, SCHEMA_VERSION};
 use agentdust_core::safe_open::SafeOpenError;
 use journal_support::{
     Scripted, bare_line, frame, frames, join, journal, named, names_in, padded_to_frame_len, plant, record,
@@ -132,7 +132,7 @@ fn an_append_after_bare_lines_of_an_older_writer_keeps_both_readable() {
 fn an_append_never_rewrites_a_line_of_a_newer_version_even_over_the_cap() {
     let dir = TempDir::private("append-newer");
     let huge = format!(
-        "\u{1e}{{\"v\":2,\"pad\":\"{}\"}}\n",
+        "\u{1e}{{\"v\":3,\"pad\":\"{}\"}}\n",
         "z".repeat(3 * MAX_FRAME_LEN)
     )
     .into_bytes();
@@ -183,7 +183,7 @@ fn a_frame_of_exactly_the_cap_is_written_whole() {
 #[test]
 fn a_record_of_another_schema_version_is_refused_and_writes_nothing() {
     let dir = TempDir::absent("append-version");
-    for v in [0, 2, u32::MAX] {
+    for v in [0, SCHEMA_VERSION - 1, SCHEMA_VERSION + 1, u32::MAX] {
         let mut wrong = named("a");
         wrong.v = v;
         match append(&dir, &wrong) {
