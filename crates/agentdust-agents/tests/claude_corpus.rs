@@ -49,6 +49,87 @@ fn every_payload_seed_parses_without_panicking_and_keeps_its_limits() {
 }
 
 #[test]
+fn sanitized_real_claude_subagent_fixture_replays_through_the_adapter() {
+    const FIXTURE: &str = include_str!("../../../fixtures/m6/claude-2.1.289-two-subagents.jsonl");
+    let events: Vec<_> = FIXTURE
+        .lines()
+        .map(|line| claude::parse_event(line.as_bytes()).unwrap())
+        .collect();
+    let kinds: Vec<_> = events.iter().map(claude::journal_kind).collect();
+    assert_eq!(
+        kinds,
+        [
+            Some(Kind::SessionStart),
+            Some(Kind::SubagentStart),
+            Some(Kind::SubagentStart),
+            Some(Kind::ShellStart),
+            Some(Kind::ShellStart),
+            Some(Kind::ShellEnd),
+            Some(Kind::ShellEnd),
+            Some(Kind::SubagentStop),
+            Some(Kind::SubagentStop),
+            Some(Kind::SessionEnd),
+        ]
+    );
+
+    let session_ids: std::collections::BTreeSet<_> =
+        events.iter().map(|event| event.session_id.as_str()).collect();
+    assert_eq!(session_ids.len(), 1);
+    let started: std::collections::BTreeSet<_> = events
+        .iter()
+        .filter(|event| event.hook_event_name == "SubagentStart")
+        .map(|event| event.agent_id.as_deref().unwrap())
+        .collect();
+    let stopped: std::collections::BTreeSet<_> = events
+        .iter()
+        .filter(|event| event.hook_event_name == "SubagentStop")
+        .map(|event| event.agent_id.as_deref().unwrap())
+        .collect();
+    assert_eq!(started.len(), 2);
+    assert_eq!(started, stopped);
+
+    let shell_starts: std::collections::BTreeSet<_> = events
+        .iter()
+        .filter(|event| claude::journal_kind(event) == Some(Kind::ShellStart))
+        .map(|event| {
+            (
+                event.session_id.as_str(),
+                event.agent_id.as_deref().unwrap(),
+                event.tool_use_id.as_deref().unwrap(),
+            )
+        })
+        .collect();
+    let shell_ends: std::collections::BTreeSet<_> = events
+        .iter()
+        .filter(|event| claude::journal_kind(event) == Some(Kind::ShellEnd))
+        .map(|event| {
+            (
+                event.session_id.as_str(),
+                event.agent_id.as_deref().unwrap(),
+                event.tool_use_id.as_deref().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(shell_starts.len(), 2);
+    assert_eq!(shell_starts, shell_ends);
+    for agent_id in &started {
+        assert_eq!(
+            shell_starts
+                .iter()
+                .filter(|(_, owner, _)| *owner == *agent_id)
+                .count(),
+            1,
+            "each captured helper call belongs to its own subagent"
+        );
+    }
+    assert!(!FIXTURE.contains("\"cwd\":"));
+    assert!(!FIXTURE.contains("\"transcript_path\":"));
+    assert!(!FIXTURE.contains("\"tool_input\":"));
+    assert!(!FIXTURE.contains("\"tool_response\":"));
+    assert!(!FIXTURE.contains("\"agent_type\":"));
+}
+
+#[test]
 fn the_payload_seeds_reach_every_outcome_of_the_parser() {
     let outcomes: Vec<_> = seeds()
         .iter()
