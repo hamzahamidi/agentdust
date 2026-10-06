@@ -10,7 +10,7 @@ use thiserror::Error;
 
 use crate::apply::timer::Timer;
 use crate::class::{Actionability, Class, actionable_as};
-use crate::classifier::Finding;
+use crate::classifier::{AttributionOwner, Finding};
 use crate::clock;
 use crate::digest::to_hex;
 use crate::entropy;
@@ -27,6 +27,7 @@ const ID_BYTES: usize = 16;
 pub struct PlanItem {
     pub model: ModelFinding,
     pub identity: ProcessIdentity,
+    pub attribution_owners: Option<Vec<AttributionOwner>>,
 }
 
 impl PlanItem {
@@ -42,6 +43,10 @@ impl PlanItem {
         if !Self::plannable(finding) || model.class != finding.class {
             return None;
         }
+        if finding.class == Class::OwnedEnded && finding.attribution_owners.as_ref().is_none_or(Vec::is_empty)
+        {
+            return None;
+        }
         Some(PlanItem {
             model,
             identity: ProcessIdentity {
@@ -50,6 +55,7 @@ impl PlanItem {
                     exe_path: finding.identity.exe_path.clone()?,
                 },
             },
+            attribution_owners: finding.attribution_owners.clone(),
         })
     }
 }

@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::identity::KernelIdentity;
 use crate::journal::{Agent, ExeBase, Kind, Record, SessionTagKey};
@@ -57,15 +57,49 @@ pub struct Scope {
     pub liveness: Option<Liveness>,
     pub tag_keys: BTreeSet<SessionTagKey>,
     pub subagent_ids: BTreeSet<String>,
+    pub subagents: BTreeMap<String, SubagentActivity>,
+    pub additional_owners: Vec<OwnerState>,
+    pub attribution_ambiguous: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnerState {
+    pub identity: KernelIdentity,
+    pub liveness: Liveness,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SubagentActivity {
+    pub start_events: u32,
+    pub stop_events: u32,
 }
 
 impl Scope {
     pub fn agent_gone(&self) -> bool {
         self.liveness == Some(Liveness::Gone)
+            && self
+                .additional_owners
+                .iter()
+                .all(|owner| owner.liveness == Liveness::Gone)
     }
 
     pub fn degraded(&self) -> bool {
-        self.identity.is_none()
+        self.identity.is_none() || self.attribution_ambiguous
+    }
+
+    pub fn owner_states(&self) -> Vec<OwnerState> {
+        let mut owners = self
+            .identity
+            .as_ref()
+            .zip(self.liveness)
+            .map(|(identity, liveness)| OwnerState {
+                identity: identity.clone(),
+                liveness,
+            })
+            .into_iter()
+            .collect::<Vec<_>>();
+        owners.extend(self.additional_owners.iter().cloned());
+        owners
     }
 }
 
@@ -76,6 +110,9 @@ struct Draft {
     ended: bool,
     tag_keys: BTreeSet<SessionTagKey>,
     subagent_ids: BTreeSet<String>,
+    subagents: BTreeMap<String, SubagentActivity>,
+    additional_owners: HashSet<KernelIdentity>,
+    attribution_ambiguous: bool,
 }
 
 impl Draft {
@@ -87,10 +124,23 @@ impl Draft {
             ended: false,
             tag_keys: BTreeSet::new(),
             subagent_ids: BTreeSet::new(),
+            subagents: BTreeMap::new(),
+            additional_owners: HashSet::new(),
+            attribution_ambiguous: false,
         }
     }
 
+    fn matches_identity(&self, identity: &KernelIdentity) -> bool {
+        self.identity.as_ref() == Some(identity) || self.additional_owners.contains(identity)
+    }
+
     fn apply(&mut self, record: &Record, recorded: Option<&KernelIdentity>) {
+        if record.subagent_id.is_some()
+            && let Some(identity) = recorded
+            && self.identity.as_ref() != Some(identity)
+        {
+            self.additional_owners.insert(identity.clone());
+        }
         if self.exe_base.is_none() && recorded.is_some() && recorded == self.identity.as_ref() {
             self.exe_base = record
                 .agent_identity
@@ -99,7 +149,20 @@ impl Draft {
         }
         if let Some(subagent) = &record.subagent_id {
             self.subagent_ids.insert(subagent.clone());
-            return;
+            let activity = self.subagents.entry(subagent.clone()).or_default();
+            match record.kind {
+                Kind::SessionStart | Kind::SubagentStart => {
+                    activity.start_events = activity.start_events.saturating_add(1);
+                }
+                Kind::SessionEnd | Kind::SubagentStop => {
+                    activity.stop_events = activity.stop_events.saturating_add(1);
+                }
+                Kind::SubagentAttributionUnknown
+                | Kind::ShellStart
+                | Kind::ShellEnd
+                | Kind::Sample
+                | Kind::ServerStart => {}
+            }
         }
         match record.kind {
             Kind::SessionStart => {
@@ -108,8 +171,15 @@ impl Draft {
                     self.tag_keys.insert(key.clone());
                 }
             }
-            Kind::SessionEnd => self.ended = true,
-            Kind::ShellStart | Kind::ShellEnd | Kind::Sample | Kind::ServerStart => {}
+            Kind::SessionEnd if record.subagent_id.is_none() => self.ended = true,
+            Kind::SessionEnd
+            | Kind::SubagentStart
+            | Kind::SubagentStop
+            | Kind::SubagentAttributionUnknown
+            | Kind::ShellStart
+            | Kind::ShellEnd
+            | Kind::Sample
+            | Kind::ServerStart => {}
         }
     }
 }
@@ -140,33 +210,66 @@ fn target(
     group: &mut Vec<usize>,
     record: &Record,
     recorded: Option<&KernelIdentity>,
-) -> usize {
-    let Some(&latest) = group.last() else {
-        return open(entries, group, record, recorded);
-    };
+) -> Option<usize> {
     let matching = recorded.and_then(|identity| {
         group
             .iter()
             .copied()
-            .find(|&index| entries[index].draft.identity.as_ref() == Some(identity))
+            .find(|&index| entries[index].draft.matches_identity(identity))
     });
     if record.subagent_id.is_some() {
-        return matching.unwrap_or(latest);
+        if matching.is_some() {
+            return matching;
+        }
+        if group.len() == 1 {
+            let index = group[0];
+            if recorded.is_none() && record.kind != Kind::SubagentStop {
+                entries[index].draft.attribution_ambiguous = true;
+            }
+            return Some(index);
+        }
+        if group.len() > 1 {
+            for &index in group.iter() {
+                entries[index].draft.attribution_ambiguous = true;
+            }
+            return None;
+        }
+        if recorded.is_some() || record.kind == Kind::SessionStart {
+            return Some(open(entries, group, record, recorded));
+        }
+        if matches!(record.kind, Kind::SubagentStart | Kind::SubagentStop) {
+            return None;
+        }
+        return Some(open(entries, group, record, recorded));
     }
+    let Some(&latest) = group.last() else {
+        return Some(open(entries, group, record, recorded));
+    };
     let opens = match recorded {
         Some(_) => matching.is_none(),
         None => record.kind == Kind::SessionStart && entries[latest].draft.identity.is_some(),
     };
     if opens {
-        return open(entries, group, record, recorded);
+        return Some(open(entries, group, record, recorded));
     }
-    matching.unwrap_or(latest)
+    if recorded.is_none() && group.len() > 1 && record.kind != Kind::SessionStart {
+        return Some(open(entries, group, record, recorded));
+    }
+    Some(matching.unwrap_or(latest))
 }
 
 pub fn scopes(records: &[Record], probe: &dyn LivenessProbe) -> Vec<Scope> {
     let mut entries: Vec<Entry> = Vec::new();
     let mut groups: HashMap<(Agent, &str), Vec<usize>> = HashMap::new();
+    let mut ambiguous_sessions: HashSet<(Agent, String)> = HashSet::new();
     for record in records {
+        if record.kind == Kind::SubagentAttributionUnknown
+            || (matches!(record.kind, Kind::SubagentStart | Kind::SubagentStop)
+                && record.subagent_id.is_none())
+        {
+            ambiguous_sessions.insert((record.agent, record.session_id.clone()));
+            continue;
+        }
         let group = groups
             .entry((record.agent, record.session_id.as_str()))
             .or_default();
@@ -174,8 +277,22 @@ pub fn scopes(records: &[Record], probe: &dyn LivenessProbe) -> Vec<Scope> {
             .agent_identity
             .as_ref()
             .map(|identity| identity.kernel(&record.boot));
-        let index = target(&mut entries, group, record, recorded.as_ref());
-        entries[index].draft.apply(record, recorded.as_ref());
+        if record.subagent_id.is_some() {
+            let resolved = recorded.as_ref().is_some_and(|identity| {
+                group
+                    .iter()
+                    .any(|&index| entries[index].draft.matches_identity(identity))
+                    || group.len() == 1
+            });
+            if !resolved {
+                ambiguous_sessions.insert((record.agent, record.session_id.clone()));
+            }
+        }
+        if let Some(index) = target(&mut entries, group, record, recorded.as_ref()) {
+            entries[index].draft.apply(record, recorded.as_ref());
+        } else {
+            ambiguous_sessions.insert((record.agent, record.session_id.clone()));
+        }
     }
     let mut probed: HashMap<KernelIdentity, Liveness> = HashMap::new();
     entries
@@ -186,10 +303,35 @@ pub fn scopes(records: &[Record], probe: &dyn LivenessProbe) -> Vec<Scope> {
                  session_id,
                  draft,
              }| {
+                let session_ambiguous = ambiguous_sessions.contains(&(agent, session_id.clone()));
                 let liveness = draft.identity.as_ref().map(|identity| {
                     *probed
                         .entry(identity.clone())
                         .or_insert_with(|| probe.probe(identity))
+                });
+                let mut additional_owners: Vec<OwnerState> = draft
+                    .additional_owners
+                    .iter()
+                    .map(|identity| OwnerState {
+                        identity: identity.clone(),
+                        liveness: *probed
+                            .entry(identity.clone())
+                            .or_insert_with(|| probe.probe(identity)),
+                    })
+                    .collect();
+                additional_owners.sort_by(|left, right| {
+                    (
+                        left.identity.boot_session_uuid.as_str(),
+                        left.identity.pid,
+                        left.identity.start_time_us,
+                        left.identity.uid,
+                    )
+                        .cmp(&(
+                            right.identity.boot_session_uuid.as_str(),
+                            right.identity.pid,
+                            right.identity.start_time_us,
+                            right.identity.uid,
+                        ))
                 });
                 let state = if liveness == Some(Liveness::Gone) || draft.ended {
                     State::Ended
@@ -208,6 +350,9 @@ pub fn scopes(records: &[Record], probe: &dyn LivenessProbe) -> Vec<Scope> {
                     liveness,
                     tag_keys: draft.tag_keys,
                     subagent_ids: draft.subagent_ids,
+                    subagents: draft.subagents,
+                    additional_owners,
+                    attribution_ambiguous: draft.attribution_ambiguous || session_ambiguous,
                 }
             },
         )

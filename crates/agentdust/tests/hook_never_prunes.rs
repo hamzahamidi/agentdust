@@ -6,14 +6,14 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use agentdust_core::journal::{self, Agent, Kind, Record};
+use agentdust_core::journal::{self, Agent, Kind, Record, SCHEMA_VERSION};
 use common::{HANG_GUARD, pre_tool_use, private_dir, run_hook, run_hook_with, run_hook_within};
 
 const EARLIER_BOOT: &str = "an-earlier-boot";
 
 fn old_record(kind: Kind, session: &str, wall_ts: u64) -> Record {
     Record {
-        v: 1,
+        v: SCHEMA_VERSION,
         kind,
         agent: Agent::Claude,
         session_id: session.to_owned(),

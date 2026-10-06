@@ -8,11 +8,12 @@ use std::thread;
 
 use agentdust_core::apply::audit::{AUDIT_FILE, AUDIT_KEYS, AUDIT_MAX_BYTES, AuditError, AuditLog, Entry};
 use agentdust_core::class::Class;
-use agentdust_core::classifier::{Evidence, Finding};
+use agentdust_core::classifier::{AttributionOwner, Evidence, Finding};
 use agentdust_core::cwd::CwdRelation;
 use agentdust_core::finding::ModelFinding;
 use agentdust_core::identity::KernelIdentity;
 use agentdust_core::inventory::RawIdentity;
+use agentdust_core::journal::Agent;
 use scratch::TempDir;
 use serde_json::Value;
 
@@ -38,6 +39,13 @@ fn model(pid: i32, class: Class, evidence: Vec<Evidence>, exe: &str) -> ModelFin
         class,
         evidence,
         age_us: 7_500_000_000,
+        attribution_owners: (class == Class::OwnedEnded).then(|| {
+            vec![AttributionOwner {
+                agent: Agent::Claude,
+                session_id: format!("session-{pid}"),
+                identity: kernel(pid + 100_000),
+            }]
+        }),
     };
     ModelFinding::new(&finding, CwdRelation::Other)
 }

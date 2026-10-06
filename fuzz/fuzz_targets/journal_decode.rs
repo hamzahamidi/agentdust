@@ -41,9 +41,11 @@ fuzz_target!(|data: &[u8]| {
     assert_eq!(dribbled, report);
 
     for record in report.records.iter().take(ROUND_TRIPPED) {
-        let frame = journal::encode(record).expect("a decoded record can be written");
+        let mut current_record = record.clone();
+        current_record.v = SCHEMA_VERSION;
+        let frame = journal::encode(&current_record).expect("a current record can be written");
         let back = journal::decode(&frame[..]).expect("a slice never fails to read");
-        assert_eq!(back.records, std::slice::from_ref(record));
+        assert_eq!(back.records, std::slice::from_ref(&current_record));
         assert_eq!(back.skipped_lines(), 0);
     }
 

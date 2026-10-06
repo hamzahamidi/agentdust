@@ -76,7 +76,7 @@ A nonce entry whose code has expired is dropped, and its claims released, at the
 
 1. Read the apply switch. Off means `disabled` and nothing else happens: no lock, no read and no audit line.
 2. Take a non-blocking `flock` on `locks/<item id>.lock`. Held means `handled_elsewhere`. A lock directory or file that fails a safety check means `lock_unavailable`.
-3. Take a fresh survey. The item must be in it with the same kernel identity and the same class, with the same executable path read as before. Missing is `gone`, the same PID with another start time is `revalidation_failed` with `identity_changed`, another class is `class_changed` and another path is `path_changed`. Any class change aborts, including a move to a more certain class, because the person approved the class that was shown.
+3. Take a fresh survey. The item must be in it with the same kernel identity, class, exact attribution owner set and executable path as before. Missing is `gone`, the same PID with another start time is `revalidation_failed` with `identity_changed`, another class is `class_changed`, a changed owner set is `ownership_changed`, and another path is `path_changed`. Any class or owner change aborts, including a move to a more certain class, because the person approved the evidence that was shown.
 4. Write the attempt line to the audit log. If that fails the item stops with `audit_unavailable` and nothing is signalled.
 5. `revalidate` reads the identity (boot session, PID, start time, user, path) and, on a match, the next call is `Signaller::sigterm(pid)`. Nothing is logged, allocated or read in between: the match arm holds the one call. Gone is `gone`. A different identity is `identity_changed` or `path_changed`, and an unreadable path or a failed read is `unreadable`, so a missing path fails closed. `ESRCH` is `gone`, and any other failure of the signal is `signal_failed`.
 6. Poll the identity every 50 ms for up to 5 seconds. Gone, or the same PID with another start time or boot session, is `terminated`. The same identity, an `exec` with another path, or a read that fails is still alive. After 5 seconds it is `survivor`. No second signal is sent and SIGKILL does not exist in the code.
@@ -93,7 +93,7 @@ The survey of step 3 includes the idle sample, so each item costs at least 2 sec
 | `terminated` | SIGTERM was sent and the process was gone, or its PID was taken by another process, within 5 seconds |
 | `survivor` | SIGTERM was sent and the same process was still there after 5 seconds |
 | `gone` | Not in the fresh inventory, gone at the identity read, or `kill` said `ESRCH` |
-| `revalidation_failed` | The item was not signalled. `reason` is `class_changed`, `identity_changed`, `path_changed`, `unreadable` or `survey_failed` |
+| `revalidation_failed` | The item was not signalled. `reason` is `class_changed`, `ownership_changed`, `identity_changed`, `path_changed`, `unreadable` or `survey_failed` |
 | `handled_elsewhere` | Another server holds the lock of this identity |
 | `signal_failed` | `kill` failed for another reason, or the signaller refused |
 | `audit_unavailable` | The attempt line could not be written, so there was no signal |

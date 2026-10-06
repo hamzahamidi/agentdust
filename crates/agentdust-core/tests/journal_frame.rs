@@ -11,7 +11,7 @@ fn rec(n: u64) -> Record {
 
 fn newer_version_line(pad: usize) -> Vec<u8> {
     format!(
-        "{{\"v\":2,\"kind\":\"future\",\"pad\":\"{}\"}}\n",
+        "{{\"v\":3,\"kind\":\"future\",\"pad\":\"{}\"}}\n",
         "a".repeat(pad)
     )
     .into_bytes()
@@ -46,8 +46,8 @@ fn json_text_never_holds_a_raw_separator_so_a_frame_has_one_rs_and_one_lf() {
 }
 
 #[test]
-fn a_record_that_is_not_version_one_is_refused() {
-    for v in [0, 2, u32::MAX] {
+fn a_record_that_is_not_the_current_version_is_refused() {
+    for v in [0, 1, 3, u32::MAX] {
         let mut record = rec(1);
         record.v = v;
         match encode(&record) {
@@ -194,7 +194,7 @@ fn bytes_that_are_not_utf8_or_not_json_are_malformed() {
 
 #[test]
 fn a_line_of_a_newer_version_is_counted_and_never_interpreted() {
-    let report = decode(&edited_frame(&rec(1), |v| v["v"] = serde_json::json!(2))[..]).unwrap();
+    let report = decode(&edited_frame(&rec(1), |v| v["v"] = serde_json::json!(3))[..]).unwrap();
     assert!(report.records.is_empty());
     assert_eq!((report.newer_version_lines, report.malformed_lines), (1, 0));
     assert!(report.unsupported_version);
@@ -263,7 +263,7 @@ fn a_version_prefix_must_be_a_canonical_number_followed_by_a_delimiter() {
             "{version}"
         );
     }
-    for version in ["2,", "2}", "10,", "18446744073709551615,"] {
+    for version in ["3,", "3}", "10,", "18446744073709551615,"] {
         let report = decode(&long(version)[..]).unwrap();
         assert_eq!(
             (report.newer_version_lines, report.malformed_lines),

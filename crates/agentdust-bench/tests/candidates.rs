@@ -216,7 +216,7 @@ fn a_line_from_a_future_schema_version_is_skipped_and_counted() {
             journal.append(record).unwrap();
         }
         let mut future = serde_json::to_value(&records[0]).unwrap();
-        future["v"] = serde_json::json!(2);
+        future["v"] = serde_json::json!(3);
         let mut line = junk_prefix(candidate).to_vec();
         line.extend(format!("{future}\n").bytes());
         OpenOptions::new()

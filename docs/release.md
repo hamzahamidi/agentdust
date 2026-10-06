@@ -82,7 +82,7 @@ When a release must be withdrawn, two actions work at once on a user's machine.
    While it is set, `agentdust apply` and the `agentdust_apply` tool refuse every item. `agentdust doctor` keeps working. A `config.toml` that exists and cannot be read or parsed has the same effect. Delete the line to allow apply again.
 2. Install the previous formula. The tap keeps one versioned formula for each earlier minor release: `brew uninstall agentdust`, then `brew install hamzahamidi/agentdust/agentdust@0.1`, with the previous minor in place of 0.1.
 
-`agentdust setup --remove` disconnects Claude Code (the four hooks and the MCP server) and leaves the data directory in place. [SECURITY.md](../SECURITY.md) gives users the same two actions.
+`agentdust setup --remove` disconnects Claude Code (the six hooks and the MCP server) and leaves the data directory in place. [SECURITY.md](../SECURITY.md) gives users the same two actions.
 
 For the maintainer: revert the tap commit that added the withdrawn release, which restores the previous `Formula/agentdust.rb` and removes the versioned file it created. Edit the GitHub release notes to say the release is withdrawn and why, and cut a fixed release under the next version number.
 

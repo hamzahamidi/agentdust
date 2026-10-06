@@ -44,7 +44,7 @@ fn the_benchmark_and_the_journal_decode_the_same_file_to_the_same_records() {
             bytes.extend(frame);
         }
     }
-    bytes.extend(b"\x1e{\"v\":2,\"future\":true}\n\x1e[2]\n\x1e{broken\n\x1e{\"v\":1,\"kin");
+    bytes.extend(b"\x1e{\"v\":3,\"future\":true}\n\x1e[2]\n\x1e{broken\n\x1e{\"v\":1,\"kin");
     let bench = decode(&bytes[..]).unwrap();
     let core = journal::decode(&bytes[..]).unwrap();
     assert_eq!(bench.records, core.records);

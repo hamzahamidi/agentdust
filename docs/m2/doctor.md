@@ -79,11 +79,11 @@ How a tag is matched to the scopes:
 | --- | --- |
 | No scope, or any scope while provenance is unavailable | unknown, `tag.unmatched` or `tag.unverifiable` |
 | Only scopes without an agent identity (degraded) | unknown, `tag.degraded_session` |
-| At least one usable scope whose agent is not gone | owned-live, with `tag.degraded_session` added when a degraded scope also matches |
-| Usable scopes whose agents are all gone, and a degraded scope | unknown, with `owned.tag`, `owned.agent_gone` and `tag.degraded_session` |
-| Usable scopes whose agents are all gone | owned-ended |
+| At least one exact owner is alive or unverified | owned-live, with `tag.degraded_session` added when an ambiguous scope also matches |
+| Exact owners are gone, and a degraded or ambiguous scope also matches | unknown, with `owned.tag`, `owned.agent_gone` and `tag.degraded_session` |
+| Every exact owner from every matching scope is proven gone, with no degraded or ambiguous scope | owned-ended |
 
-"Gone" is `Scope::agent_gone()`: the agent identity was probed and is gone or replaced. A `session_end` record alone does not make a scope gone, and an unreadable probe does not either, so both leave a process owned-live.
+"Gone" requires fresh liveness evidence for the primary Claude process and every additional exact process identity attributed to that scope. A `session_end` or `SubagentStop` record alone does not make an owner gone, and an unreadable probe does not either, so both leave a process owned-live. An ambiguous owner set is not actionable.
 
 A process with a tag in any state but `Absent` is never a suspect. The tag is the only ownership evidence in release 0.1, so a tag that no usable session explains means the ownership evidence was lost, and a process whose ownership is in doubt is not offered as a leftover.
 

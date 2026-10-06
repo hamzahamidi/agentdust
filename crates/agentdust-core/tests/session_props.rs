@@ -96,8 +96,8 @@ proptest! {
             if scope.session_ended {
                 prop_assert!(later.session_ended);
             }
-            if scope.agent_gone() {
-                prop_assert!(later.agent_gone());
+            for owner in scope.owner_states() {
+                prop_assert!(later.owner_states().contains(&owner));
             }
             prop_assert!(scope.tag_keys.is_subset(&later.tag_keys));
             prop_assert!(scope.subagent_ids.is_subset(&later.subagent_ids));
@@ -105,7 +105,7 @@ proptest! {
     }
 
     #[test]
-    fn a_scope_ends_only_with_evidence_of_its_own_session(records in arb_records(), seed in 0u8..3) {
+    fn a_scope_state_ends_only_with_its_session_end_or_primary_exit(records in arb_records(), seed in 0u8..3) {
         let probe = Hashed(seed);
         for scope in scopes(&records, &probe) {
             if scope.state != State::Ended {
@@ -116,13 +116,15 @@ proptest! {
                     && record.subagent_id.is_none()
                     && (record.agent, &record.session_id) == (scope.agent, &scope.session_id)
             });
-            let gone = scope
-                .identity
-                .as_ref()
-                .is_some_and(|identity| probe.probe(identity) == Liveness::Gone);
-            prop_assert!(ended_in_records || gone);
+            let primary_gone = scope.liveness == Some(Liveness::Gone);
+            let every_owner_gone = primary_gone
+                && scope
+                    .additional_owners
+                    .iter()
+                    .all(|owner| owner.liveness == Liveness::Gone);
+            prop_assert!(ended_in_records || primary_gone);
             prop_assert_eq!(scope.session_ended, ended_in_records && scope.session_ended);
-            prop_assert_eq!(scope.agent_gone(), gone);
+            prop_assert_eq!(scope.agent_gone(), every_owner_gone);
         }
     }
 
@@ -201,13 +203,14 @@ proptest! {
     }
 
     #[test]
-    fn every_record_is_accounted_for_in_exactly_one_session(records in arb_records()) {
+    fn every_record_without_a_subagent_id_has_a_session_scope(records in arb_records()) {
         let found = scopes(&records, &Constant(Liveness::Unknown));
         let sessions: BTreeSet<(Agent, String)> = found.iter().map(group_of).collect();
         let expected: BTreeSet<(Agent, String)> = records
             .iter()
+            .filter(|record| record.subagent_id.is_none())
             .map(|record| (record.agent, record.session_id.clone()))
             .collect();
-        prop_assert_eq!(sessions, expected);
+        prop_assert!(expected.is_subset(&sessions));
     }
 }

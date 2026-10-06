@@ -50,7 +50,7 @@ fn a_directory_without_a_journal_reads_as_empty_and_creates_nothing() {
 
 #[test]
 fn a_read_never_changes_a_file_or_adds_one() {
-    let newer = edited_frame(&record("future", "b", 1, 1), |v| v["v"] = json!(2));
+    let newer = edited_frame(&record("future", "b", 1, 1), |v| v["v"] = json!(3));
     let bytes = join(&[&frame(&record("a", "b", 1, 1)), &newer, b"\x1e{\"v\":1,\"kin"]);
     let dir = with_journal("read-readonly", &bytes);
     plant(&dir, &generation_name(5), &newer);
@@ -170,7 +170,7 @@ fn a_file_in_place_of_the_data_directory_is_refused() {
 #[test]
 fn a_journal_from_a_newer_version_reads_what_it_can_and_raises_the_flag() {
     let a = record("a", "b", 1, 1);
-    let future = edited_frame(&record("future", "b", 2, 2), |v| v["v"] = json!(2));
+    let future = edited_frame(&record("future", "b", 2, 2), |v| v["v"] = json!(3));
     let dir = with_journal(
         "read-future",
         &join(&[&frame(&a), &future, b"\x1e{\"v\":1,\"kind\":\"sam"]),
@@ -184,7 +184,7 @@ fn a_journal_from_a_newer_version_reads_what_it_can_and_raises_the_flag() {
 
 #[test]
 fn a_newer_version_line_over_the_cap_in_the_journal_is_counted_and_left_in_place() {
-    let huge = format!("\u{1e}{{\"v\":2,\"pad\":\"{}\"}}\n", "z".repeat(200_000)).into_bytes();
+    let huge = format!("\u{1e}{{\"v\":3,\"pad\":\"{}\"}}\n", "z".repeat(200_000)).into_bytes();
     let bytes = join(&[&frame(&record("a", "b", 1, 1)), &huge]);
     let dir = with_journal("read-huge-future", &bytes);
     let report = read(&dir);
@@ -457,7 +457,7 @@ fn counters_and_flags_add_up_across_every_file() {
         &generation_name(2),
         &join(&[
             &frame(&record("g", "b", 1, 1)),
-            &edited_frame(&record("f", "b", 1, 1), |v| v["v"] = json!(2)),
+            &edited_frame(&record("f", "b", 1, 1), |v| v["v"] = json!(3)),
             &edited_frame(&record("u", "b", 1, 1), |v| v["kind"] = json!("hologram")),
         ]),
     );

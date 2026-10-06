@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use agentdust_agents::claude::{self, ENV_FILE_VAR, HookEvent};
 use agentdust_core::darwin::DarwinProvider;
+use agentdust_core::digest::{Domain, keyed_digest};
 use agentdust_core::journal::{
     self, Agent, AgentIdentity, CwdKey, Kind, Record, SCHEMA_VERSION, SessionTagKey,
 };
@@ -55,12 +56,22 @@ fn record(event: &HookEvent) -> Result<(), Box<dyn Error>> {
     let handed_out = (kind == Kind::SessionStart)
         .then(|| session_tag(&secret))
         .flatten();
+    let subagent_id = event.agent_id.as_deref().and_then(|id| {
+        secret
+            .get()
+            .map(|secret| keyed_digest(secret.as_bytes(), Domain::Subagent, id.as_bytes()))
+    });
+    let unresolved_subagent = event.agent_id.is_some() && subagent_id.is_none();
     let record = Record {
         v: SCHEMA_VERSION,
-        kind,
+        kind: if unresolved_subagent {
+            Kind::SubagentAttributionUnknown
+        } else {
+            kind
+        },
         agent: Agent::Claude,
         session_id: event.session_id.clone(),
-        subagent_id: event.agent_id.clone(),
+        subagent_id,
         agent_identity: agent_identity(),
         tool_use_id: event.tool_use_id.clone(),
         wall_ts: clock::wall_ms(),

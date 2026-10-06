@@ -17,13 +17,21 @@ pub struct HookSpec {
     pub matcher: Option<&'static str>,
 }
 
-pub const HOOK_SPECS: [HookSpec; 4] = [
+pub const HOOK_SPECS: [HookSpec; 6] = [
     HookSpec {
         event: "SessionStart",
         matcher: None,
     },
     HookSpec {
         event: "SessionEnd",
+        matcher: None,
+    },
+    HookSpec {
+        event: "SubagentStart",
+        matcher: None,
+    },
+    HookSpec {
+        event: "SubagentStop",
         matcher: None,
     },
     HookSpec {

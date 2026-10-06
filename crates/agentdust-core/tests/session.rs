@@ -213,7 +213,7 @@ fn a_late_event_after_a_session_end_without_an_identity_stays_ended() {
 }
 
 #[test]
-fn an_event_without_an_identity_belongs_to_the_latest_scope() {
+fn an_identity_free_end_does_not_close_one_of_several_resumed_scopes() {
     let records = [
         rec(Kind::SessionStart).by(10),
         rec(Kind::SessionStart).by(20),
@@ -221,7 +221,7 @@ fn an_event_without_an_identity_belongs_to_the_latest_scope() {
     ];
     let found = run(&records, &Table::new().alive(10).alive(20));
     assert_eq!(found[0].state, State::Active);
-    assert_eq!(found[1].state, State::Ended);
+    assert_eq!(found[1].state, State::Active);
 }
 
 #[test]
@@ -293,16 +293,61 @@ fn a_subagent_record_never_opens_a_scope_of_its_own_beside_its_parent() {
 }
 
 #[test]
-fn a_subagent_record_never_ends_the_session_or_adds_a_tag_key() {
+fn subagent_session_tags_inherit_the_parent_owner_and_stop_events_do_not_end_it() {
     let records = [
         rec(Kind::SessionStart).by(10),
         rec(Kind::SessionEnd).by(10).sub("agent-1"),
         rec(Kind::SessionStart).by(10).sub("agent-1").tagged(9),
+        rec(Kind::SubagentStart).by(10).sub("agent-1"),
+        rec(Kind::SubagentStop).by(10).sub("agent-1"),
     ];
     let found = run(&records, &Table::new().alive(10));
     assert_eq!(found[0].state, State::Active);
     assert!(!found[0].session_ended);
-    assert!(found[0].tag_keys.is_empty());
+    assert_eq!(found[0].tag_keys, BTreeSet::from([key(9)]));
+    assert_eq!(
+        found[0].subagents["agent-1"],
+        agentdust_core::session::SubagentActivity {
+            start_events: 2,
+            stop_events: 2,
+        }
+    );
+}
+
+#[test]
+fn repeated_and_late_subagent_events_are_observations_not_owner_death() {
+    let records = [
+        rec(Kind::SessionStart).by(10).tagged(1),
+        rec(Kind::SubagentStart).by(10).sub("agent-1"),
+        rec(Kind::SubagentStop).by(10).sub("agent-1"),
+        rec(Kind::SubagentStop).by(10).sub("agent-1"),
+        rec(Kind::SubagentStart).by(10).sub("agent-1"),
+    ];
+    let found = run(&records, &Table::new().alive(10));
+    assert_eq!(found[0].state, State::Active);
+    assert_eq!(found[0].tag_keys, BTreeSet::from([key(1)]));
+    assert_eq!(
+        found[0].subagents["agent-1"],
+        agentdust_core::session::SubagentActivity {
+            start_events: 2,
+            stop_events: 2,
+        }
+    );
+}
+
+#[test]
+fn subagent_lifecycle_without_an_id_or_exact_owner_does_not_attach_to_the_latest_scope() {
+    let records = [
+        rec(Kind::SessionStart).by(10).tagged(1),
+        rec(Kind::SessionStart).by(20).tagged(2),
+        rec(Kind::SubagentStop),
+        rec(Kind::SubagentStart).sub("agent-unknown"),
+    ];
+    let found = run(&records, &Table::new().alive(10).alive(20));
+    assert_eq!(found.len(), 2);
+    assert!(found.iter().all(|scope| scope.subagents.is_empty()));
+    assert_eq!(found[0].tag_keys, BTreeSet::from([key(1)]));
+    assert_eq!(found[1].tag_keys, BTreeSet::from([key(2)]));
 }
 
 #[test]

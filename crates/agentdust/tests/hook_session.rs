@@ -30,6 +30,13 @@ fn event(name: &str) -> Vec<u8> {
     .into_bytes()
 }
 
+fn subagent_event(name: &str, id: &str) -> Vec<u8> {
+    format!(
+        r#"{{"session_id":"s1","hook_event_name":"{name}","agent_id":"{id}","agent_type":"custom-reviewer","transcript_path":"/private/transcript.jsonl"}}"#
+    )
+    .into_bytes()
+}
+
 fn start() -> Vec<u8> {
     event("SessionStart")
 }
@@ -215,6 +222,50 @@ fn events_that_are_not_journaled_hand_out_no_tag() {
     ));
     assert!(!env_file.exists());
     assert!(!dir.exists());
+    fs::remove_dir_all(&work).unwrap();
+}
+
+#[test]
+fn subagent_lifecycle_events_are_journaled_without_handing_out_a_new_session_tag() {
+    let dir = scratch_dir("subagent-lifecycle");
+    let work = private_dir("subagent-lifecycle-work");
+    let env_file = work.join("env.sh");
+    for name in ["SubagentStart", "SubagentStop"] {
+        assert_silent(&run_plain(
+            &dir,
+            Some(&env_file),
+            &subagent_event(name, "agent-7"),
+        ));
+    }
+    assert!(!env_file.exists());
+    let recorded = records(&dir);
+    assert_eq!(recorded.len(), 2);
+    assert_eq!(recorded[0].kind, Kind::SubagentStart);
+    assert_eq!(recorded[1].kind, Kind::SubagentStop);
+    let expected_id = keyed_digest(&secret_bytes(&dir), Domain::Subagent, b"agent-7");
+    assert!(
+        recorded
+            .iter()
+            .all(|record| record.subagent_id.as_deref() == Some(expected_id.as_str()))
+    );
+    assert!(recorded.iter().all(|record| record.session_tag_key.is_none()));
+    let journal = fs::read(dir.join("journal.jsonl")).unwrap();
+    assert!(
+        !journal
+            .windows(b"transcript.jsonl".len())
+            .any(|window| window == b"transcript.jsonl")
+    );
+    assert!(
+        !journal
+            .windows(b"custom-reviewer".len())
+            .any(|window| window == b"custom-reviewer")
+    );
+    assert!(
+        !journal
+            .windows(b"agent-7".len())
+            .any(|window| window == b"agent-7")
+    );
+    fs::remove_dir_all(&dir).unwrap();
     fs::remove_dir_all(&work).unwrap();
 }
 

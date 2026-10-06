@@ -150,7 +150,7 @@ fn a_journal_of_a_newer_version_during_approval_leaves_the_processes_alone() {
         .append(true)
         .open(live.data.path().join(ACTIVE_FILE))
         .unwrap()
-        .write_all(b"\x1e{\"v\":2,\"kind\":\"session_start\"}\n")
+        .write_all(b"\x1e{\"v\":3,\"kind\":\"session_start\"}\n")
         .unwrap();
     let Step::Done(report) = live
         .server

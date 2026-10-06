@@ -60,7 +60,7 @@ Peaks measured with the same allocator on release builds, `uptime` load 6.36 to 
 
 ## Seeds
 
-`fuzz/seeds/<target>/` holds one file per behaviour class: 9 files for `procargs`, 37 for `journal_decode`, 18 for `journal_read`, 24 for `claude_payload` and 13 for `sanitize`. The largest file is 70,358 bytes, a `journal_read` seed. A reproducer that a fuzz run finds is added to the seed directory under a name that says what it is.
+`fuzz/seeds/<target>/` holds one file per behaviour class: 9 files for `procargs`, 37 for `journal_decode`, 18 for `journal_read`, 27 for `claude_payload` and 13 for `sanitize`. The largest file is 70,358 bytes, a `journal_read` seed. A reproducer that a fuzz run finds is added to the seed directory under a name that says what it is.
 
 The journal seeds are in the frame format and group like this:
 

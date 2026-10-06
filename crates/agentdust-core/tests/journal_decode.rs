@@ -134,11 +134,11 @@ fn the_optional_fields_round_trip_through_a_frame() {
 
 #[test]
 fn a_line_from_a_newer_schema_version_never_yields_a_record() {
-    let shaped_like_v1 = edited_frame(&record("future", "b", 1, 1), |v| v["v"] = json!(2));
-    let unrelated: &[u8] = b"\x1e{\"v\":2,\"payload\":[1,2,3]}\n";
+    let shaped_like_v1 = edited_frame(&record("future", "b", 1, 1), |v| v["v"] = json!(3));
+    let unrelated: &[u8] = b"\x1e{\"v\":3,\"payload\":[1,2,3]}\n";
     let max: &[u8] = b"\x1e{\"v\":18446744073709551615}\n";
     let unknown_kind_too = edited_frame(&record("future", "b", 1, 1), |v| {
-        v["v"] = json!(3);
+        v["v"] = json!(4);
         v["kind"] = json!("hologram");
     });
     let report = decoded(&join(&[&shaped_like_v1, unrelated, max, &unknown_kind_too]));
@@ -151,7 +151,7 @@ fn a_line_from_a_newer_schema_version_never_yields_a_record() {
 #[test]
 fn current_lines_still_read_beside_newer_ones_and_the_flag_tells_the_consumer() {
     let (a, b) = (record("a", "b", 1, 1), record("b", "b", 3, 3));
-    let future = edited_frame(&record("future", "b", 2, 2), |v| v["v"] = json!(2));
+    let future = edited_frame(&record("future", "b", 2, 2), |v| v["v"] = json!(3));
     let report = decoded(&join(&[&frame(&a), &future, &frame(&b)]));
     assert_eq!(sessions(&report.records), ["a", "b"]);
     assert_eq!(report.newer_version_lines, 1);
