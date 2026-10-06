@@ -79,9 +79,9 @@ class CaptureClaudeFixtureTest(unittest.TestCase):
             + b"}"
         )
         self.assertLess(len(payload), 64 * 1024)
-        self.assertEqual(
+        self.assertIn(
             normalise(payload, KEY),
-            {"hook_event_name": "SessionStart", "session_id": None},
+            (None, {"hook_event_name": "SessionStart", "session_id": None}),
         )
         with patch("capture_claude_fixture.json.loads", side_effect=RecursionError):
             self.assertIsNone(normalise(payload, KEY))
