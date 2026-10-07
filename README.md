@@ -14,6 +14,8 @@ Security and privacy: [SECURITY.md](SECURITY.md), the [threat model](docs/threat
 
 AgentDust 1.0.0 provides process analysis, approved cleanup and a read-only disk report for Claude Code, with attribution across concurrent sessions and subagents. Codex and Cursor remain deferred. The milestones are in [ROADMAP.md](ROADMAP.md).
 
+Releases follow [Semantic Versioning](docs/release.md#semantic-versioning): compatible fixes increment the patch version, compatible features increment the minor version, and incompatible public API changes increment the major version.
+
 | Part | State |
 | --- | --- |
 | Process identity, one environment variable read from another process, `KERN_PROCARGS2` parser (fuzzed) | Built |
