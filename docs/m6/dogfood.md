@@ -2,6 +2,8 @@
 
 M6 requires one machine to complete at least two weeks of dogfood. Criterion 8 requires three independent Apple silicon Macs to run 0.x builds for at least two weeks. To count one period toward both gates, use the same M6-capable 0.x build on all three machines and have one machine collect the fuller M6 metrics. The 0.2.0 release predates M6 and does not qualify for this period. The M6 candidate installed on machine A is identified by its source commit and binary digest in the record.
 
+On 2026-10-07, only machine A was available. Machines B and C remain unenrolled, so the v1 field evidence gate cannot complete with the current hardware.
+
 Use labels `A`, `B` and `C` for the machines. Record aggregate counts only. Do not add usernames, serial numbers, process IDs, paths, command text, session IDs, raw hook payloads or transcript content.
 
 Record the AgentDust version and exact commit SHA or artifact digest. Add one row for each observation date and machine. Use scenario names such as `session`, `foreground subagent`, `background subagent`, `resume`, `clear`, `abrupt exit` and `Agent Team`.
