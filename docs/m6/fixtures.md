@@ -32,7 +32,7 @@ For the Agent Team scenario, set `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and ru
 
 No Claude Code version range is declared for M6. A version can be listed as supported only after every required scenario below is captured and passes replay for that exact version. A fixture proves only the scenario it records.
 
-The local CLI reported Claude Code 2.1.292 on macOS 26.6.2 arm64 on 2026-10-07. No M6 scenario has been captured for it. The 2.1.289 capture below is not a version-wide compatibility claim.
+The local CLI reported Claude Code 2.1.292 on macOS 26.6.2 arm64 on 2026-10-07. Sanitized captures cover three concurrent sessions, two background subagents, one foreground subagent, resume and `/clear`. Abrupt exit and the Agent Team scenario remain unrecorded, so 2.1.292 is not listed as supported. The 2.1.289 capture below is not a version-wide compatibility claim.
 
 ## Recorded clients
 
@@ -40,22 +40,27 @@ The local CLI reported Claude Code 2.1.292 on macOS 26.6.2 arm64 on 2026-10-07. 
 | --- | --- | --- | --- |
 | 2.1.289 | 26.6.2 | Two concurrently active subagents, each with one Bash helper call | [`claude-2.1.289-two-subagents.jsonl`](../../fixtures/m6/claude-2.1.289-two-subagents.jsonl) |
 | 2.1.289 | 26.6.2 | Typed MCP approval | [M0 client matrix](../m0/client-matrix.md) |
+| 2.1.292 | 26.6.2 | Two concurrently active background subagents, each with one Bash call | [`claude-2.1.292-two-background-subagents.jsonl`](../../fixtures/m6/claude-2.1.292-two-background-subagents.jsonl) |
+| 2.1.292 | 26.6.2 | Three concurrent sessions with interleaved Bash events | [`claude-2.1.292-three-sessions.jsonl`](../../fixtures/m6/claude-2.1.292-three-sessions.jsonl) |
+| 2.1.292 | 26.6.2 | One foreground subagent with one Bash call | [`claude-2.1.292-foreground-subagent.jsonl`](../../fixtures/m6/claude-2.1.292-foreground-subagent.jsonl) |
+| 2.1.292 | 26.6.2 | Resumed session | [`claude-2.1.292-resume.jsonl`](../../fixtures/m6/claude-2.1.292-resume.jsonl) |
+| 2.1.292 | 26.6.2 | `/clear` and the resulting new session | [`claude-2.1.292-clear.jsonl`](../../fixtures/m6/claude-2.1.292-clear.jsonl) |
 
-The captured session produced two `SubagentStart` events before either helper call, paired `PreToolUse` and `PostToolUse` events for each agent, then two matching `SubagentStop` events. The fixture test replays the normalized records through the Claude adapter.
+The 2.1.289 capture produced two `SubagentStart` events before either helper call, paired `PreToolUse` and `PostToolUse` events for each agent, then two matching `SubagentStop` events. The fixture test replays the normalized records through the Claude adapter.
 
 ## Required scenario matrix
 
 | Scenario | Status |
 | --- | --- |
-| Three concurrent sessions with interleaved shell and lifecycle events | Unrecorded |
-| Two active subagents in one session, with one Bash call each | Recorded on 2.1.289 |
-| Foreground subagent | Unrecorded |
-| Background subagent | Unrecorded |
-| Resume | Unrecorded |
-| `/clear` | Unrecorded |
+| Three concurrent sessions with interleaved shell and lifecycle events | Recorded on 2.1.292 |
+| Two active subagents in one session, with one Bash call each | Recorded on 2.1.289 and 2.1.292 |
+| Foreground subagent | Recorded on 2.1.292 |
+| Background subagent | Recorded on 2.1.292 |
+| Resume | Recorded on 2.1.292 |
+| `/clear` | Recorded on 2.1.292 |
 | Abrupt exit | Unrecorded |
 | Agent Team with two teammates | Unrecorded |
 
-Synthetic tests cover owner liveness, unrelated sessions, shared ownership and apply races. Real hook fixtures do not replace those process identity and signalling checks.
+The 2.1.292 hook fixtures replay through the Claude adapter test. Synthetic tests cover owner liveness, unrelated sessions, shared ownership and apply races. Real hook fixtures do not replace those process identity and signalling checks.
 
 The fixture matrix remains incomplete. M6 also needs one machine to complete at least two weeks of dogfood with attribution errors, false proposals, blocked applies, signals, failures and hook latency recorded. See the [dogfood record](dogfood.md).

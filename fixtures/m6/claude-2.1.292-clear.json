@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "claude_code": "2.1.292",
+  "macos": "26.6.2",
+  "captured": "2026-10-07",
+  "agentdust_version": "0.2.0",
+  "agentdust_commit": "ffecb4b2a07b85ed5fabc2a02599dd0fe09cd067",
+  "scenario": "A resumed session is cleared, then the cleared session starts and ends.",
+  "raw_hook_payloads_retained": false,
+  "fixture": "claude-2.1.292-clear.jsonl",
+  "architecture": "arm64",
+  "capture_mode": "non_interactive_clear_command"
+}
