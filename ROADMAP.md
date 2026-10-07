@@ -4,7 +4,7 @@ AgentDust 1.0.0 provides process analysis, typed approval cleanup and a read-onl
 
 ## Goal
 
-A macOS developer who uses Claude Code installs the tool in two commands. Across concurrent sessions and subagents, Claude Code can analyse leftover processes and disk growth, show the findings, and clean stale processes after the user approves a typed code.
+A macOS developer who uses Claude Code enables a local cleanup policy once. AgentDust automatically stops proven leftovers from ended sessions and asks about uncertain cases. Claude Code explains the diagnosis and the result. Version 1.0 provides manual typed approval; automatic cleanup is the next product milestone, not a shipped capability.
 
 Multi-agent here means concurrent Claude Code sessions and foreground or background subagents. Agent Teams are opt-in and experimental, so they stay outside the supported v1 matrix until their events and ownership are separately validated. Codex, Cursor and other adapters remain deferred.
 
@@ -12,6 +12,7 @@ Multi-agent here means concurrent Claude Code sessions and foreground or backgro
 
 - Release trust, security testing and distribution start in M0, not at the end.
 - Only owned-ended and suspect processes can ever be signalled. Suspects need their own approval, and managed or unknown processes are never signalled.
+- Automatic cleanup requires a policy enabled by the human and covers only freshly proven owned-ended processes. AgentDust's MCP tools cannot enable or broaden that policy. Live, ambiguous, shared, likely-owned, suspect, managed and unknown processes never enter automatic cleanup.
 - Evidence the tool stores is minimised at ingestion. Raw commands, command output and process environments are never persisted.
 - Scope is cut before estimates are tightened. The first release is narrow and complete.
 
@@ -50,7 +51,36 @@ Multi-agent here means concurrent Claude Code sessions and foreground or backgro
 
 ## Current priority
 
-The 1.0 Homebrew acceptance is complete for Claude Code on Apple silicon. The release includes M6 attribution across concurrent sessions and subagents, plus the M7 read-only disk report. Follow-up work records false proposals and compatibility observations during normal use. Agent Teams stay experimental and outside the v1 support claim. Codex (M4), Cursor (M5), host distribution and operating system expansion remain deferred.
+The next priority is automatic cleanup for proven ended-session leftovers, with uncertain cases requiring approval. The 1.0 Homebrew acceptance is complete for Claude Code on Apple silicon. Real false proposals, setup execution time and live concurrency latency remain follow-up observations. Agent Teams, Codex, Cursor, other AI hosts and operating system expansion remain deferred.
+
+## Next product milestone: automatic cleanup
+
+The user-selected scope is automatic cleanup of proven leftovers, with approval for uncertain cases. An opt-in addition that preserves the existing manual API targets `1.1.0` under the [release policy](docs/release.md#semantic-versioning). Breaking public contracts would require a major version instead. These items are planned, not implemented.
+
+| Order | Deliverable | Completion evidence |
+| --- | --- | --- |
+| 1 | Human-enabled local policy, pause/off control and a way to keep an intentional long-lived helper. The default manual flow stays available. | A model's MCP request cannot enable the policy, broaden its scope or override a keep decision. Disabled or unreadable policy produces no automatic signal. |
+| 2 | Automatic owned-ended cleanup through the existing identity checks, owner revalidation, per-process claim and audit. | A proven leftover receives at most one initial `SIGTERM`. A live owner, shared or ambiguous attribution, changed identity, protected process or suspect produces no automatic signal. |
+| 3 | A local worker triggered by lifecycle evidence and exact owner exit, with restart reconciliation and bounded work. Hooks remain short. | Cleanup works after normal and abrupt Claude exits without another model turn. Concurrent sessions and subagents remain protected. No full scan blocks a hook and the disabled mode starts no worker. |
+| 4 | A short agent-visible result: stopped, kept, approval required, survivor or unavailable evidence. Record actions and skipped reasons locally. | Claude can explain what happened using structured results. Declined uncertain cases remain untouched. A surviving helper is reported without escalation to `SIGKILL`. |
+
+Steps 1 through 4 form one usable release. An MCP-only prototype can exercise the policy while Claude is active, but does not complete cleanup after the agent exits.
+
+Measure useful cleanups, incorrect proposals, deliberate keep decisions and time saved during normal use on the available Mac. Controlled scenarios establish the execution rules; real incidents establish product value. No fixed multiweek study is a release gate. If normal use produces no useful incidents, record that result and reconsider further investment.
+
+Port-conflict diagnosis is the next candidate after automatic cleanup proves useful: identify the listener, relate it to captured ownership, apply only the permitted policy or human approval, then verify the port outcome. Memory and CPU figures provide context, not permission to stop a process. Disk deletion, general resource dashboards and remote host bridges are outside this milestone.
+
+## Remaining work by scope
+
+| Scope | State |
+| --- | --- |
+| M0 through M3, M6 and M7 | Implemented for the documented Claude Code and Apple silicon scope |
+| M9 controlled Homebrew acceptance | Complete; measurement limits remain in the [readiness record](docs/v1/readiness.md) |
+| Plugin/setup guidance | Review the `0.3.0` references and explain the installed binary versus guidance-package versions |
+| Automatic cleanup | Next product milestone |
+| Port-conflict recovery | Candidate after automation delivers useful results |
+| M8 directory submission and upstream work | Optional |
+| M4, M5, other MCP hosts, M10 through M12 and native Windows | Deferred |
 
 ## Milestones
 
@@ -97,7 +127,7 @@ Exit: controlled Claude fixtures become owned-ended only after every exact attri
 - `agentdust setup` for Claude Code: full diff, consent, surgical edits, idempotent, `--check`, `--remove`, ownership manifest, rollback report for partial failure.
 - Homebrew formula, `agentdust support-bundle` (a local file, never uploaded), README, security and privacy documents.
 
-Exit: on a clean account, install the prebuilt release. Verify `agentdust setup` completes in under 5 seconds of execution time, excluding the person's review and consent wait, and prints its full diff before changing anything. Review and approve the diff, find a controlled stale process, approve it with a typed code, and verify that exactly that process receives `SIGTERM`. Neither published release establishes this clean-account acceptance run.
+Acceptance: the exact Homebrew 1.0 binary passed setup, live discovery, human decline and approved one-helper cleanup on the maintainer's Mac. A separate clean-account run and setup execution time are unmeasured, as recorded in the [readiness record](docs/v1/readiness.md). They are not additional 1.0 release gates.
 
 ### M4 Codex adapter and setup (L, deferred)
 
@@ -136,9 +166,11 @@ Exit: optional. Directory acceptance and upstream response are not v1 gates.
 
 ### M9 1.0 readiness
 
-- All nine v1.0 success criteria are met and the evidence is recorded in the [readiness record](docs/v1/readiness.md). A release, merge or test pass closes only the criterion it directly verifies. Process-group signals and `SIGKILL` are added only if real failures justify them.
+- The controlled 1.0 release acceptance is complete. Passed checks and measurement limits are recorded separately in the [readiness record](docs/v1/readiness.md). A release, merge or test pass closes only the criterion it directly verifies. Process-group signals and `SIGKILL` remain deferred.
 
-## MCP host distribution after M6 validation
+## Deferred MCP host distribution
+
+Revisit these packages and transports after automatic cleanup demonstrates useful results with Claude Code. They are not the next milestone.
 
 AgentDust currently exposes a local stdio MCP server and can signal local processes after typed approval. Publishing it to another AI host needs a client-specific package or transport and a client-specific safety review. This work does not add another operating system or declare a host supported before its acceptance checks pass.
 
@@ -150,9 +182,11 @@ AgentDust currently exposes a local stdio MCP server and can signal local proces
 
 Exit: Claude Desktop package works on a clean account with the required local setup; Slack read-only mode cannot reach apply, including by direct tool call; the private ChatGPT tunnel passes a read-only test and rejects direct apply calls. Public ChatGPT listing and remote apply are not exit requirements.
 
-## Platform expansion after v1
+## Deferred platform expansion
 
-The current target is Claude Code on macOS arm64. Keep Codex and Cursor deferred. Complete all nine v1 criteria, including the controlled install and apply on the maintainer's Mac, before expanding to another operating system. The multi-Mac, two-week study is optional confidence evidence after 1.0.
+Revisit another platform when user demand and demonstrated product value justify its provider, packaging and acceptance work.
+
+The current target is Claude Code on macOS arm64. Keep Codex and Cursor deferred. The controlled Homebrew acceptance is complete; unresolved measurement limits remain in the readiness record. Automatic cleanup is the current product priority. The multi-Mac, two-week study is optional confidence evidence after 1.0.
 
 ### M10 Intel macOS (M)
 
