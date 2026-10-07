@@ -1,11 +1,11 @@
 ---
 name: cleanup
-description: Inspect or clean processes left running after Claude Code sessions with AgentDust. Use when the user asks to find, review, or stop leftover processes.
+description: Use AgentDust's local MCP tools to inspect or clean processes left running after Claude Code sessions. Apply when those tools are connected and the user asks to review or stop leftovers.
 ---
 
 # AgentDust cleanup
 
-Use the AgentDust MCP tools to inspect processes left by Claude Code sessions. This skill requires the `agentdust` MCP server from `agentdust setup`.
+Use the AgentDust MCP tools to inspect processes left by Claude Code sessions. This skill requires the local `agentdust` MCP server from `agentdust setup`. The skill package does not install or connect that server. A cloud chat without an explicit local connection cannot inspect or clean processes on the user's Mac.
 
 1. For a read-only inspection request, call `agentdust_doctor` and explain the classes and evidence. Do not infer that a process is safe to stop from its name, parent PID, age, or CPU use alone.
 2. For a cleanup request, call `agentdust_plan` to get a fresh plan. Show the eligible processes and their evidence, then apply only the items the user asked to clean. Use the plan ID and item IDs from that fresh response.

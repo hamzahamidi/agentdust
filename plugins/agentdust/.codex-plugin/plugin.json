@@ -1,0 +1,50 @@
+{
+  "name": "agentdust",
+  "version": "0.3.0",
+  "description": "Guidance for using AgentDust's local process and disk reports.",
+  "author": {
+    "name": "Hamza Hamidi",
+    "url": "https://github.com/hamzahamidi"
+  },
+  "homepage": "https://github.com/hamzahamidi/agentdust",
+  "repository": "https://github.com/hamzahamidi/agentdust",
+  "license": "MIT",
+  "keywords": [
+    "agentdust",
+    "claude-code",
+    "process-cleanup",
+    "disk-usage",
+    "local-mcp"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "AgentDust",
+    "shortDescription": "Guidance for AgentDust's local process and disk reports",
+    "longDescription": "Use AgentDust's local tools to inspect Claude Code processes and disk usage. Cleanup remains local and requires the user's typed approval. This skill package provides guidance only. It does not install AgentDust, connect ChatGPT Cloud to a Mac, or expose process cleanup remotely.",
+    "developerName": "Hamza Hamidi",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Guide local process review",
+      "Explain local disk reports"
+    ],
+    "websiteURL": "https://github.com/hamzahamidi/agentdust",
+    "supportURL": "https://github.com/hamzahamidi/agentdust/issues",
+    "defaultPrompt": [
+      "Review processes reported by AgentDust.",
+      "Explain my AgentDust disk report.",
+      "How do I install and connect AgentDust locally?"
+    ],
+    "brandColor": "#25272B",
+    "brandColorDark": "#E5C86B",
+    "composerIcon": "./assets/agentdust-mark.svg",
+    "logo": "./assets/agentdust-mark.svg"
+  },
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/cleanup/SKILL.md",
+      "publication": {
+        "release_notes": "Initial skills-only package for AgentDust 0.3.0 beta. Provides local process review and disk report guidance without a hosted process-control service."
+      }
+    }
+  }
+}

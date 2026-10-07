@@ -1,11 +1,11 @@
 ---
 name: disk
-description: Show Claude Code disk usage with AgentDust when the user asks about agent storage, history, caches or worktrees. Reports sizes and deletes nothing.
+description: Use AgentDust's local MCP tool to report Claude Code disk usage when the tool is connected and the user asks about storage, history, caches or worktrees. Reports sizes and deletes nothing.
 ---
 
 # Claude Code disk usage
 
-Call `agentdust_disk` with no arguments. This requires the AgentDust MCP server registered by `agentdust setup`.
+Call `agentdust_disk` with no arguments when the local AgentDust MCP server is available. This skill package does not install or connect that server. A cloud chat without an explicit local connection cannot read disk usage from the user's Mac.
 
 Explain the logical and allocated byte totals by root and category. Allocated bytes are not reclaimable space. History, memory, plugins and worktrees can contain work the user still needs.
 
