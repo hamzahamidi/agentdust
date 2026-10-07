@@ -4,7 +4,7 @@ AgentDust 1.0.0 provides process analysis, typed approval cleanup and a read-onl
 
 ## Goal
 
-A macOS developer who uses Claude Code enables a local cleanup policy once. AgentDust automatically stops proven leftovers from ended sessions and asks about uncertain cases. Claude Code explains the diagnosis and the result. Version 1.0 provides manual typed approval; automatic cleanup is the next product milestone, not a shipped capability.
+A macOS developer who uses Claude Code enables a local cleanup policy once for selected projects. AgentDust automatically stops proven leftovers from ended sessions in that scope and asks about uncertain cases. Claude Code explains the diagnosis and the result. Version 1.0 provides manual typed approval; automatic cleanup is the next product milestone, not a shipped capability.
 
 Multi-agent here means concurrent Claude Code sessions and foreground or background subagents. Agent Teams are opt-in and experimental, so they stay outside the supported v1 matrix until their events and ownership are separately validated. Codex, Cursor and other adapters remain deferred.
 
@@ -12,7 +12,7 @@ Multi-agent here means concurrent Claude Code sessions and foreground or backgro
 
 - Release trust, security testing and distribution start in M0, not at the end.
 - Only owned-ended and suspect processes can ever be signalled. Suspects need their own approval, and managed or unknown processes are never signalled.
-- Automatic cleanup requires a policy enabled by the human and covers only freshly proven owned-ended processes. AgentDust's MCP tools cannot enable or broaden that policy. Live, ambiguous, shared, likely-owned, suspect, managed and unknown processes never enter automatic cleanup.
+- Automatic cleanup requires a project scope enabled by the human and covers only freshly proven owned-ended processes within that scope. AgentDust's MCP tools cannot enable or broaden that policy. Live, ambiguous, shared, likely-owned, suspect, managed and unknown processes never enter automatic cleanup.
 - Evidence the tool stores is minimised at ingestion. Raw commands, command output and process environments are never persisted.
 - Scope is cut before estimates are tightened. The first release is narrow and complete.
 
@@ -59,10 +59,10 @@ The user-selected scope is automatic cleanup of proven leftovers, with approval 
 
 | Order | Deliverable | Completion evidence |
 | --- | --- | --- |
-| 1 | Human-enabled local policy, pause/off control and a way to keep an intentional long-lived helper. The default manual flow stays available. | A model's MCP request cannot enable the policy, broaden its scope or override a keep decision. Disabled or unreadable policy produces no automatic signal. |
+| 1 | Human-enabled local policy for explicitly selected projects, pause/off control and a way to keep an intentional long-lived helper. The default manual flow stays available. | A model's MCP request cannot enable the policy, broaden its scope or override a keep decision. Disabled or unreadable policy and an unauthorized project produce no automatic signal. |
 | 2 | Automatic owned-ended cleanup through the existing identity checks, owner revalidation, per-process claim and audit. | A proven leftover receives at most one initial `SIGTERM`. A live owner, shared or ambiguous attribution, changed identity, protected process or suspect produces no automatic signal. |
 | 3 | A local worker triggered by lifecycle evidence and exact owner exit, with restart reconciliation and bounded work. Hooks remain short. | Cleanup works after normal and abrupt Claude exits without another model turn. Concurrent sessions and subagents remain protected. No full scan blocks a hook and the disabled mode starts no worker. |
-| 4 | A short agent-visible result: stopped, kept, approval required, survivor or unavailable evidence. Record actions and skipped reasons locally. | Claude can explain what happened using structured results. Declined uncertain cases remain untouched. A surviving helper is reported without escalation to `SIGKILL`. |
+| 4 | A short agent-visible result: stopped, kept, approval required, survivor or unavailable evidence. Record actions, their manual or automatic authorization source, and skipped reasons locally. | Claude can explain what happened using structured results. Declined uncertain cases remain untouched. A surviving helper is reported without escalation to `SIGKILL`. |
 
 Steps 1 through 4 form one usable release. An MCP-only prototype can exercise the policy while Claude is active, but does not complete cleanup after the agent exits.
 
