@@ -28,6 +28,12 @@ Claude Code provides `agent_id` and `agent_type` on subagent hook calls. Record 
 
 For the Agent Team scenario, set `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and run Claude Code interactively. Claude Code does not start teammates in `-p` mode.
 
+## Version policy
+
+No Claude Code version range is declared for M6. A version can be listed as supported only after every required scenario below is captured and passes replay for that exact version. A fixture proves only the scenario it records.
+
+The local CLI reported Claude Code 2.1.292 on macOS 26.6.2 arm64 on 2026-10-07. No M6 scenario has been captured for it. The 2.1.289 capture below is not a version-wide compatibility claim.
+
 ## Recorded clients
 
 | Claude Code | macOS | Scenarios | Fixture |
@@ -37,4 +43,19 @@ For the Agent Team scenario, set `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and ru
 
 The captured session produced two `SubagentStart` events before either helper call, paired `PreToolUse` and `PostToolUse` events for each agent, then two matching `SubagentStop` events. The fixture test replays the normalized records through the Claude adapter.
 
-Three concurrent sessions, foreground and background subagents, resume, `/clear`, abrupt exit, and an Agent Team with two teammates remain unrecorded. M6 also needs one machine to complete two weeks of dogfood with attribution errors, false proposals, blocked applies, signals and hook latency recorded.
+## Required scenario matrix
+
+| Scenario | Status |
+| --- | --- |
+| Three concurrent sessions with interleaved shell and lifecycle events | Unrecorded |
+| Two active subagents in one session, with one Bash call each | Recorded on 2.1.289 |
+| Foreground subagent | Unrecorded |
+| Background subagent | Unrecorded |
+| Resume | Unrecorded |
+| `/clear` | Unrecorded |
+| Abrupt exit | Unrecorded |
+| Agent Team with two teammates | Unrecorded |
+
+Synthetic tests cover owner liveness, unrelated sessions, shared ownership and apply races. Real hook fixtures do not replace those process identity and signalling checks.
+
+The fixture matrix remains incomplete. M6 also needs one machine to complete at least two weeks of dogfood with attribution errors, false proposals, blocked applies, signals, failures and hook latency recorded. See the [dogfood record](dogfood.md).
