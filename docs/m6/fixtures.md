@@ -19,20 +19,20 @@ The temporary config does not edit `~/.claude/settings.json`. `scripts/capture_c
 The `agentdust hook claude` handler also runs and writes to the temporary AgentDust journal under `data/`. That journal uses the normal schema and stores raw Claude session and tool-use IDs. The capture helper's filtering does not apply to this journal. Keep the capture directory local and delete it after the run; do not share `data/`.
 
 1. Record `claude --version` and macOS version in the fixture manifest.
-2. Capture three concurrent sessions, two active subagents, foreground and background subagents, resume, `/clear`, abrupt exit, and an Agent Team with two teammates.
+2. Capture three concurrent sessions, two active subagents, foreground and background subagents, resume, `/clear` and abrupt exit. Agent Teams are experimental and outside the v1 support matrix.
 3. Keep the original hook payloads in memory only. The JSONL file contains the normalized output from the capture helper.
 4. Check the normalized file for private values, review it, then copy the approved fixture into `fixtures/m6/`.
 5. Delete the temporary key, temporary settings and capture directory after the run.
 
-Claude Code provides `agent_id` and `agent_type` on subagent hook calls. Record team events separately by session and process identity. Record the tested Claude Code versions because Agent Teams remains experimental. See the [hooks reference](https://code.claude.com/docs/en/hooks) and [Agent Teams documentation](https://code.claude.com/docs/en/agent-teams).
+Claude Code provides `agent_id` and `agent_type` on subagent hook calls. Record the tested Claude Code versions because Agent Teams remains experimental. See the [hooks reference](https://code.claude.com/docs/en/hooks) and [Agent Teams documentation](https://code.claude.com/docs/en/agent-teams).
 
-For the Agent Team scenario, set `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and run Claude Code interactively. Claude Code does not start teammates in `-p` mode.
+If Agent Teams support is evaluated later, set `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and run Claude Code interactively. Claude Code does not start teammates in `-p` mode.
 
 ## Version policy
 
-No Claude Code version range is declared for M6. A version can be listed as supported only after every required scenario below is captured and passes replay for that exact version. A fixture proves only the scenario it records.
+No Claude Code version range is declared for M6. A version can be listed as supported for lifecycle and attribution behavior only after every core scenario below is captured and passes replay for that exact version. These fixtures do not establish process signalling safety; the apply test suite covers that separately. Agent Teams are not in the v1 support matrix. A fixture proves only the scenario it records.
 
-The local CLI reported Claude Code 2.1.292 on macOS 26.6.2 arm64 on 2026-10-07. Sanitized captures cover three concurrent sessions, two background subagents, one foreground subagent, resume and `/clear`. Abrupt exit and the Agent Team scenario remain unrecorded, so 2.1.292 is not listed as supported. The 2.1.289 capture below is not a version-wide compatibility claim.
+The local CLI reported Claude Code 2.1.292 on macOS 26.6.2 arm64 on 2026-10-07. Sanitized captures cover three concurrent sessions, two background subagents, one foreground subagent, resume and `/clear`. Abrupt exit remains unrecorded, so 2.1.292 is not listed as supported. Agent Teams are outside the v1 support matrix. The 2.1.289 capture below is not a version-wide compatibility claim.
 
 ## Recorded clients
 
@@ -48,7 +48,7 @@ The local CLI reported Claude Code 2.1.292 on macOS 26.6.2 arm64 on 2026-10-07. 
 
 The 2.1.289 capture produced two `SubagentStart` events before either helper call, paired `PreToolUse` and `PostToolUse` events for each agent, then two matching `SubagentStop` events. The fixture test replays the normalized records through the Claude adapter.
 
-## Required scenario matrix
+## Core scenario matrix
 
 | Scenario | Status |
 | --- | --- |
@@ -59,8 +59,8 @@ The 2.1.289 capture produced two `SubagentStart` events before either helper cal
 | Resume | Recorded on 2.1.292 |
 | `/clear` | Recorded on 2.1.292 |
 | Abrupt exit | Unrecorded |
-| Agent Team with two teammates | Unrecorded |
+| Agent Team with two teammates | Out of v1 scope, experimental |
 
-The 2.1.292 hook fixtures replay through the Claude adapter test. The ignored release benchmark in `crates/agentdust/tests/hook_latency.rs` replays all captured events sequentially three times, then replays the three session streams and two background subagent streams concurrently while preserving order within each stream. It reports per-event p50 and p95. This measures hook replay, not live Claude Code concurrency. Abrupt exit and Agent Teams are still missing. Synthetic tests cover owner liveness, unrelated sessions, shared ownership and apply races. Real hook fixtures do not replace those process identity and signalling checks.
+The 2.1.292 hook fixtures replay through the Claude adapter test. The ignored release benchmark in `crates/agentdust/tests/hook_latency.rs` replays all captured events sequentially three times, then replays the three session streams and two background subagent streams concurrently while preserving order within each stream. It reports per-event p50 and p95. This measures hook replay, not live Claude Code concurrency. Abrupt exit is still missing. Synthetic tests cover owner liveness, unrelated sessions, shared ownership and apply races. Real hook fixtures do not replace those process identity and signalling checks.
 
-The fixture matrix remains incomplete. Abrupt exit and Agent Teams remain unrecorded, and no Claude Code version is declared supported for the complete M6 scenario matrix. Real-use observations follow the limited beta and inform v1 promotion. See the [dogfood record](dogfood.md).
+The core fixture matrix remains incomplete because abrupt exit is unrecorded. No Claude Code version is declared supported until that scenario is captured and the core matrix passes replay. Agent Teams remain experimental and unsupported in v1. Real-use observations inform follow-up work. See the [dogfood record](dogfood.md).
