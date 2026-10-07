@@ -231,6 +231,32 @@ fn a_pid_with_another_start_time_is_another_process() {
 }
 
 #[test]
+fn a_changed_owner_after_approval_aborts_before_reading_or_signalling() {
+    for scenario in ["changed identity", "additional owner", "removed owner"] {
+        aborts_before_the_read(
+            Class::OwnedEnded,
+            move |_| {
+                let mut changed = finding(4242, Class::OwnedEnded);
+                let owners = changed.attribution_owners.as_mut().unwrap();
+                match scenario {
+                    "changed identity" => owners[0].identity.start_time_us += 1,
+                    "additional owner" => {
+                        let mut extra = owners[0].clone();
+                        extra.session_id = "session-extra".to_owned();
+                        extra.identity = kernel(4343);
+                        owners.push(extra);
+                    }
+                    "removed owner" => owners.clear(),
+                    _ => unreachable!(),
+                }
+                Ok(vec![changed])
+            },
+            failed(Reason::OwnershipChanged),
+        );
+    }
+}
+
+#[test]
 fn any_change_of_class_aborts_the_item() {
     for fresh in [
         Class::Managed,
