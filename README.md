@@ -4,7 +4,7 @@
 
 AgentDust is a macOS tool that finds processes left running after Claude Code sessions and stops them only after you approve each one with a typed code. It also reports Claude Code disk usage without deleting files. Codex and Cursor support are deferred.
 
-**Release 0.2.0 supports Claude Code on Apple silicon and is available through Homebrew.** See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
+**The 0.3.0 beta targets Claude Code on Apple silicon and is designed for Homebrew installation. It includes experimental multi-session and subagent attribution. Abrupt exit and Agent Teams coverage remain open, and no Claude Code version is declared supported for the complete M6 scenario matrix.** See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
 
 Agents start dev servers, MCP servers and helpers. When a session ends or crashes, some of them keep running under `launchd`, holding memory, ports and sometimes CPU. The upstream reports are open: [anthropics/claude-code#1935](https://github.com/anthropics/claude-code/issues/1935) and [openai/codex#21008](https://github.com/openai/codex/issues/21008).
 
@@ -73,9 +73,9 @@ Cleanup controls:
 
 Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
 
-## Using AgentDust 0.2.0
+## Using AgentDust 0.3.0
 
-Release 0.2.0 supports Apple silicon with Claude Code. It adds the M7 read-only disk report. The Status table above lists the included features.
+Release 0.3.0 supports Apple silicon with Claude Code. It is a limited beta with experimental multi-session and subagent attribution added to the M7 read-only disk report. Agent Teams and abrupt-exit scenarios remain unrecorded, and no Claude Code version is declared supported for the complete M6 scenario matrix. See the [M6 fixture matrix](docs/m6/fixtures.md) before interpreting its compatibility.
 
 ### Install and connect
 
@@ -138,7 +138,7 @@ agentdust status
 
 ## Running the development probe
 
-Run the probe to check whether your agent client can collect a typed approval. It shows a typed-code form and reports how the client answered. It changes nothing on your machine. Building it needs Rust 1.99.0 (pinned in `rust-toolchain.toml`); release 0.2.0 is a prebuilt binary that needs no Rust.
+Run the probe to check whether your agent client can collect a typed approval. It shows a typed-code form and reports how the client answered. It changes nothing on your machine. Building it needs Rust 1.99.0 (pinned in `rust-toolchain.toml`); release 0.3.0 beta is a prebuilt binary that needs no Rust.
 
 ```bash
 cargo build --release
