@@ -1,0 +1,52 @@
+{
+  "name": "agentdust",
+  "version": "0.3.0",
+  "description": "Explain AgentDust reports and local setup.",
+  "author": {
+    "name": "Hamza Hamidi",
+    "url": "https://github.com/hamzahamidi"
+  },
+  "homepage": "https://github.com/hamzahamidi/agentdust",
+  "repository": "https://github.com/hamzahamidi/agentdust",
+  "license": "MIT",
+  "keywords": [
+    "agentdust",
+    "claude-code",
+    "process-cleanup",
+    "disk-usage",
+    "local-mcp"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "AgentDust",
+    "shortDescription": "Read AgentDust local reports",
+    "longDescription": "Explain AgentDust process and disk reports that users provide, and guide local setup. This skills package does not connect to a Mac or provide live process access. Live inspection requires a separately configured local AgentDust MCP connection. Cleanup requires AgentDust's own typed approval.",
+    "developerName": "Hamza Hamidi",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Explain AgentDust process reports",
+      "Explain AgentDust disk reports",
+      "Guide local AgentDust setup"
+    ],
+    "websiteURL": "https://github.com/hamzahamidi/agentdust",
+    "supportURL": "https://github.com/hamzahamidi/agentdust/issues",
+    "privacyPolicyURL": "https://github.com/hamzahamidi/agentdust/blob/main/PRIVACY.md",
+    "defaultPrompt": [
+      "Explain this AgentDust doctor report: ",
+      "Help me understand this AgentDust disk report: ",
+      "How do I set up AgentDust locally?"
+    ],
+    "brandColor": "#25272B",
+    "brandColorDark": "#E5C86B",
+    "composerIcon": "./assets/agentdust-mark.svg",
+    "logo": "./assets/agentdust-mark.svg"
+  },
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/cleanup/SKILL.md",
+      "publication": {
+        "release_notes": "Initial skills-only package for AgentDust 0.3.0 beta. Provides local process review and disk report guidance without a hosted process-control service."
+      }
+    }
+  }
+}

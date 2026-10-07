@@ -1,16 +1,24 @@
 ---
 name: cleanup
-description: Inspect or clean processes left running after Claude Code sessions with AgentDust. Use when the user asks to find, review, or stop leftover processes.
+description: Explain AgentDust process reports and guide safe local cleanup. Use when the user asks about processes left by Claude Code sessions, AgentDust doctor output, or cleanup.
 ---
 
 # AgentDust cleanup
 
-Use the AgentDust MCP tools to inspect processes left by Claude Code sessions. This skill requires the `agentdust` MCP server from `agentdust setup`.
+This skill package contains guidance only. It does not connect to a Mac or provide live process access. Live inspection requires a separately configured local AgentDust MCP connection. AgentDust 0.3.0 supports Claude Code on Apple silicon; setting it up there does not connect it to ChatGPT or Codex.
 
-1. For a read-only inspection request, call `agentdust_doctor` and explain the classes and evidence. Do not infer that a process is safe to stop from its name, parent PID, age, or CPU use alone.
-2. For a cleanup request, call `agentdust_plan` to get a fresh plan. Show the eligible processes and their evidence, then apply only the items the user asked to clean. Use the plan ID and item IDs from that fresh response.
-3. Call `agentdust_apply` for the selected items. AgentDust presents the typed approval form and generates the code. The user must review the items and type the code. Never invent, copy, or submit an approval code.
-4. If the user declines or cancels, stop. If the client cannot show the form, tell the user to run `agentdust apply` in a terminal outside Claude Code. Do not run that command yourself.
+## Explain a report the user provides
+
+Ask the user to paste `agentdust doctor --json` for process classifications or `agentdust disk --json` for disk totals. Do not ask for the terminal `doctor` output unless needed, because it can include command arguments and directory paths. The JSON doctor report still contains process IDs, executable basenames, ages, classes, and evidence, so the user should remove anything they do not want to share.
+
+Explain classes and evidence as reported. A process name, parent PID, age, or CPU use alone does not show that a process is safe to stop. A pasted report is a snapshot and cannot authorize or support a later signal.
+
+## If a local AgentDust MCP connection is available
+
+1. For read-only inspection, call `agentdust_doctor` and explain the classes and evidence.
+2. For cleanup, call `agentdust_plan` to obtain a fresh plan. Show the eligible processes and evidence, then use only the plan ID and item IDs from that response for items the user requested.
+3. Call `agentdust_apply` for those items. AgentDust presents the approval form and generates the code. The user must review the items and type the code. Never invent, copy, or submit an approval code.
+4. If the user declines or cancels, stop. If the client cannot show the form, tell the user to run `agentdust apply` locally. Do not run that command yourself.
 5. Report the result returned by `agentdust_apply`. Do not repeat an apply call for an item that already has a result.
 
-If the MCP tools are missing, tell the user to run `agentdust setup` and reconnect Claude Code. Do not edit Claude Code settings or install AgentDust as part of this skill.
+If live tools are unavailable, say this package does not create that connection. Explain the report the user provides, or direct them to AgentDust's local Claude Code setup. Do not change client settings or install AgentDust as part of this skill.
