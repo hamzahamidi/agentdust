@@ -11,6 +11,7 @@ const WARM_UP: usize = 20;
 const RUNS: usize = 200;
 const FRESH_RUNS: usize = 30;
 const CAPTURED_WORKLOAD_RUNS: usize = 3;
+const CONCURRENT_SESSION_REPLAY_RUNS: usize = 20;
 
 fn percentiles(mut samples: Vec<f64>) -> (f64, f64) {
     samples.sort_by(f64::total_cmp);
@@ -212,7 +213,7 @@ fn session_start_latency_is_within_budget() {
 
 #[test]
 #[ignore = "replays sanitized Claude Code 2.1.292 captures: cargo test --release -p agentdust --test hook_latency -- --ignored --nocapture --test-threads=1"]
-fn captured_m6_scenario_hooks_are_within_budget() {
+fn captured_m6_scenario_hook_latency_is_reported() {
     let fixtures = captured_m6_fixtures();
     assert!(!fixtures.is_empty(), "no Claude Code 2.1.292 fixtures found");
 
@@ -295,19 +296,30 @@ fn captured_m6_scenario_hooks_are_within_budget() {
     let three_session_streams = captured_session_streams(&three_session_fixture.1);
     assert_eq!(three_session_streams.len(), 3);
     let mut three_session_samples = Vec::new();
-    for run in 0..CAPTURED_WORKLOAD_RUNS {
+    let mut three_session_run_p95s = Vec::new();
+    for run in 0..CONCURRENT_SESSION_REPLAY_RUNS {
         let dir = scratch_dir("latency-m6-three-sessions");
-        three_session_samples.extend(measure_concurrent_streams(&dir, &three_session_streams));
+        let samples = measure_concurrent_streams(&dir, &three_session_streams);
         fs::remove_dir_all(&dir).unwrap();
+        let (run_p50, run_p95) = percentiles(samples.clone());
+        let run_max = samples.iter().copied().max_by(f64::total_cmp).unwrap();
         println!(
-            "three-session concurrent replay {}/{} complete",
+            "three-session concurrent replay {}/{}: p50 {run_p50:.2} ms, p95 {run_p95:.2} ms, max {run_max:.2} ms",
             run + 1,
-            CAPTURED_WORKLOAD_RUNS
+            CONCURRENT_SESSION_REPLAY_RUNS
         );
+        three_session_run_p95s.push(run_p95);
+        three_session_samples.extend(samples);
     }
     let (three_session_p50, three_session_p95) = percentiles(three_session_samples);
+    let (median_run_p95, upper_run_p95) = percentiles(three_session_run_p95s.clone());
+    let highest_run_p95 = three_session_run_p95s
+        .iter()
+        .copied()
+        .max_by(f64::total_cmp)
+        .unwrap();
     println!(
-        "captured Claude Code 2.1.292 three-session replay: 3 ordered streams; p50 {three_session_p50:.2} ms, p95 {three_session_p95:.2} ms"
+        "captured Claude Code 2.1.292 three-session replay: 3 ordered streams across {CONCURRENT_SESSION_REPLAY_RUNS} repetitions; p50 {three_session_p50:.2} ms, p95 {three_session_p95:.2} ms; per-replay p95 median {median_run_p95:.2} ms, p95 {upper_run_p95:.2} ms, max {highest_run_p95:.2} ms"
     );
     assert!(three_session_p50 < 10.0, "p50 {three_session_p50:.2} ms");
     assert!(three_session_p95 < 20.0, "p95 {three_session_p95:.2} ms");
