@@ -1,8 +1,8 @@
 # M6 dogfood record
 
-This record tracks real use after a limited M6 beta. Setup checks and scripted acceptance tests do not start the observation period. The v1 confidence target is three independent Apple silicon Macs running 0.x builds for at least two weeks, with one machine collecting the fuller M6 metrics. That target does not block a limited beta. The M6 candidate is identified by its source commit and binary digest in the record.
+This record tracks real use after the limited beta. The v1 release gate is one controlled end-to-end run on the maintainer's Mac, recorded in the [readiness record](../v1/readiness.md). Setup checks and scripted acceptance tests do not replace that run. A three-Mac, two-week study is optional confidence evidence after 1.0. Identify each recorded build by its source commit and binary digest.
 
-On 2026-10-07, only machine A was available. Its setup check passed, but no interactive Claude Code session has been observed, so the observation period has not started. Machines B and C are not available for the v1 confidence target.
+On 2026-10-07, only machine A was available. Its setup check passed, but no interactive Claude Code session has been observed. Machines B and C are unavailable; the optional confidence study has not started.
 
 Use labels `A`, `B` and `C` for the machines. Record aggregate counts only. Do not add usernames, serial numbers, process IDs, paths, command text, session IDs, raw hook payloads or transcript content.
 
