@@ -75,7 +75,7 @@ Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
 
 ## Using AgentDust 0.3.0
 
-Release 0.3.0 beta adds experimental multi-session and subagent attribution to the M7 read-only disk report. Agent Teams and abrupt-exit scenarios remain unrecorded. See the [M6 fixture matrix](docs/m6/fixtures.md) before interpreting its compatibility.
+Release 0.3.0 supports Apple silicon with Claude Code as a limited beta. It adds experimental multi-session and subagent attribution to the M7 read-only disk report. Agent Teams and abrupt-exit scenarios remain unrecorded, and no Claude Code version is declared supported for the complete M6 scenario matrix. See the [M6 fixture matrix](docs/m6/fixtures.md) before interpreting its compatibility.
 
 ### Install and connect
 
