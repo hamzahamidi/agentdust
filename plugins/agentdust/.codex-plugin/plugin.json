@@ -9,7 +9,6 @@
   "homepage": "https://github.com/hamzahamidi/agentdust",
   "repository": "https://github.com/hamzahamidi/agentdust",
   "license": "MIT",
-  "privacyPolicyURL": "https://github.com/hamzahamidi/agentdust/blob/main/PRIVACY.md",
   "keywords": [
     "agentdust",
     "claude-code",
@@ -31,6 +30,7 @@
     ],
     "websiteURL": "https://github.com/hamzahamidi/agentdust",
     "supportURL": "https://github.com/hamzahamidi/agentdust/issues",
+    "privacyPolicyURL": "https://github.com/hamzahamidi/agentdust/blob/main/PRIVACY.md",
     "defaultPrompt": [
       "Explain this AgentDust doctor report: ",
       "Help me understand this AgentDust disk report: ",
