@@ -4,7 +4,7 @@
 
 AgentDust is a macOS tool that finds processes left running after Claude Code sessions and stops them only after you approve each one with a typed code. It also reports Claude Code disk usage without deleting files. Codex and Cursor support are deferred.
 
-**The 0.3.0 beta targets Claude Code on Apple silicon and is designed for Homebrew installation. Captured fixtures cover the listed concurrent session, subagent and lifecycle scenarios on Claude Code 2.1.292, including an abrupt CLI exit. Agent Teams remain outside the support claim.** See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
+**The 1.0.0 release candidate targets Claude Code on Apple silicon and is being prepared for Homebrew validation. Captured fixtures cover the listed concurrent session, subagent and lifecycle scenarios on Claude Code 2.1.292, including an abrupt CLI exit. Agent Teams remain outside the support claim. The candidate needs the exact Homebrew acceptance run before stable promotion.** See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
 
 Agents start dev servers, MCP servers and helpers. When a session ends or crashes, some of them keep running under `launchd`, holding memory, ports and sometimes CPU. The upstream reports are open: [anthropics/claude-code#1935](https://github.com/anthropics/claude-code/issues/1935) and [openai/codex#21008](https://github.com/openai/codex/issues/21008).
 
@@ -73,9 +73,9 @@ Cleanup controls:
 
 Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
 
-## Using AgentDust 0.3.0
+## Using AgentDust 1.0.0
 
-Release 0.3.0 supports Apple silicon with Claude Code. It is a limited beta with experimental multi-session and subagent attribution added to the M7 read-only disk report. The listed M6 lifecycle and attribution scenarios are captured and replayed for Claude Code 2.1.292. Agent Teams remain outside the support claim. See the [M6 fixture matrix](docs/m6/fixtures.md) for the tested scenarios and their limits.
+Release 1.0.0 supports Apple silicon with Claude Code. It is a prerelease candidate awaiting the maintainer's Homebrew acceptance check. The listed M6 lifecycle and attribution scenarios are captured and replayed for Claude Code 2.1.292. Agent Teams remain outside the support claim. See the [M6 fixture matrix](docs/m6/fixtures.md) for the tested scenarios and their limits.
 
 ### Install and connect
 
@@ -138,7 +138,7 @@ agentdust status
 
 ## Running the development probe
 
-Run the probe to check whether your agent client can collect a typed approval. It shows a typed-code form and reports how the client answered. It changes nothing on your machine. Building it needs Rust 1.99.0 (pinned in `rust-toolchain.toml`); release 0.3.0 beta is a prebuilt binary that needs no Rust.
+Run the probe to check whether your agent client can collect a typed approval. It shows a typed-code form and reports how the client answered. It changes nothing on your machine. Building it needs Rust 1.99.0 (pinned in `rust-toolchain.toml`); the release candidate is a prebuilt binary that needs no Rust.
 
 ```bash
 cargo build --release
