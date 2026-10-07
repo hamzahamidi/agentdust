@@ -1,0 +1,39 @@
+{
+  "date": "2026-10-07",
+  "version": "1.0.0",
+  "source_commit": "59a470901d385bc155fe6323be902fb747f64af6",
+  "installed_binary": "/opt/homebrew/bin/agentdust",
+  "binary_sha256": "88bcc45dc0a510acf8eb869daaa3e43fc9eb205ffac5037307c3d78c18a8d844",
+  "archive_sha256": "58ff05161f5472562f15da90cbae5401a847727258b0149ae38be7505912ba27",
+  "approval_source": "human stdin in native Terminal",
+  "target_pid": 64534,
+  "sibling_pid": 64535,
+  "classification": "owned-ended",
+  "decline_result": "declined",
+  "decline_signal_attempts": 0,
+  "approved_result": "terminated",
+  "approved_signal_attempts": 1,
+  "target_identity_after_approval": "gone",
+  "sibling_identity_after_approval": "match",
+  "harness_teardown": "passed",
+  "audit": [
+    {
+      "phase": "result",
+      "pid": 64534,
+      "class": "owned-ended",
+      "result": "declined"
+    },
+    {
+      "phase": "attempt",
+      "pid": 64534,
+      "class": "owned-ended",
+      "result": null
+    },
+    {
+      "phase": "result",
+      "pid": 64534,
+      "class": "owned-ended",
+      "result": "terminated"
+    }
+  ]
+}
