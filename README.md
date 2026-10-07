@@ -4,7 +4,7 @@
 
 AgentDust is a macOS tool that finds processes left running after Claude Code sessions and stops them only after you approve each one with a typed code. It also reports Claude Code disk usage without deleting files. Codex and Cursor support are deferred.
 
-**The 0.3.0 beta targets Claude Code on Apple silicon and is designed for Homebrew installation. It includes experimental multi-session and subagent attribution. Abrupt exit and Agent Teams coverage remain open, and no Claude Code version is declared supported for the complete M6 scenario matrix.** See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
+**The 0.3.0 beta targets Claude Code on Apple silicon and is designed for Homebrew installation. Captured fixtures cover the listed concurrent session, subagent and lifecycle scenarios on Claude Code 2.1.292, including an abrupt CLI exit. Agent Teams remain outside the support claim.** See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
 
 Agents start dev servers, MCP servers and helpers. When a session ends or crashes, some of them keep running under `launchd`, holding memory, ports and sometimes CPU. The upstream reports are open: [anthropics/claude-code#1935](https://github.com/anthropics/claude-code/issues/1935) and [openai/codex#21008](https://github.com/openai/codex/issues/21008).
 
@@ -75,7 +75,7 @@ Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
 
 ## Using AgentDust 0.3.0
 
-Release 0.3.0 supports Apple silicon with Claude Code. It is a limited beta with experimental multi-session and subagent attribution added to the M7 read-only disk report. Agent Teams and abrupt-exit scenarios remain unrecorded, and no Claude Code version is declared supported for the complete M6 scenario matrix. See the [M6 fixture matrix](docs/m6/fixtures.md) before interpreting its compatibility.
+Release 0.3.0 supports Apple silicon with Claude Code. It is a limited beta with experimental multi-session and subagent attribution added to the M7 read-only disk report. The listed M6 lifecycle and attribution scenarios are captured and replayed for Claude Code 2.1.292. Agent Teams remain outside the support claim. See the [M6 fixture matrix](docs/m6/fixtures.md) for the tested scenarios and their limits.
 
 ### Install and connect
 
