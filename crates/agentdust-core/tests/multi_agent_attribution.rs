@@ -108,6 +108,26 @@ fn a_subagent_process_is_an_additional_exact_owner_of_the_parent_tag() {
 }
 
 #[test]
+fn an_unverified_subagent_owner_keeps_the_parent_tag_live() {
+    let records = [
+        rec(Kind::SessionStart).session("lead").by(10).tagged(15),
+        rec(Kind::SubagentStart).session("lead").by(10).sub("agent-a"),
+        rec(Kind::ShellStart).session("lead").by(20).sub("agent-a"),
+        rec(Kind::SessionEnd).session("lead").by(10),
+    ];
+
+    let session_scopes = scopes(&records, &Table::new().gone(10));
+    let found = classify(vec![raw(300).tagged(15)], &session_scopes);
+
+    assert_eq!(found[0].class, Class::OwnedLive);
+    let owners = found[0].attribution_owners.as_ref().unwrap();
+    assert_eq!(
+        owners.iter().map(|owner| owner.identity.pid).collect::<Vec<_>>(),
+        [10, 20]
+    );
+}
+
+#[test]
 fn an_unidentified_subagent_event_makes_cleanup_attribution_ambiguous() {
     let records = [
         rec(Kind::SessionStart).session("lead").by(10).tagged(8),

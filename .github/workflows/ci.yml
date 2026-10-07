@@ -53,4 +53,4 @@ jobs:
       - run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal -c clippy
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
-      - run: cargo test --release -p agentdust --test hook_latency --locked -- --ignored --nocapture
+      - run: cargo test --release -p agentdust --test hook_latency --locked -- --ignored --nocapture --test-threads=1

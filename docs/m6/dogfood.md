@@ -1,8 +1,8 @@
 # M6 dogfood record
 
-M6 requires one machine to complete at least two weeks of dogfood. Criterion 8 requires three independent Apple silicon Macs to run 0.x builds for at least two weeks. To count one period toward both gates, use the same M6-capable 0.x build on all three machines and have one machine collect the fuller M6 metrics. The 0.2.0 release predates M6 and does not qualify for this period. The M6 candidate installed on machine A is identified by its source commit and binary digest in the record.
+This record tracks real use after a limited M6 beta. Setup checks and scripted acceptance tests do not start the observation period. The v1 confidence target is three independent Apple silicon Macs running 0.x builds for at least two weeks, with one machine collecting the fuller M6 metrics. That target does not block a limited beta. The M6 candidate is identified by its source commit and binary digest in the record.
 
-On 2026-10-07, only machine A was available. Machines B and C remain unenrolled, so the v1 field evidence gate cannot complete with the current hardware.
+On 2026-10-07, only machine A was available. Its setup check passed, but no interactive Claude Code session has been observed, so the observation period has not started. Machines B and C are not available for the v1 confidence target.
 
 Use labels `A`, `B` and `C` for the machines. Record aggregate counts only. Do not add usernames, serial numbers, process IDs, paths, command text, session IDs, raw hook payloads or transcript content.
 

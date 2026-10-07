@@ -24,7 +24,7 @@ Multi-agent here means concurrent Claude Code sessions, foreground and backgroun
 5. Classifier: fixtures carry ground-truth labels (`true_owned_ended`, `true_live_owned`, `true_detached`, `true_managed`, `true_unknown`). No fixture outside `true_owned_ended` is classified owned-ended, no `true_managed` or `true_unknown` fixture is ever actionable, and every `true_owned_ended` fixture is classified owned-ended.
 6. Privacy: fixture secrets never appear anywhere under the AgentDust data directory, checked by a test.
 7. Supply chain: dependencies are locked from the first code commit. Each release ships a checksum, an artifact attestation, an SBOM, and two independent macOS arm64 builds that produce a byte-identical binary.
-8. Evidence: at least three independent Apple silicon Macs run 0.x builds for at least two weeks, with sessions, proposed kills, false positives and failures counted.
+8. Field evidence: after beta, at least three independent Apple silicon Macs run 0.x builds for at least two weeks, with sessions, proposed kills, false positives and failures counted. This is a v1 confidence target, not a prerequisite for a limited beta.
 9. Multi-agent isolation: test three concurrent Claude Code sessions, two active subagents in one session, and an Agent Team with two teammates. Interleaved events and helpers resolve only to their exact attribution scopes. Parent-ended/child-live, child-ended/parent-live, unrelated-session-live and ambiguous/shared ownership cases are covered. A helper is owned-live while any attributed owner is live, and owned-ended only after all attributed owners are proven gone. An unrelated live session does not change the candidate's classification. Ambiguous ownership stays non-actionable. After typed approval, apply revalidates owner liveness and process identity inside the per-process critical section before signaling.
 
 ## Decisions made
@@ -50,7 +50,7 @@ Multi-agent here means concurrent Claude Code sessions, foreground and backgroun
 
 ## Current priority
 
-M7 shipped in 0.2.0 as a read-only disk report for Claude Code on macOS. M6 implementation is merged. The remaining work is real-client fixture coverage, full-workload hook latency and dogfood. The clean-account install gate also remains open. Codex (M4), Cursor (M5) and operating system expansion remain deferred.
+M7 shipped in 0.2.0 as a read-only disk report for Claude Code on macOS. M6 implementation is merged. The next work is a controlled Homebrew apply on this Mac, the missing abrupt-exit and Agent Team captures, and full-workload latency. Field observation follows beta. Codex (M4), Cursor (M5), host distribution and operating system expansion remain deferred.
 
 ## Milestones
 
@@ -116,13 +116,13 @@ Exit: on a clean account, install the prebuilt release. Verify `agentdust setup`
 3. Record and test `SubagentStart` and `SubagentStop`. Include missing IDs, failed ID digests, child events before parent start, duplicate starts, repeated and blocked stops, late events across resume and `/clear`, and abrupt exits. A stop or abrupt-exit event alone does not establish that its owner ended. Require fresh liveness evidence for every exact owner identity; unknown stays non-actionable, and stale events cannot close a newer owner scope.
 4. Race `apply` across separate MCP server processes, including owner or process identity changes during approval. After approval, revalidate owner liveness and process identity inside the per-process critical section before signaling. Assert zero signals if an owner resumes or ownership becomes ambiguous. At most one initial `SIGTERM` is sent per process identity, and no lock is held while waiting for user input.
 5. Keep concurrent append and competing apply checks as regression gates. Expand fixtures for journal version drift and `brew upgrade`; unsupported or ambiguous evidence never becomes actionable. Review `unsafe` code and supported host and MCP version drift.
-6. Meet the p50 and p95 hook budgets on the release binary under this workload. Run one machine through at least two weeks of dogfood and record attribution errors, false proposals, blocked applies, signals, failures and latency. The [dogfood record](docs/m6/dogfood.md) defines the aggregate fields.
+6. Meet the p50 and p95 hook budgets on the release binary under this workload. After beta, record attribution errors, false proposals, blocked applies, signals, failures and latency during real use. The [dogfood record](docs/m6/dogfood.md) defines the aggregate fields.
 
 Use `agent_id`, `agent_type`, `SubagentStart` and `SubagentStop` from the Claude Code [hooks reference](https://code.claude.com/docs/en/hooks). Agent Teams behavior is described in the [Agent Teams documentation](https://code.claude.com/docs/en/agent-teams).
 
 Implementation note: new `agent_id` values are stored as keyed digests for activity correlation. Record routing uses the agent and raw `session_id`, then exact process identity. `agent_type`, transcript paths and transcript contents are ignored. Missing IDs, failed digests and child-first events make that session non-actionable. Schema version 2 fences older readers, which otherwise could skip the only record of a live additional owner. Apply stores the exact attribution owner set with the approved plan item and compares it with a fresh survey while holding the per-process lock.
 
-Exit: at least one exact Claude Code version has a complete scenario matrix that passes replay, and criterion 9 passes for every version listed as supported. No protected or ambiguous candidate receives a signal. Competing apply sends at most one initial `SIGTERM` per process identity. Hook latency meets criterion 2, and one machine completes at least two weeks of dogfood with the M6 metrics recorded.
+Exit: at least one exact Claude Code version has a complete scenario matrix that passes replay, and criterion 9 passes for every version listed as supported. No protected or ambiguous candidate receives a signal. Competing apply sends at most one initial `SIGTERM` per process identity. Hook latency meets criterion 2. Real use observation follows beta and informs v1 promotion.
 
 ### M7 Read-only disk report (M)
 
