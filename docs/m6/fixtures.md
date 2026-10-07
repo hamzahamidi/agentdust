@@ -32,7 +32,7 @@ If Agent Teams support is evaluated later, set `CLAUDE_CODE_EXPERIMENTAL_AGENT_T
 
 No Claude Code version range is declared for M6. A version can be listed as supported for lifecycle and attribution behavior only after every core scenario below is captured and passes replay for that exact version. These fixtures do not establish process signalling safety; the apply test suite covers that separately. Agent Teams are not in the v1 support matrix. A fixture proves only the scenario it records.
 
-The local CLI reported Claude Code 2.1.292 on macOS 26.6.2 arm64 on 2026-10-07. Sanitized captures cover three concurrent sessions, two background subagents, one foreground subagent, resume, `/clear` and abrupt exit. The abrupt-exit capture records a session start and one paired Bash call without a `SessionEnd` event after the CLI was terminated while a background child remained alive. The normalized file stores hook events only, not the helper command or PID. Agent Teams are outside the v1 support matrix. The 2.1.289 capture below is not a version-wide compatibility claim.
+The local CLI reported Claude Code 2.1.292 on macOS 26.6.2 arm64 on 2026-10-07. Sanitized captures cover three concurrent sessions, two background subagents, one foreground subagent, resume, `/clear` and abrupt exit. The abrupt-exit capture records a session start and one paired Bash call without a `SessionEnd` event after forced CLI termination. During the capture, the background child was separately observed to remain alive. The normalized file stores hook events only, not the helper command or PID. Agent Teams are outside the v1 support matrix. The 2.1.289 capture below is not a version-wide compatibility claim.
 
 ## Recorded clients
 
