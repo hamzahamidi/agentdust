@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 TAP = "agentdust-local/m0"
@@ -41,11 +42,15 @@ esac
 
 def run(*command: str, env: dict[str, str] | None = None) -> str:
     print("+", " ".join(command), flush=True)
-    result = subprocess.run(command, check=True, capture_output=True, text=True, env=env)
+    result = subprocess.run(command, capture_output=True, text=True, env=env)
     if result.stdout:
         print(result.stdout, end="", flush=True)
     if result.stderr:
         print(result.stderr, end="", file=sys.stderr, flush=True)
+    if result.returncode:
+        raise subprocess.CalledProcessError(
+            result.returncode, command, output=result.stdout, stderr=result.stderr
+        )
     return result.stdout.strip()
 
 
@@ -59,6 +64,7 @@ def verify_setup_and_apply(binary: Path, version: str) -> None:
         stubs = root / "stubs"
         for directory in (home, claude_config, data, state, stubs):
             directory.mkdir(parents=True)
+        data.chmod(0o700)
 
         claude = stubs / "claude"
         claude.write_text(CLAUDE_STUB)
@@ -72,9 +78,16 @@ def verify_setup_and_apply(binary: Path, version: str) -> None:
             "PATH": isolated_path,
         }
 
+        setup_started = time.perf_counter()
         setup = run(str(binary), "setup", "--yes", env=setup_env)
-        if "Setup finished" not in setup or "SessionStart" not in setup:
+        setup_seconds = time.perf_counter() - setup_started
+        if not all(marker in setup for marker in ("--- ", "+++ ", "SessionStart", "Setup finished")):
             sys.exit("setup did not print its expected diff and completion message")
+        if max(setup.index("--- "), setup.index("+++ ")) > setup.index("Setup finished"):
+            sys.exit("setup did not print its diff before the completion message")
+        if setup_seconds >= 5:
+            sys.exit(f"setup took {setup_seconds:.2f} seconds, expected under 5 seconds")
+        print(f"Homebrew setup completed in {setup_seconds:.2f} seconds")
         run(str(binary), "setup", "--check", env=setup_env)
         settings = json.loads((claude_config / "settings.json").read_text())
         if "SessionStart" not in settings.get("hooks", {}):
