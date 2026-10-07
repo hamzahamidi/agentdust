@@ -394,8 +394,9 @@ fn sanitized_real_claude_2_1_292_fixtures_replay_with_consistent_session_and_too
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
     assert_eq!(resume_values[0]["source"], "resume");
-    assert_eq!(resume[0].session_id, resume[1].session_id);
-    assert_eq!(resume[0].session_id, two_subagents[0].session_id);
+    let resume_session_ids: BTreeSet<_> = resume.iter().map(|event| event.session_id.as_str()).collect();
+    assert_eq!(resume_session_ids.len(), 1);
+    assert!(resume_session_ids.contains(two_subagents[0].session_id.as_str()));
     assert_fixture_is_sanitized(RESUME);
 
     let clear = fixture_events(CLEAR);
