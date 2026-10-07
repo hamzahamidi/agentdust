@@ -4,7 +4,7 @@
 
 AgentDust is a macOS tool that finds processes left running after Claude Code sessions and stops them only after you approve each one with a typed code. It also reports Claude Code disk usage without deleting files. Codex and Cursor support are deferred.
 
-**The 1.0.0 release candidate targets Claude Code on Apple silicon and is being prepared for Homebrew validation. Captured fixtures cover the listed concurrent session, subagent and lifecycle scenarios on Claude Code 2.1.292, including an abrupt CLI exit. Agent Teams remain outside the support claim. The candidate needs the exact Homebrew acceptance run before stable promotion.** See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
+**AgentDust 1.0.0 supports Claude Code on Apple silicon. Captured fixtures cover the listed concurrent session, subagent and lifecycle scenarios on Claude Code 2.1.292, including an abrupt CLI exit. Agent Teams remain outside the support claim. The installed Homebrew binary passed controlled human decline and typed approval checks on the maintainer's Mac ([release evidence](docs/v1/readiness.md)).** See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
 
 Agents start dev servers, MCP servers and helpers. When a session ends or crashes, some of them keep running under `launchd`, holding memory, ports and sometimes CPU. The upstream reports are open: [anthropics/claude-code#1935](https://github.com/anthropics/claude-code/issues/1935) and [openai/codex#21008](https://github.com/openai/codex/issues/21008).
 
@@ -12,7 +12,7 @@ Security and privacy: [SECURITY.md](SECURITY.md), the [threat model](docs/threat
 
 ## Status
 
-Release 0.1 provides analysis and approved cleanup for Claude Code. M7 adds a read-only disk report. Codex, Cursor and broader beta hardening are deferred. The milestones are in [ROADMAP.md](ROADMAP.md).
+AgentDust 1.0.0 provides process analysis, approved cleanup and a read-only disk report for Claude Code, with attribution across concurrent sessions and subagents. Codex and Cursor remain deferred. The milestones are in [ROADMAP.md](ROADMAP.md).
 
 | Part | State |
 | --- | --- |
@@ -75,7 +75,7 @@ Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
 
 ## Using AgentDust 1.0.0
 
-Release 1.0.0 supports Apple silicon with Claude Code. It is a prerelease candidate awaiting the maintainer's Homebrew acceptance check. The listed M6 lifecycle and attribution scenarios are captured and replayed for Claude Code 2.1.292. Agent Teams remain outside the support claim. See the [M6 fixture matrix](docs/m6/fixtures.md) for the tested scenarios and their limits.
+Release 1.0.0 supports Apple silicon with Claude Code. Homebrew installation, setup, live session discovery and controlled human cleanup acceptance passed on the maintainer's Mac. The listed M6 lifecycle and attribution scenarios are captured and replayed for Claude Code 2.1.292. Agent Teams remain outside the support claim. See the [M6 fixture matrix](docs/m6/fixtures.md) for the tested scenarios and their limits.
 
 ### Install and connect
 
