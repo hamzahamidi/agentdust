@@ -2,6 +2,23 @@
 
 A release starts when a tag `vX.Y.Z` is pushed. [`release.yml`](../.github/workflows/release.yml) checks the tag, builds the binary twice on `macos-15` and creates a draft GitHub Release. A person checks and publishes the draft, then merges the pull request that puts the new formula in the Homebrew tap. The tap job reuses its release branch on retry. [`homebrew-tap-recovery.yml`](../.github/workflows/homebrew-tap-recovery.yml) can open the tap pull request for an already published release. This is spec 8.4 and S20.
 
+## Semantic Versioning
+
+AgentDust follows [Semantic Versioning 2.0.0](https://semver.org/). Version 1.0.0 establishes the compatibility baseline for the installed product: documented CLI commands and flags, machine-readable JSON output, MCP tool names and request/response contracts, documented configuration, and hook/plugin integration contracts. Human-readable prose, internal Rust interfaces and implementation details are not public API. Updates must preserve access to existing local data, or provide a documented migration.
+
+| Change from 1.0.0 | Next version | Rule |
+| --- | --- | --- |
+| Backward-compatible bug fixes | `1.0.1` | Increment PATCH |
+| Backward-compatible features or public API deprecations | `1.1.0` | Increment MINOR and reset PATCH |
+| Incompatible public API changes | `2.0.0` | Increment MAJOR and reset MINOR and PATCH |
+| Website or repository documentation only | No binary release required | Update the documentation without assigning a new binary version |
+
+Choose the bump from the complete diff since the previous release. Commit prefixes and milestone numbers do not determine it. The version PR must identify the affected public contracts and explain why the bump matches them. When changes span multiple categories, use the largest required bump. A major version is a compatibility decision, not a measure of effort or feature count.
+
+Published tags and package contents are immutable. A change to a published binary requires a new version. A documentation merge does not change the source commit or assets of an existing release.
+
+A SemVer prerelease has an identifier such as `1.1.0-rc.1`; GitHub's prerelease checkbox does not add that identifier. The current workflow and tap scripts accept only stable `MAJOR.MINOR.PATCH` identifiers. Use the release dry-run workflow for unpublished validation. Publishing SemVer prereleases requires explicit workflow and packaging support before creating those tags.
+
 ## What the workflow does
 
 | Job | Runs on | What it does |
