@@ -1,6 +1,6 @@
 # AgentDust roadmap
 
-The binary is `agentdust`. M0 is complete with the Cursor coverage gap recorded in [the M0 report](docs/m0/report.md). M1 is complete, with its journal decision recorded in [ADR-1](docs/m1/adr-journal-format.md). M2 and M3 shipped in the [0.1.0 release](https://github.com/hamzahamidi/agentdust/releases/tag/v0.1.0). The 0.1.0 Homebrew formula is merged. Verify installation from a clean account before expanding the release matrix. Design: [the design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
+The binary is `agentdust`. M0 is complete with the Cursor coverage gap recorded in [the M0 report](docs/m0/report.md). M1 is complete, with its journal decision recorded in [ADR-1](docs/m1/adr-journal-format.md). M2 and M3 shipped in the [0.1.0 release](https://github.com/hamzahamidi/agentdust/releases/tag/v0.1.0), and M7 shipped in [0.2.0](https://github.com/hamzahamidi/agentdust/releases/tag/v0.2.0). M6 implementation merged in [PR #25](https://github.com/hamzahamidi/agentdust/pull/25); the capture helper and first real fixture merged in [PR #26](https://github.com/hamzahamidi/agentdust/pull/26). Clean-account installation and the remaining M6 validation are still open. See the [v1 readiness record](docs/v1/readiness.md). Design: [the design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
 
 ## Goal
 
@@ -17,14 +17,14 @@ Multi-agent here means concurrent Claude Code sessions, foreground and backgroun
 
 ## v1.0 success criteria
 
-1. Install: `brew install` pours a prebuilt binary and never compiles. `agentdust setup` finishes in under 5 seconds on a declared fixture account and prints a diff before changing anything.
+1. Install: `brew install` pours a prebuilt binary and never compiles. `agentdust setup` completes in under 5 seconds of execution time, excluding the person's review and consent wait, on a declared fixture account, and prints a diff before changing anything.
 2. Hook cost: p50 under 10 ms and p95 under 20 ms on the release binary under the three-session and subagent workload in criterion 9.
 3. Idle: the MCP server does no periodic work when idle. CPU over a 60 second idle window stays under 0.1%. Resident memory is reported per release (target under 10 MB).
 4. Actionability: `apply` rejects managed and unknown items, even when the model supplies their ID. Owned-ended items can be approved as one batch with one typed code. Every suspect item needs its own typed code, shows its evidence, and is never signalled as part of a process group.
 5. Classifier: fixtures carry ground-truth labels (`true_owned_ended`, `true_live_owned`, `true_detached`, `true_managed`, `true_unknown`). No fixture outside `true_owned_ended` is classified owned-ended, no `true_managed` or `true_unknown` fixture is ever actionable, and every `true_owned_ended` fixture is classified owned-ended.
 6. Privacy: fixture secrets never appear anywhere under the AgentDust data directory, checked by a test.
-7. Supply chain: dependencies are locked from the first commit. Each release ships a checksum, an artifact attestation, an SBOM, and two independent macOS arm64 builds that produce a byte-identical binary.
-8. Evidence: at least three independent machines run 0.x builds for two weeks, with sessions, proposed kills, false positives and failures counted.
+7. Supply chain: dependencies are locked from the first code commit. Each release ships a checksum, an artifact attestation, an SBOM, and two independent macOS arm64 builds that produce a byte-identical binary.
+8. Evidence: at least three independent Apple silicon Macs run 0.x builds for at least two weeks, with sessions, proposed kills, false positives and failures counted.
 9. Multi-agent isolation: test three concurrent Claude Code sessions, two active subagents in one session, and an Agent Team with two teammates. Interleaved events and helpers resolve only to their exact attribution scopes. Parent-ended/child-live, child-ended/parent-live, unrelated-session-live and ambiguous/shared ownership cases are covered. A helper is owned-live while any attributed owner is live, and owned-ended only after all attributed owners are proven gone. An unrelated live session does not change the candidate's classification. Ambiguous ownership stays non-actionable. After typed approval, apply revalidates owner liveness and process identity inside the per-process critical section before signaling.
 
 ## Decisions made
@@ -46,11 +46,11 @@ Multi-agent here means concurrent Claude Code sessions, foreground and backgroun
 
 ## Open decisions
 
-1. Suspect rules: the exact age, idleness and launcher-chain thresholds, set from the M1 fixture corpus.
+1. Suspect thresholds: the classifier currently uses a 30 minute age threshold and a two second idle sample. The M1 corpus verifies that the chosen age is applied, but does not establish that 30 minutes is the right threshold. Review false proposals during dogfood before treating the value as validated. See [fixture limits](docs/fixtures.md#the-suspect-thresholds).
 
 ## Current priority
 
-M7 shipped in 0.2.0 as a read-only disk report for Claude Code on macOS. Next is M6: prove safe attribution and cleanup across concurrent Claude Code sessions and subagents on macOS. Codex (M4), Cursor (M5) and operating system expansion remain deferred.
+M7 shipped in 0.2.0 as a read-only disk report for Claude Code on macOS. M6 implementation is merged. The remaining work is real-client fixture coverage, full-workload hook latency and dogfood. The clean-account install gate also remains open. Codex (M4), Cursor (M5) and operating system expansion remain deferred.
 
 ## Milestones
 
@@ -86,7 +86,7 @@ Exit: primitives and storage survive unit, property, fuzz and concurrency tests,
 - Acceptance cases: fresh session, resumed session, after `/clear`, subagent Bash, `CLAUDE_ENV_FILE` missing, abrupt termination, normal session end.
 - Sanitised, typed, redacted `doctor` output.
 
-Exit: controlled Claude fixtures whose session has ended become owned-ended and no protected or non-owned fixture does.
+Exit: controlled Claude fixtures become owned-ended only after every exact attributed owner is proven gone. A `SessionEnd` event alone does not prove that its process ended. No protected or non-owned fixture becomes actionable.
 
 ### M3 Plan, apply and Homebrew: release 0.1 (L)
 
@@ -97,7 +97,7 @@ Exit: controlled Claude fixtures whose session has ended become owned-ended and 
 - `agentdust setup` for Claude Code: full diff, consent, surgical edits, idempotent, `--check`, `--remove`, ownership manifest, rollback report for partial failure.
 - Homebrew formula, `agentdust support-bundle` (a local file, never uploaded), README, security and privacy documents.
 
-Exit: on a clean account, install, setup, a controlled stale process found by a Claude Code session, typed approval, and exactly that process receives SIGTERM.
+Exit: on a clean account, install the prebuilt release. Verify `agentdust setup` completes in under 5 seconds of execution time, excluding the person's review and consent wait, and prints its full diff before changing anything. Review and approve the diff, find a controlled stale process, approve it with a typed code, and verify that exactly that process receives `SIGTERM`. Neither published release establishes this clean-account acceptance run.
 
 ### M4 Codex adapter and setup (L, deferred)
 
@@ -111,36 +111,36 @@ Exit: on a clean account, install, setup, a controlled stale process found by a 
 
 ### M6 Multi-agent hardening and beta (L)
 
-1. Capture fixtures from declared supported Claude Code versions for three concurrent sessions, two active subagents in one session, and one Agent Team with two teammates. Interleave shell and lifecycle events; cover foreground and background subagents, resume, `/clear` and abrupt exit. Record each client's version and hook payload in the [M6 fixture log](docs/m6/fixtures.md).
+1. Record fixtures for three concurrent sessions, two active subagents in one session, and one Agent Team with two teammates. Interleave shell and lifecycle events; cover foreground and background subagents, resume, `/clear` and abrupt exit. Record each client's version and hook payload in the [M6 fixture log](docs/m6/fixtures.md). M6 support claims apply only to exact Claude Code versions with a complete scenario matrix that passes replay. The current 2.1.289 capture covers one scenario and does not establish version-wide support.
 2. Route records by agent and session ID, then use exact process identity to resolve resumed scopes and additional owners. The keyed subagent ID groups lifecycle activity; it does not identify the process owner. Agent Team teammates are separate Claude Code instances and use independent session and process scopes when those identities are present. Every tag resolves to exact attribution scopes; a candidate may have multiple owners. Missing or ambiguous ownership stays non-actionable. Test parent `SessionEnd` while its process is live, subagent stop while the parent is live, unrelated session live, resumed sessions, and shared ownership. Assert owned-live while any attributed owner is alive or unverified, owned-ended only after every exact owner is proven gone, and no classification change from an unrelated session.
 3. Record and test `SubagentStart` and `SubagentStop`. Include missing IDs, failed ID digests, child events before parent start, duplicate starts, repeated and blocked stops, late events across resume and `/clear`, and abrupt exits. A stop or abrupt-exit event alone does not establish that its owner ended. Require fresh liveness evidence for every exact owner identity; unknown stays non-actionable, and stale events cannot close a newer owner scope.
 4. Race `apply` across separate MCP server processes, including owner or process identity changes during approval. After approval, revalidate owner liveness and process identity inside the per-process critical section before signaling. Assert zero signals if an owner resumes or ownership becomes ambiguous. At most one initial `SIGTERM` is sent per process identity, and no lock is held while waiting for user input.
 5. Keep concurrent append and competing apply checks as regression gates. Expand fixtures for journal version drift and `brew upgrade`; unsupported or ambiguous evidence never becomes actionable. Review `unsafe` code and supported host and MCP version drift.
-6. Meet the p50 and p95 hook budgets under this workload. Run one machine through two weeks of dogfood and record attribution errors, false proposals, blocked applies and signal counts.
+6. Meet the p50 and p95 hook budgets on the release binary under this workload. Run one machine through at least two weeks of dogfood and record attribution errors, false proposals, blocked applies, signals, failures and latency. The [dogfood record](docs/m6/dogfood.md) defines the aggregate fields.
 
 Use `agent_id`, `agent_type`, `SubagentStart` and `SubagentStop` from the Claude Code [hooks reference](https://code.claude.com/docs/en/hooks). Agent Teams behavior is described in the [Agent Teams documentation](https://code.claude.com/docs/en/agent-teams).
 
 Implementation note: new `agent_id` values are stored as keyed digests for activity correlation. Record routing uses the agent and raw `session_id`, then exact process identity. `agent_type`, transcript paths and transcript contents are ignored. Missing IDs, failed digests and child-first events make that session non-actionable. Schema version 2 fences older readers, which otherwise could skip the only record of a live additional owner. Apply stores the exact attribution owner set with the approved plan item and compares it with a fresh survey while holding the per-process lock.
 
-Exit: the v1 multi-agent isolation criterion passes. No protected or ambiguous candidate receives a signal. Competing apply sends at most one initial `SIGTERM` per process identity. Hook latency meets criterion 2, and one machine completes two weeks of dogfood with the M6 metrics recorded.
+Exit: at least one exact Claude Code version has a complete scenario matrix that passes replay, and criterion 9 passes for every version listed as supported. No protected or ambiguous candidate receives a signal. Competing apply sends at most one initial `SIGTERM` per process identity. Hook latency meets criterion 2, and one machine completes at least two weeks of dogfood with the M6 metrics recorded.
 
 ### M7 Read-only disk report (M)
 
 - Claude Code configuration and current-project worktree inventory through `agentdust disk [--json]` and `agentdust_disk`. Entries are classified rebuildable, history, worktree, application state or unknown. Logical and allocated size are reported separately. Partial scans are marked. Nothing is deleted. [Scope and limits](docs/m7/disk.md).
 
-### M8 Claude Code plugin and upstream (S, external latency)
+### M8 Optional Claude Code plugin and upstream work (S, external)
 
-- Submit the optional Claude Code cleanup plugin, shipped in 0.1, to Anthropic's directory. Add one technical comment on anthropics/claude-code#1935 and request a lifecycle event carrying the PID and session of spawned processes.
+- The cleanup plugin code was added in [PR #20](https://github.com/hamzahamidi/agentdust/pull/20). Optionally submit it to Anthropic's directory and add a technical comment on [anthropics/claude-code#1935](https://github.com/anthropics/claude-code/issues/1935) requesting a lifecycle event with the PID and session of spawned processes.
 
-Exit: the Claude Code plugin is submitted. Acceptance by third parties is not a gate.
+Exit: optional. Directory acceptance and upstream response are not v1 gates.
 
 ### M9 1.0 readiness
 
-- Criteria 8 and 9 met. Process-group signals and SIGKILL are added only if real failures justify them.
+- All nine v1.0 success criteria are met and the evidence is recorded in the [readiness record](docs/v1/readiness.md). A release, merge or test pass closes only the criterion it directly verifies. Process-group signals and `SIGKILL` are added only if real failures justify them.
 
 ## Platform expansion after v1
 
-The current target is Claude Code on macOS arm64. Keep Codex and Cursor deferred. Verify the Claude Code install and collect the two-week dogfood evidence before expanding to another operating system.
+The current target is Claude Code on macOS arm64. Keep Codex and Cursor deferred. Complete all nine v1 criteria, including clean-account installation and the two-week evidence period, before expanding to another operating system.
 
 ### M10 Intel macOS (M)
 
@@ -174,7 +174,11 @@ Native Windows is not scheduled. Start it only after user requests justify a sep
 
 ## Deferred capabilities
 
-Codex and Cursor adapters, process-group signals, SIGKILL, listening ports, persisted plans, upstream outreach.
+Codex and Cursor adapters, process-group signals, `SIGKILL`, listening ports, persisted plans.
+
+## Optional external work
+
+The M8 plugin directory submission and upstream issue comment are optional. Neither is required for v1.
 
 ## Not in v1
 
