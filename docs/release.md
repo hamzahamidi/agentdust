@@ -17,6 +17,8 @@ Choose the bump from the complete diff since the previous release. Commit prefix
 
 Published tags and package contents are immutable. A change to a published binary requires a new version. A documentation merge does not change the source commit or assets of an existing release.
 
+Release tags use `vMAJOR.MINOR.PATCH` and match the package version after removing the `v`. The GitHub release title is the exact tag, such as `v1.0.0`. Product names and descriptive labels belong in the release body.
+
 A SemVer prerelease has an identifier such as `1.1.0-rc.1`; GitHub's prerelease checkbox does not add that identifier. The current workflow and tap scripts accept only stable `MAJOR.MINOR.PATCH` identifiers. Use the release dry-run workflow for unpublished validation. Publishing SemVer prereleases requires explicit workflow and packaging support before creating those tags.
 
 ## What the workflow does

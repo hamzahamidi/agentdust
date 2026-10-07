@@ -168,7 +168,7 @@ jobs:
         with:
           name: release-files
           path: dist
-      - run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "agentdust $VERSION" --generate-notes dist/*
+      - run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "$GITHUB_REF_NAME" --generate-notes dist/*
 
   tap-pr:
     needs: [verify, package, release]
