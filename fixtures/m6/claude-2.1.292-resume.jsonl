@@ -1,0 +1,4 @@
+{"hook_event_name":"SessionStart","session_id":"session-a05855460e7130ff","source":"resume"}
+{"hook_event_name":"PreToolUse","session_id":"session-a05855460e7130ff","tool_name":"Bash","tool_use_id":"tool-39ec9ba647a8b80c"}
+{"hook_event_name":"PostToolUse","session_id":"session-a05855460e7130ff","tool_name":"Bash","tool_use_id":"tool-39ec9ba647a8b80c"}
+{"hook_event_name":"SessionEnd","reason":"other","session_id":"session-a05855460e7130ff"}

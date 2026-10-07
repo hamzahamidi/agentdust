@@ -1,0 +1,12 @@
+{"hook_event_name":"SessionStart","session_id":"session-80d948f98ab66c2a","source":"startup"}
+{"hook_event_name":"SessionStart","session_id":"session-c0e6d5e3580aa5f0","source":"startup"}
+{"hook_event_name":"SessionStart","session_id":"session-4986341680dbffe5","source":"startup"}
+{"hook_event_name":"PreToolUse","session_id":"session-c0e6d5e3580aa5f0","tool_name":"Bash","tool_use_id":"tool-e7b762fbda2f7eb5"}
+{"hook_event_name":"PreToolUse","session_id":"session-80d948f98ab66c2a","tool_name":"Bash","tool_use_id":"tool-35191943b266a174"}
+{"hook_event_name":"PreToolUse","session_id":"session-4986341680dbffe5","tool_name":"Bash","tool_use_id":"tool-df70e878f39e827b"}
+{"hook_event_name":"PostToolUse","session_id":"session-80d948f98ab66c2a","tool_name":"Bash","tool_use_id":"tool-35191943b266a174"}
+{"hook_event_name":"PostToolUse","session_id":"session-c0e6d5e3580aa5f0","tool_name":"Bash","tool_use_id":"tool-e7b762fbda2f7eb5"}
+{"hook_event_name":"PostToolUse","session_id":"session-4986341680dbffe5","tool_name":"Bash","tool_use_id":"tool-df70e878f39e827b"}
+{"hook_event_name":"SessionEnd","reason":"other","session_id":"session-80d948f98ab66c2a"}
+{"hook_event_name":"SessionEnd","reason":"other","session_id":"session-c0e6d5e3580aa5f0"}
+{"hook_event_name":"SessionEnd","reason":"other","session_id":"session-4986341680dbffe5"}

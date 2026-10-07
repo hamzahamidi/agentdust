@@ -1,0 +1,6 @@
+{"hook_event_name":"SessionStart","session_id":"session-2d52c5bb1f302999","source":"startup"}
+{"agent_id":"agent-78c230e2ec127246","agent_type_present":true,"hook_event_name":"SubagentStart","session_id":"session-2d52c5bb1f302999"}
+{"agent_id":"agent-78c230e2ec127246","agent_type_present":true,"hook_event_name":"PreToolUse","session_id":"session-2d52c5bb1f302999","tool_name":"Bash","tool_use_id":"tool-623215136a1245a7"}
+{"agent_id":"agent-78c230e2ec127246","agent_type_present":true,"hook_event_name":"PostToolUse","session_id":"session-2d52c5bb1f302999","tool_name":"Bash","tool_use_id":"tool-623215136a1245a7"}
+{"agent_id":"agent-78c230e2ec127246","agent_type_present":true,"hook_event_name":"SubagentStop","session_id":"session-2d52c5bb1f302999","stop_hook_active":false}
+{"hook_event_name":"SessionEnd","reason":"other","session_id":"session-2d52c5bb1f302999"}

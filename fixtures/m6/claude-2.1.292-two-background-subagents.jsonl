@@ -1,0 +1,10 @@
+{"hook_event_name":"SessionStart","session_id":"session-a05855460e7130ff","source":"startup"}
+{"agent_id":"agent-5e4ccc3fedff67fd","agent_type_present":true,"hook_event_name":"SubagentStart","session_id":"session-a05855460e7130ff"}
+{"agent_id":"agent-0dbed3113c955db3","agent_type_present":true,"hook_event_name":"SubagentStart","session_id":"session-a05855460e7130ff"}
+{"agent_id":"agent-5e4ccc3fedff67fd","agent_type_present":true,"hook_event_name":"PreToolUse","session_id":"session-a05855460e7130ff","tool_name":"Bash","tool_use_id":"tool-f60be6e25cc14ba7"}
+{"agent_id":"agent-0dbed3113c955db3","agent_type_present":true,"hook_event_name":"PreToolUse","session_id":"session-a05855460e7130ff","tool_name":"Bash","tool_use_id":"tool-0b6c8c8e5a70e801"}
+{"agent_id":"agent-0dbed3113c955db3","agent_type_present":true,"hook_event_name":"PostToolUse","session_id":"session-a05855460e7130ff","tool_name":"Bash","tool_use_id":"tool-0b6c8c8e5a70e801"}
+{"agent_id":"agent-5e4ccc3fedff67fd","agent_type_present":true,"hook_event_name":"PostToolUse","session_id":"session-a05855460e7130ff","tool_name":"Bash","tool_use_id":"tool-f60be6e25cc14ba7"}
+{"agent_id":"agent-0dbed3113c955db3","agent_type_present":true,"hook_event_name":"SubagentStop","session_id":"session-a05855460e7130ff","stop_hook_active":false}
+{"agent_id":"agent-5e4ccc3fedff67fd","agent_type_present":true,"hook_event_name":"SubagentStop","session_id":"session-a05855460e7130ff","stop_hook_active":false}
+{"hook_event_name":"SessionEnd","reason":"other","session_id":"session-a05855460e7130ff"}

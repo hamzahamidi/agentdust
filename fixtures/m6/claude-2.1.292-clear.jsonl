@@ -1,0 +1,4 @@
+{"hook_event_name":"SessionStart","session_id":"session-a05855460e7130ff","source":"resume"}
+{"hook_event_name":"SessionEnd","reason":"clear","session_id":"session-a05855460e7130ff"}
+{"hook_event_name":"SessionStart","session_id":"session-66e9a9acaaa268ef","source":"clear"}
+{"hook_event_name":"SessionEnd","reason":"other","session_id":"session-66e9a9acaaa268ef"}
