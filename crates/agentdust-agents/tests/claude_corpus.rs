@@ -425,6 +425,32 @@ fn sanitized_real_claude_2_1_292_fixtures_replay_with_consistent_session_and_too
 }
 
 #[test]
+fn sanitized_real_claude_2_1_292_abrupt_exit_keeps_the_unclosed_session_start() {
+    const ABRUPT_EXIT: &str = include_str!("../../../fixtures/m6/claude-2.1.292-abrupt-exit.jsonl");
+    let events = fixture_events(ABRUPT_EXIT);
+
+    assert_eq!(
+        kinds(&events),
+        [
+            Some(Kind::SessionStart),
+            Some(Kind::ShellStart),
+            Some(Kind::ShellEnd),
+        ]
+    );
+    assert_tool_events_pair(&events);
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| event.session_id.as_str())
+            .collect::<BTreeSet<_>>()
+            .len(),
+        1
+    );
+    assert!(!events.iter().any(|event| event.hook_event_name == "SessionEnd"));
+    assert_fixture_is_sanitized(ABRUPT_EXIT);
+}
+
+#[test]
 fn the_payload_seeds_reach_every_outcome_of_the_parser() {
     let outcomes: Vec<_> = seeds()
         .iter()

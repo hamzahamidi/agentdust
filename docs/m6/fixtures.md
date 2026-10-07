@@ -32,7 +32,7 @@ If Agent Teams support is evaluated later, set `CLAUDE_CODE_EXPERIMENTAL_AGENT_T
 
 No Claude Code version range is declared for M6. A version can be listed as supported for lifecycle and attribution behavior only after every core scenario below is captured and passes replay for that exact version. These fixtures do not establish process signalling safety; the apply test suite covers that separately. Agent Teams are not in the v1 support matrix. A fixture proves only the scenario it records.
 
-The local CLI reported Claude Code 2.1.292 on macOS 26.6.2 arm64 on 2026-10-07. Sanitized captures cover three concurrent sessions, two background subagents, one foreground subagent, resume and `/clear`. Abrupt exit remains unrecorded, so 2.1.292 is not listed as supported. Agent Teams are outside the v1 support matrix. The 2.1.289 capture below is not a version-wide compatibility claim.
+The local CLI reported Claude Code 2.1.292 on macOS 26.6.2 arm64 on 2026-10-07. Sanitized captures cover three concurrent sessions, two background subagents, one foreground subagent, resume, `/clear` and abrupt exit. The abrupt-exit capture records a session start and one paired Bash call without a `SessionEnd` event after forced CLI termination. During the capture, the background child was separately observed to remain alive. The normalized file stores hook events only, not the helper command or PID. Agent Teams are outside the v1 support matrix. The 2.1.289 capture below is not a version-wide compatibility claim.
 
 ## Recorded clients
 
@@ -45,6 +45,7 @@ The local CLI reported Claude Code 2.1.292 on macOS 26.6.2 arm64 on 2026-10-07. 
 | 2.1.292 | 26.6.2 | One foreground subagent with one Bash call | [`claude-2.1.292-foreground-subagent.jsonl`](../../fixtures/m6/claude-2.1.292-foreground-subagent.jsonl) |
 | 2.1.292 | 26.6.2 | Resumed session | [`claude-2.1.292-resume.jsonl`](../../fixtures/m6/claude-2.1.292-resume.jsonl) |
 | 2.1.292 | 26.6.2 | `/clear` and the resulting new session | [`claude-2.1.292-clear.jsonl`](../../fixtures/m6/claude-2.1.292-clear.jsonl) |
+| 2.1.292 | 26.6.2 | Abrupt CLI exit after a Bash call, with no `SessionEnd` hook | [`claude-2.1.292-abrupt-exit.jsonl`](../../fixtures/m6/claude-2.1.292-abrupt-exit.jsonl) |
 
 The 2.1.289 capture produced two `SubagentStart` events before either helper call, paired `PreToolUse` and `PostToolUse` events for each agent, then two matching `SubagentStop` events. The fixture test replays the normalized records through the Claude adapter.
 
@@ -58,9 +59,9 @@ The 2.1.289 capture produced two `SubagentStart` events before either helper cal
 | Background subagent | Recorded on 2.1.292 |
 | Resume | Recorded on 2.1.292 |
 | `/clear` | Recorded on 2.1.292 |
-| Abrupt exit | Unrecorded |
+| Abrupt exit | Recorded on 2.1.292 |
 | Agent Team with two teammates | Out of v1 scope, experimental |
 
-The 2.1.292 hook fixtures replay through the Claude adapter test. The ignored release benchmark in `crates/agentdust/tests/hook_latency.rs` replays all captured events sequentially three times, then replays the three session streams and two background subagent streams concurrently while preserving order within each stream. It reports per-event p50 and p95. This measures hook replay, not live Claude Code concurrency. Abrupt exit is still missing. Synthetic tests cover owner liveness, unrelated sessions, shared ownership and apply races. Real hook fixtures do not replace those process identity and signalling checks.
+The 2.1.292 hook fixtures replay through the Claude adapter test. The abrupt-exit fixture confirms the real hook sequence has no `SessionEnd` after forced CLI termination; it does not test process signalling. Synthetic tests cover owner liveness, unrelated sessions, shared ownership and apply races. The ignored release benchmark in `crates/agentdust/tests/hook_latency.rs` replays all captured events sequentially three times, then replays the three session streams and two background subagent streams concurrently while preserving order within each stream. It reports per-event p50 and p95. This measures hook replay, not live Claude Code concurrency. Real hook fixtures do not replace process identity and signalling checks.
 
-The core fixture matrix remains incomplete because abrupt exit is unrecorded. No Claude Code version is declared supported until that scenario is captured and the core matrix passes replay. Agent Teams remain experimental and unsupported in v1. Real-use observations inform follow-up work. See the [dogfood record](dogfood.md).
+The listed core lifecycle and attribution scenarios are recorded and replay for Claude Code 2.1.292. This supports only the behavior represented by those fixtures, not every Claude Code version or Agent Teams. Apply safety is established separately by the apply test suite. Real-use observations inform follow-up work. See the [dogfood record](dogfood.md).

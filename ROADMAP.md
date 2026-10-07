@@ -1,6 +1,6 @@
 # AgentDust roadmap
 
-The binary is `agentdust`. M0 is complete with the Cursor coverage gap recorded in [the M0 report](docs/m0/report.md). M1 is complete, with its journal decision recorded in [ADR-1](docs/m1/adr-journal-format.md). M2 and M3 shipped in the [0.1.0 release](https://github.com/hamzahamidi/agentdust/releases/tag/v0.1.0), M7 shipped in [0.2.0](https://github.com/hamzahamidi/agentdust/releases/tag/v0.2.0), and M6 is available as the [0.3.0 limited beta](https://github.com/hamzahamidi/agentdust/releases/tag/v0.3.0). [PR #25](https://github.com/hamzahamidi/agentdust/pull/25) merged the M6 implementation; [PR #26](https://github.com/hamzahamidi/agentdust/pull/26) merged the capture helper and first real fixture. The remaining v1 gates are one controlled run on the maintainer's Mac using the exact v1 candidate, one idle measurement of that candidate and the abrupt-exit fixture. See the [v1 readiness record](docs/v1/readiness.md) and [design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
+The binary is `agentdust`. M0 is complete with the Cursor coverage gap recorded in [the M0 report](docs/m0/report.md). M1 is complete, with its journal decision recorded in [ADR-1](docs/m1/adr-journal-format.md). M2 and M3 shipped in the [0.1.0 release](https://github.com/hamzahamidi/agentdust/releases/tag/v0.1.0), M7 shipped in [0.2.0](https://github.com/hamzahamidi/agentdust/releases/tag/v0.2.0), and M6 is available as the [0.3.0 limited beta](https://github.com/hamzahamidi/agentdust/releases/tag/v0.3.0). [PR #25](https://github.com/hamzahamidi/agentdust/pull/25) merged the M6 implementation; [PR #26](https://github.com/hamzahamidi/agentdust/pull/26) merged the capture helper and first real fixture. The Claude Code 2.1.292 fixture matrix now includes abrupt exit and passes adapter replay. The remaining v1 gates are one controlled run on the maintainer's Mac using the exact v1 candidate and one idle measurement of that candidate. See the [v1 readiness record](docs/v1/readiness.md) and [design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
 
 ## Goal
 
@@ -50,7 +50,7 @@ Multi-agent here means concurrent Claude Code sessions and foreground or backgro
 
 ## Current priority
 
-M7 shipped in 0.2.0 as a read-only disk report for Claude Code on macOS. M6 implementation is merged and 0.3.0 is a limited beta. The remaining v1 work is one controlled Homebrew apply on this Mac using the exact 1.0 candidate, one idle measurement of that candidate, and an abrupt-exit fixture for Claude Code 2.1.292. Agent Teams stay experimental and outside the v1 support claim. Codex (M4), Cursor (M5), host distribution and operating system expansion remain deferred.
+M7 shipped in 0.2.0 as a read-only disk report for Claude Code on macOS. M6 implementation is merged and 0.3.0 is a limited beta. The remaining v1 work is one controlled Homebrew apply on this Mac using the exact 1.0 candidate and one idle measurement of that candidate. Agent Teams stay experimental and outside the v1 support claim. Codex (M4), Cursor (M5), host distribution and operating system expansion remain deferred.
 
 ## Milestones
 
