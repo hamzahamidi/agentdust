@@ -90,7 +90,7 @@ For the maintainer: revert the tap commit that added the withdrawn release, whic
 
 These are the points this page and the workflow cannot settle by themselves. Each one is true of the branch where this page was written.
 
-- `version` under `[workspace.package]` is 0.3.0. The gate compares the tag with the version in `Cargo.toml`.
+- `version` under `[workspace.package]` is 1.0.0 for the release candidate. The gate compares the tag with the version in `Cargo.toml`.
 - `release/toolchain.json` must match the `Cargo.lock` and the runner used by the release. Refresh it after the final lockfile change with the dry-run workflow.
 - The README describes the 0.3.0 beta and gives the Homebrew install command for Claude Code on Apple silicon.
 - `agentdust doctor`, `agentdust apply` and the MCP tools `agentdust_doctor`, `agentdust_plan` and `agentdust_apply` are implemented. M7 adds `agentdust disk [--json]`, `agentdust_disk` and `/agentdust:disk` with [scope and limits](m7/disk.md). The doctor and non-TTY apply refusal have local macOS smoke coverage. The typed approval form was exercised in Claude Code 2.1.289 and Codex CLI 0.156.1 ([client matrix](m0/client-matrix.md)). The release docs test compares the documented setup flags with the command parser.
