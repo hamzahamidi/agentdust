@@ -4,7 +4,7 @@ AgentDust 1.0.0 provides process analysis, typed approval cleanup and a read-onl
 
 ## Goal
 
-A macOS developer who uses Claude Code enables a local cleanup policy once for selected projects. AgentDust automatically stops proven leftovers from ended sessions in that scope and asks about uncertain cases. Claude Code explains the diagnosis and the result. Version 1.0 provides manual typed approval; automatic cleanup is the next product milestone, not a shipped capability.
+A macOS developer who uses Claude Code enables a local cleanup policy once for selected projects. AgentDust automatically stops proven leftovers from ended sessions in that scope and leaves uncertain cases for explicit approval. Claude Code explains the diagnosis and the result. Version 1.0 provides manual typed approval; version 1.1 adds opt-in automatic cleanup ([commands and limits](docs/automatic-cleanup.md)).
 
 Multi-agent here means concurrent Claude Code sessions and foreground or background subagents. Agent Teams are opt-in and experimental, so they stay outside the supported v1 matrix until their events and ownership are separately validated. Codex, Cursor and other adapters remain deferred.
 
@@ -12,7 +12,7 @@ Multi-agent here means concurrent Claude Code sessions and foreground or backgro
 
 - Release trust, security testing and distribution start in M0, not at the end.
 - Only owned-ended and suspect processes can ever be signalled. Suspects need their own approval, and managed or unknown processes are never signalled.
-- Automatic cleanup requires a project scope enabled by the human and covers only freshly proven owned-ended processes within that scope. AgentDust's MCP tools cannot enable or broaden that policy. Live, ambiguous, shared, likely-owned, suspect, managed and unknown processes never enter automatic cleanup.
+- Automatic cleanup requires a project scope enabled by the human and covers only freshly proven owned-ended processes within that scope. AgentDust's MCP tools cannot enable or broaden that policy. Live, ambiguous, shared across sessions, likely-owned, suspect, managed and unknown processes never enter automatic cleanup.
 - Evidence the tool stores is minimised at ingestion. Raw commands, command output and process environments are never persisted.
 - Scope is cut before estimates are tightened. The first release is narrow and complete.
 
@@ -34,7 +34,7 @@ Multi-agent here means concurrent Claude Code sessions and foreground or backgro
 | --- | --- |
 | v1 scope | Process hygiene end to end, plus a read-only disk report |
 | Language | Rust, one binary, Tokio only in the MCP subcommand |
-| Interface | One MCP server with `agentdust_doctor`, `agentdust_plan`, `agentdust_apply`, `agentdust_disk`, plus a CLI |
+| Interface | One MCP server with `agentdust_doctor`, `agentdust_plan`, `agentdust_apply`, `agentdust_disk`, and read-only `agentdust_auto_status`, plus a CLI |
 | Agents | Claude Code first, including concurrent sessions and subagents; Agent Teams experimental; Codex and Cursor deferred |
 | Provenance | Layered evidence: event-driven process sampling, a journal of paired shell calls per adapter, and an environment tag on Claude Code as additive evidence only |
 | Approval | MCP elicitation with a typed one-time code, fail closed |
@@ -51,11 +51,11 @@ Multi-agent here means concurrent Claude Code sessions and foreground or backgro
 
 ## Current priority
 
-The next priority is automatic cleanup for proven ended-session leftovers, with uncertain cases requiring approval. The 1.0 Homebrew acceptance is complete for Claude Code on Apple silicon. Real false proposals, setup execution time and live concurrency latency remain follow-up observations. Agent Teams, Codex, Cursor, other AI hosts and operating system expansion remain deferred.
+The current priority is using the opt-in automatic cleanup on the available Mac and recording useful cleanups, kept helpers and incorrect proposals. The 1.0 Homebrew acceptance is complete for Claude Code on Apple silicon. Real false proposals, setup execution time and live concurrency latency remain follow-up observations. Agent Teams, Codex, Cursor, other AI hosts and operating system expansion remain deferred.
 
-## Next product milestone: automatic cleanup
+## Automatic cleanup in 1.1
 
-The user-selected scope is automatic cleanup of proven leftovers, with approval for uncertain cases. An opt-in addition that preserves the existing manual API targets `1.1.0` under the [release policy](docs/release.md#semantic-versioning). Breaking public contracts would require a major version instead. These items are planned, not implemented.
+The user-selected scope is automatic cleanup of proven leftovers, with approval for uncertain cases. The opt-in addition preserves the existing manual API and uses `1.1.0` under the [release policy](docs/release.md#semantic-versioning). Breaking public contracts would require a major version instead. All four items are implemented. The [implementation CI run](https://github.com/hamzahamidi/agentdust/actions/runs/37740053058) passed Linux and macOS checks, including isolated normal and abrupt owner exits and survivor restart. An isolated local GUI launchd check separately passed worker start and unload. Production setup acceptance and normal-use value remain unmeasured.
 
 | Order | Deliverable | Completion evidence |
 | --- | --- | --- |
@@ -76,8 +76,8 @@ Port-conflict diagnosis is the next candidate after automatic cleanup proves use
 | --- | --- |
 | M0 through M3, M6 and M7 | Implemented for the documented Claude Code and Apple silicon scope |
 | M9 controlled Homebrew acceptance | Complete; measurement limits remain in the [readiness record](docs/v1/readiness.md) |
-| Plugin/setup guidance | Review the `0.3.0` references and explain the installed binary versus guidance-package versions |
-| Automatic cleanup | Next product milestone |
+| Plugin/setup guidance | Guidance package `0.4.0` explains installed binary versus package versions and automatic results |
+| Automatic cleanup | Implemented for `1.1.0`; measure value during normal use |
 | Port-conflict recovery | Candidate after automation delivers useful results |
 | M8 directory submission and upstream work | Optional |
 | M4, M5, other MCP hosts, M10 through M12 and native Windows | Deferred |

@@ -1,6 +1,6 @@
 {
   "name": "agentdust",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Explain AgentDust reports and local setup.",
   "author": {
     "name": "Hamza Hamidi",
@@ -20,7 +20,7 @@
   "interface": {
     "displayName": "AgentDust",
     "shortDescription": "Read AgentDust local reports",
-    "longDescription": "Explain AgentDust process and disk reports that users provide, and guide local setup. This skills package does not connect to a Mac or provide live process access. Live inspection requires a separately configured local AgentDust MCP connection. Cleanup requires AgentDust's own typed approval.",
+    "longDescription": "Explain AgentDust process and disk reports that users provide, and guide local setup. This skills package does not connect to a Mac or provide live process access. Live inspection requires a separately configured local AgentDust MCP connection. Manual cleanup requires AgentDust's typed approval. Automatic cleanup requires a directory policy enabled locally by the user.",
     "developerName": "Hamza Hamidi",
     "category": "Developer Tools",
     "capabilities": [
@@ -45,7 +45,7 @@
     "com.openai": {
       "onboardingSkill": "./skills/cleanup/SKILL.md",
       "publication": {
-        "release_notes": "Initial skills-only package for AgentDust 0.3.0 beta. Provides local process review and disk report guidance without a hosted process-control service."
+        "release_notes": "Adds guidance for opt-in automatic cleanup results in AgentDust 1.1.0. The package contains skills only; live inspection requires a separate local MCP connection."
       }
     }
   }

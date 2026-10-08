@@ -25,7 +25,7 @@ If live tools are unavailable, say this package does not create that connection.
 
 ## Automatic cleanup when the installed binary supports it
 
-If `agentdust_auto_status` is available, call it to explain the human-enabled policy, worker state, recent results and review items. Published `1.0.0` has no automatic cleanup. Do not claim it is enabled unless the status reports it.
+If `agentdust_auto_status` is available, call it to explain the human-enabled policy, worker state, recent results and review items. Automatic cleanup requires binary `1.1.0` or newer; `1.0.0` has manual cleanup only. Do not claim it is enabled unless the status reports it.
 
 The human enables an exact canonical session-start directory using `agentdust auto enable PROJECT` in their own foreground terminal. A local worker continues after Claude Code exits. Only proven owned-ended helpers in enabled scope are eligible; uncertain cases use the existing typed approval flow. Do not invoke policy mutation commands, supply consent text, remove keeps, or broaden the enabled scope. Kept identities stay protected during manual apply too.
 

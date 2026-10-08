@@ -21,7 +21,7 @@ THREAT_MODEL = ROOT / "docs" / "threat-model.md"
 REPOSITORY = "hamzahamidi/agentdust"
 SIGNER = f"{REPOSITORY}/.github/workflows/release.yml"
 VERSION = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
-RELEASE_COMMANDS = {"disk", "setup", "doctor", "apply", "status", "version", "mcp", "hook"}
+RELEASE_COMMANDS = {"disk", "setup", "doctor", "apply", "status", "version", "mcp", "hook", "auto"}
 BANNED = (
     "ensure",
     "leverage",
