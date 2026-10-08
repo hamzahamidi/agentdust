@@ -1,6 +1,6 @@
 {
   "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
-  "cargo_lock_sha256": "05cc5a4e15eefa7dc4fbd4dff4bd1bbcae6933574ac78a8aaae330c54a8a9b9c",
+  "cargo_lock_sha256": "b979974affb7158f6e8975a80f1ebff787b5e72c080c59a8729b2cffd0c02545",
   "developer_dir": "/Applications/Xcode_16.4.app/Contents/Developer",
   "runner_image": "macos15 20260907.0337.1",
   "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1",
