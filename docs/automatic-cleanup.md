@@ -41,7 +41,7 @@ The last directory removal stops and removes the worker. An unavailable director
 
 A later process with the same PID does not inherit a keep. There are no executable patterns, age rules or resource thresholds in the automatic policy. Before removing the Claude hooks with `agentdust setup --remove`, run `agentdust auto disable` to remove the separately installed worker.
 
-Pause waits for an action already holding the policy lock. Once pause writes the disabled policy, later actions cannot start. The existing `apply = false` switch also blocks automatic signals. A disabled, unreadable or unsafe policy cannot grant automatic cleanup.
+Manual and automatic execution acquire the same policy lock, including before the first policy file exists. Manual cleanup can create the private lock directory but does not enable policy or start a worker. Pause waits for an action already holding the policy lock. Once pause writes the disabled policy, later actions cannot start. The existing `apply = false` switch also blocks automatic signals. A disabled, unreadable or unsafe policy cannot grant automatic cleanup.
 
 ## What the worker does
 

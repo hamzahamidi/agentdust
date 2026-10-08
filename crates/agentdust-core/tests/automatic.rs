@@ -179,9 +179,7 @@ fn manual_execution_holds_the_policy_lock_through_signaling() {
             }
         })
         .build();
-    let mut guard = PolicyGuard::acquire(&rig.dir).unwrap();
-    guard.write().unwrap();
-    drop(guard);
+    assert!(!rig.dir.join("automatic").exists());
     thread::scope(|scope| {
         let action = scope.spawn(|| rig.executor.execute(apply_support::PLAN, &candidate));
         read_rx.recv_timeout(Duration::from_secs(5)).unwrap();

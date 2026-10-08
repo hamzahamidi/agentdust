@@ -177,12 +177,8 @@ impl PolicyGuard {
     }
 }
 
-pub fn manual_guard(dir: &Path) -> io::Result<Option<PolicyGuard>> {
-    match fs::symlink_metadata(dir.join(DIRECTORY)) {
-        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(err) => Err(err),
-        Ok(_) => PolicyGuard::acquire(dir).map(Some),
-    }
+pub fn manual_guard(dir: &Path) -> io::Result<PolicyGuard> {
+    PolicyGuard::acquire(dir)
 }
 
 pub fn write_report(dir: &Path, report: &serde_json::Value) -> io::Result<()> {

@@ -183,10 +183,7 @@ impl Executor {
             Ok(guard) => guard,
             Err(_) => return self.record(plan_id, item, Verdict::of(Outcome::Disabled)),
         };
-        if guard
-            .as_ref()
-            .is_some_and(|guard| guard.policy.keep.contains(&item.identity.kernel))
-        {
+        if guard.policy.keep.contains(&item.identity.kernel) {
             return self.record(plan_id, item, Verdict::of(Outcome::Disabled));
         }
         let verdict = self.execute_with_policy(plan_id, item, None);
