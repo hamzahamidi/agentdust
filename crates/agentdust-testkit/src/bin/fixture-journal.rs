@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -84,15 +85,16 @@ fn write(dir: &Path, writer: u64, count: u64, pace_us: u64) {
 struct Holding {
     sync: PathBuf,
     waiting: bool,
+    round: u64,
 }
 
 impl FrameWriter for Holding {
     fn write(&mut self, mut file: &File, frame: &[u8]) -> io::Result<usize> {
         if self.waiting {
             self.waiting = false;
-            fs::write(self.sync.join(HELD), b"")?;
+            fs::write(self.sync.join(format!("{HELD}-{}", self.round)), b"")?;
             let started = Instant::now();
-            while !self.sync.join(RELEASE).exists() {
+            while !self.sync.join(format!("{RELEASE}-{}", self.round)).exists() {
                 if started.elapsed() >= HANG_GUARD {
                     std::process::exit(3);
                 }
@@ -111,13 +113,14 @@ fn straggle(dir: &Path, sync: &Path, rounds: u64) {
         let mut writer = Holding {
             sync: sync.to_path_buf(),
             waiting: true,
+            round,
         };
         match Journal::new(dir).append_with(&record(&id, BOOT), &mut writer) {
             Ok(appended) => fewest_attempts = fewest_attempts.min(appended.attempts),
             Err(_) => failed.push(id),
         }
-        let _ = fs::remove_file(sync.join(HELD));
-        let _ = fs::remove_file(sync.join(RELEASE));
+        let _ = fs::remove_file(sync.join(format!("{HELD}-{round}")));
+        let _ = fs::remove_file(sync.join(format!("{RELEASE}-{round}")));
     }
     println!(
         "attempted={rounds} fewest_attempts={} failed={}",
@@ -137,9 +140,21 @@ fn rotate(dir: &Path, sync: &Path, stop: &Path, period_ms: u64) {
     };
     let started = Instant::now();
     let mut totals = Totals::default();
+    let mut released = BTreeSet::new();
     loop {
         let stopping = stop.exists();
-        let holding = sync.join(HELD).exists() && !sync.join(RELEASE).exists();
+        let holding = fs::read_dir(sync)
+            .unwrap()
+            .filter_map(|entry| {
+                entry
+                    .ok()?
+                    .file_name()
+                    .to_str()?
+                    .strip_prefix(&format!("{HELD}-"))?
+                    .parse::<u64>()
+                    .ok()
+            })
+            .find(|round| !released.contains(round));
         totals.cycles += 1;
         let marker = record(&format!("marker-{}", totals.cycles), MARKER_BOOT);
         if journal::append(dir, &marker).is_ok() {
@@ -162,13 +177,13 @@ fn rotate(dir: &Path, sync: &Path, stop: &Path, period_ms: u64) {
             Err(MaintenanceError::Busy) => totals.busy += 1,
             Err(_) => totals.errors += 1,
         }
-        if holding
-            && OpenOptions::new()
+        if let Some(round) = holding {
+            OpenOptions::new()
                 .write(true)
                 .create_new(true)
-                .open(sync.join(RELEASE))
-                .is_ok()
-        {
+                .open(sync.join(format!("{RELEASE}-{round}")))
+                .unwrap();
+            released.insert(round);
             totals.releases += 1;
         }
         if stopping {
