@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use crate::apply::exec::Executor;
+use crate::apply::exec::{Executor, Outcome};
 use crate::classifier::Finding;
 use crate::finding::ModelFinding;
 use crate::identity::ProcessIdentity;
@@ -121,7 +121,11 @@ pub fn run(port: u16, resolve: bool, surveyor: &PortSurveyor, executor: &Executo
             {
                 Some(item) => match executor.execute_automatic(&format!("port-{port}"), &item) {
                     Ok(verdict) => {
-                        listener.result = verdict.outcome.code().into();
+                        listener.result = match verdict.outcome {
+                            Outcome::Gone => "gone_or_no_longer_listening",
+                            other => other.code(),
+                        }
+                        .into();
                         listener.reason = verdict.reason.map(|reason| reason.code().into());
                     }
                     Err(reason) => {

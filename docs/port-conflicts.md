@@ -18,7 +18,7 @@ The MCP tool is `agentdust_port` with `{ "port": 3000 }` for diagnosis, or `{ "p
 
 ## Report
 
-The JSON report has version `1`, the requested `port`, protocol `tcp`, visibility `current_user_visible`, initial listener results and `remaining_pids` from a final scan. Each listener includes its PID, optional sanitized process finding, result and reason. Raw commands, full paths, environments and listener addresses are not returned.
+The JSON report has version `1`, the requested `port`, protocol `tcp`, visibility `current_user_visible`, initial listener results and `remaining_pids` from a final scan. Each listener includes its PID, optional sanitized process finding, result and reason. Raw commands, full paths, environments and listener addresses are not returned. `gone_or_no_longer_listening` means the executor could no longer find that exact listener; it does not claim the process terminated.
 
 | State | Meaning |
 | --- | --- |

@@ -225,5 +225,5 @@ fn executor_refresh_rejects_a_listener_that_stopped_listening() {
     let report = port::run(3000, true, &surveyor, &rig.executor).unwrap();
     assert_eq!(report.state, "no_visible_listener");
     assert!(rig.signals().is_empty());
-    assert_ne!(report.listeners[0].result, "terminated");
+    assert_eq!(report.listeners[0].result, "gone_or_no_longer_listening");
 }
