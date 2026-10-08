@@ -27,6 +27,7 @@ use rmcp::{ErrorData, ServerHandler};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+const PORT: &str = "agentdust_port";
 const DISK: &str = "agentdust_disk";
 const DOCTOR: &str = "agentdust_doctor";
 const PLAN: &str = "agentdust_plan";
@@ -45,6 +46,15 @@ struct ApplyArgs {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
 struct EmptyArgs {}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
+struct PortArgs {
+    port: u16,
+    #[serde(default)]
+    resolve: bool,
+}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
@@ -113,6 +123,7 @@ impl ServerHandler for AgentDustServer {
             apply_tool(),
             disk_tool(),
             auto_status_tool(),
+            port_tool(),
         ])
         .with_ttl_ms(0)
         .with_cache_scope(CacheScope::Private))
@@ -135,6 +146,7 @@ impl ServerHandler for AgentDustServer {
                 let dir = paths::data_dir().map_err(internal)?;
                 success(&agentdust_core::automatic::status(&dir).map_err(internal)?)
             }
+            PORT => self.port(&request).await,
             DISK => self.disk(&request).await,
             PLAN => self.plan(),
             APPLY => self.apply(&request, &context).await,
@@ -147,6 +159,30 @@ impl ServerHandler for AgentDustServer {
 }
 
 impl AgentDustServer {
+    async fn port(&self, request: &CallToolRequestParams) -> Result<CallToolResponse, ErrorData> {
+        let args: PortArgs = arguments(request)?;
+        if args.port == 0 {
+            return Err(ErrorData::invalid_params(
+                "port must be between 1 and 65535",
+                None,
+            ));
+        }
+        let permit = self
+            .disk_slot
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| internal("inventory already running"))?;
+        let dir = paths::data_dir().map_err(internal)?;
+        let report = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            agentdust_core::port_live::run(&dir, args.port, args.resolve)
+        })
+        .await
+        .map_err(|_| internal("port report unavailable"))?
+        .map_err(internal)?;
+        success(&report)
+    }
+
     fn cancel_pending(&self, call: &Call, nonce: &str) {
         let mut step = self.apply.answer(call, nonce, Response::Cancel);
         while let Ok(Step::Ask(challenge)) = step {
@@ -294,6 +330,14 @@ impl AgentDustServer {
                 .map_err(apply_error)?;
         }
     }
+}
+
+fn port_tool() -> Tool {
+    tool::<PortArgs>(
+        PORT,
+        "Diagnose current-user-visible TCP listeners for one port. resolve defaults to false. With resolve=true, attempts cleanup only through the existing human-enabled automatic project policy, with keeps, owner liveness, exact identity and durable attempt checks. Does not enable policy. Live, unknown and managed processes are protected; uncertain actionable processes require the existing plan/apply typed approval flow. Rescans listeners after attempts; no_visible_listener is not a bind guarantee. IPv4/IPv6 TCP only.",
+        false,
+    )
 }
 
 fn disk_tool() -> Tool {

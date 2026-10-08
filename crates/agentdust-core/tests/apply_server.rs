@@ -373,12 +373,33 @@ fn only_the_exact_code_approves() {
     assert_eq!(rig.world.signals(), [10, 11]);
 }
 
+fn wrong_case(code: &str) -> String {
+    let mut answer = code.to_lowercase();
+    if answer == code {
+        answer.replace_range(..1, "a");
+    }
+    answer
+}
+
+#[test]
+fn lower_case_refusal_input_differs_even_for_numeric_codes() {
+    for code in ["3467", "ACDE", "A367"] {
+        let answer = wrong_case(code);
+        assert_ne!(answer, code);
+        assert!(answer.bytes().any(|byte| byte.is_ascii_lowercase()));
+        assert_eq!(
+            agentdust_core::code::check(Some(&answer), code),
+            agentdust_core::code::Check::Wrong
+        );
+    }
+}
+
 #[test]
 fn any_other_answer_ends_the_approval_and_signals_nothing() {
     let cases: Vec<(&str, Responder, Outcome)> = vec![
         (
             "lower case",
-            Box::new(|c| Response::Accept(Some(code_of(c).to_lowercase()))),
+            Box::new(|c| Response::Accept(Some(wrong_case(&code_of(c))))),
             Outcome::WrongCode,
         ),
         (

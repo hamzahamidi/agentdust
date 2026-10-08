@@ -1,6 +1,6 @@
 {
   "name": "agentdust",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Explain AgentDust reports and local setup.",
   "author": {
     "name": "Hamza Hamidi",
@@ -46,7 +46,7 @@
     "com.openai": {
       "onboardingSkill": "./skills/cleanup/SKILL.md",
       "publication": {
-        "release_notes": "Adds Codex native hook setup and exact host-exit cleanup guidance for AgentDust 1.3.0. Desktop cleanup waits for every recorded shared host to exit. This package contains skills only; live inspection requires a separate local MCP connection."
+        "release_notes": "Adds TCP port diagnosis and recovery guidance for AgentDust 1.4.0, using the existing enabled-directory automatic policy and typed approval for uncertain actionable listeners. This package contains skills only; live inspection requires a separate local MCP connection."
       }
     }
   }

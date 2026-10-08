@@ -21,7 +21,7 @@ THREAT_MODEL = ROOT / "docs" / "threat-model.md"
 REPOSITORY = "hamzahamidi/agentdust"
 SIGNER = f"{REPOSITORY}/.github/workflows/release.yml"
 VERSION = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
-RELEASE_COMMANDS = {"disk", "setup", "doctor", "apply", "status", "version", "mcp", "hook", "auto"}
+RELEASE_COMMANDS = {"disk", "setup", "doctor", "apply", "status", "version", "mcp", "hook", "auto", "port"}
 BANNED = (
     "ensure",
     "leverage",
@@ -86,6 +86,12 @@ class ReadmeUsageTest(unittest.TestCase):
         ):
             with self.subTest(needle=needle):
                 self.assertIn(needle, self.usage)
+
+    def test_port_commands_and_policy_boundary_match_the_binary(self):
+        self.assertTrue(binary_has("port"))
+        self.assertIn("agentdust port 3000 --resolve --json", self.text)
+        self.assertIn("agentdust_port", self.text)
+        self.assertIn("A port number does not grant permission", self.text)
 
     def test_the_section_names_the_classes_and_which_of_them_can_be_signalled(self):
         for needle in ("owned-ended", "suspect", "managed", "unknown", "owned-live"):

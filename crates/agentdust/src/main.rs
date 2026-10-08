@@ -3,6 +3,7 @@ mod automatic;
 mod disk;
 mod doctor;
 mod hook;
+mod port;
 mod setup;
 mod status;
 
@@ -17,6 +18,7 @@ fn main() -> ExitCode {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
         ["mcp"] => mcp(),
+        ["port", rest @ ..] => port::run(rest),
         ["disk"] => disk::run(false),
         ["disk", "--json"] => disk::run(true),
         ["doctor"] => doctor::run(false),
@@ -35,7 +37,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: agentdust hook claude | agentdust hook codex | agentdust mcp | agentdust doctor [--json] | agentdust disk [--json] | agentdust apply | agentdust auto enable PROJECT | disable [PROJECT] | pause | resume | keep PID | unkeep PID | status | agentdust setup [codex] [--check | --remove] [--yes] | agentdust status | agentdust version"
+                "usage: agentdust hook claude | agentdust hook codex | agentdust mcp | agentdust doctor [--json] | agentdust disk [--json] | agentdust port PORT [--resolve] [--json] | agentdust apply | agentdust auto enable PROJECT | disable [PROJECT] | pause | resume | keep PID | unkeep PID | status | agentdust setup [codex] [--check | --remove] [--yes] | agentdust status | agentdust version"
             );
             ExitCode::from(2)
         }
