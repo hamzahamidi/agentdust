@@ -53,4 +53,10 @@ jobs:
       - run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal -c clippy
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+      - name: Build the isolated automatic cleanup fixtures
+        run: cargo build --locked -p agentdust -p agentdust-testkit --bins
+      - name: Check automatic cleanup after owner exit and worker restart
+        env:
+          AGENTDUST_FIXTURE_SLEEPER: ${{ github.workspace }}/target/debug/fixture-sleeper
+        run: cargo test --locked -p agentdust --test automatic_worker -- --ignored --test-threads=1
       - run: cargo test --release -p agentdust --test hook_latency --locked -- --ignored --nocapture --test-threads=1

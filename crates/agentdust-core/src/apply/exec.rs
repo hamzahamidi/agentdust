@@ -9,6 +9,7 @@ use crate::apply::audit::{AUDIT_MAX_BYTES, AuditLog, Entry};
 use crate::apply::lock::IdentityLock;
 use crate::apply::signal::{SignalResult, Signaller};
 use crate::apply::timer::Timer;
+use crate::automatic::{self, PolicyGuard};
 use crate::classifier::Finding;
 use crate::code;
 use crate::config::{self, ApplySwitch, Disabled};
@@ -178,6 +179,50 @@ impl Executor {
     }
 
     pub fn execute(&self, plan_id: &str, item: &PlanItem) -> Verdict {
+        let guard = match automatic::manual_guard(&self.deps.data_dir) {
+            Ok(guard) => guard,
+            Err(_) => return self.record(plan_id, item, Verdict::of(Outcome::Disabled)),
+        };
+        if guard
+            .as_ref()
+            .is_some_and(|guard| guard.policy.keep.contains(&item.identity.kernel))
+        {
+            return self.record(plan_id, item, Verdict::of(Outcome::Disabled));
+        }
+        self.execute_with_policy(plan_id, item, None)
+    }
+
+    pub fn execute_automatic(&self, plan_id: &str, item: &PlanItem) -> Result<Verdict, String> {
+        let guard = PolicyGuard::acquire(&self.deps.data_dir).map_err(|_| "policy_unavailable".to_owned())?;
+        if let Err(error) = guard.authorize(item) {
+            let message = error.to_string();
+            let reason = match message.as_str() {
+                "kept"
+                | "approval_required"
+                | "journal_unavailable"
+                | "ownership_unavailable"
+                | "shared_ownership"
+                | "project_not_enabled" => message,
+                _ => "policy_unavailable".to_owned(),
+            };
+            let _ = self.audit.append(&Entry::result(
+                plan_id,
+                &item.model,
+                &item.identity.kernel,
+                "skipped",
+                Some(&reason),
+            ));
+            return Err(reason);
+        }
+        Ok(self.execute_with_policy(plan_id, item, Some(&guard)))
+    }
+
+    fn execute_with_policy(
+        &self,
+        plan_id: &str,
+        item: &PlanItem,
+        automatic: Option<&PolicyGuard>,
+    ) -> Verdict {
         if matches!(
             config::apply_switch(&self.deps.data_dir),
             ApplySwitch::Disabled(_)
@@ -189,7 +234,7 @@ impl Executor {
             Ok(None) => return self.record(plan_id, item, Verdict::of(Outcome::HandledElsewhere)),
             Err(_) => return self.record(plan_id, item, Verdict::of(Outcome::LockUnavailable)),
         };
-        let verdict = self.locked(plan_id, item);
+        let verdict = self.locked(plan_id, item, automatic);
         let verdict = self.record(plan_id, item, verdict);
         drop(lock);
         verdict
@@ -207,13 +252,29 @@ impl Executor {
         verdict
     }
 
-    fn locked(&self, plan_id: &str, item: &PlanItem) -> Verdict {
+    fn locked(&self, plan_id: &str, item: &PlanItem, automatic: Option<&PolicyGuard>) -> Verdict {
         let fresh = match self.deps.surveyor.survey() {
             Ok(fresh) => fresh,
             Err(_) => return Verdict::failed(Reason::SurveyFailed),
         };
         if let Some(verdict) = reclassify(item, &fresh) {
             return verdict;
+        }
+        if matches!(
+            config::apply_switch(&self.deps.data_dir),
+            ApplySwitch::Disabled(_)
+        ) {
+            return Verdict::of(Outcome::Disabled);
+        }
+        if let Some(guard) = automatic {
+            if guard.authorize(item).is_err() {
+                return Verdict::of(Outcome::Disabled);
+            }
+            match guard.claim_attempt(item) {
+                Ok(true) => {}
+                Ok(false) => return Verdict::of(Outcome::HandledElsewhere),
+                Err(_) => return Verdict::of(Outcome::AuditUnavailable),
+            }
         }
         let attempt = Entry::attempt(plan_id, &item.model, &item.identity.kernel);
         if self.audit.append(&attempt).is_err() {

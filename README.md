@@ -18,6 +18,7 @@ Releases follow [Semantic Versioning](docs/release.md#semantic-versioning): comp
 
 | Part | State |
 | --- | --- |
+| Opt-in automatic cleanup | Under development. Project policy, owner-exit worker and read-only agent results ([commands and limits](docs/automatic-cleanup.md)). Not in the published `1.0.0` binary |
 | Process identity, one environment variable read from another process, `KERN_PROCARGS2` parser (fuzzed) | Built |
 | Claude Code hook that records session and shell events in a local journal | Built |
 | Journal rotation and retention, as library functions that nothing runs yet | Built |

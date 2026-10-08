@@ -2,6 +2,7 @@ pub mod acl;
 pub mod ancestry;
 pub mod apply;
 mod atomic;
+pub mod automatic;
 pub mod class;
 pub mod classifier;
 pub mod clock;

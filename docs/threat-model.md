@@ -397,6 +397,20 @@ From spec 7.4:
 
 The host application stays in the trusted computing base (7.1).
 
+## Automatic cleanup permission and restart
+
+Opt-in automatic cleanup uses the existing ownership classifier and executor. Only owned-ended helpers attributed exclusively to one Claude session, including its recorded subagents, can qualify. Every owner must be gone, every recorded session-start directory must be enabled, and the target identity must not be kept. Fresh class, ownership and identity checks still occur inside the per-process critical section. See [automatic cleanup](automatic-cleanup.md).
+
+Interactive CLI policy writes reject non-terminal and known-agent-originated callers. MCP exposes read-only automatic status; no MCP tool enables, resumes or broadens policy or removes keeps. These are supported-interface restrictions. They do not isolate an agent with arbitrary shell access from other programs sharing its user ID.
+
+Policy mutation and execution share a private lock. Pause cannot retract a signal already sent; it waits for the bounded in-flight action and blocks subsequent actions. Keeps bind to boot, PID, start time and UID and also block manual apply. Missing, malformed or unsafe automatic state cannot authorize a signal.
+
+An automatic attempt receipt is synced before signaling. A restart cannot automatically signal that exact identity again. A crash between receipt creation and signaling can leave a helper requiring manual handling. Receipts remain while identity liveness is unknown or alive and are pruned only when the exact identity is proven gone. The receipt and keep files contain kernel identity fields, including a boot ID, but no command, environment or path.
+
+The worker polls known owner identities and journal metadata, not a full machine inventory every second. Work and storage have explicit limits. A pending or unavailable result means automatic cleanup is incomplete and manual inspection remains necessary. Automatic audit uses an `auto-` plan-ID prefix without changing manual record keys.
+
+Policy and executor checks are in `crates/agentdust-core/tests/automatic.rs`. CLI and MCP checks are in `crates/agentdust/tests/automatic.rs`. The isolated owner-exit and restart scenarios are in `crates/agentdust/tests/automatic_worker.rs`; their worker uses only the test journal, randomly generated fixture tag and private test policy. No real user project is enabled by those checks.
+
 Not modelled: file systems other than local APFS beyond the refusal in section 9, the Codex and Cursor adapters (M4 and M5), which have weaker provenance and their own hook formats, and agent storage outside the M7 roots. The M7 metadata scanner is covered below.
 
 ## 16. Read-only disk inventory (M7)
