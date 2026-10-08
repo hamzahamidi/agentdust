@@ -284,6 +284,12 @@ impl Executor {
     }
 
     fn signal_and_wait(&self, item: &PlanItem) -> Verdict {
+        if matches!(
+            config::apply_switch(&self.deps.data_dir),
+            ApplySwitch::Disabled(_)
+        ) {
+            return Verdict::of(Outcome::Disabled);
+        }
         let sent = match revalidate(&item.identity, self.deps.provider.as_ref()) {
             Revalidation::Match => self.deps.signaller.sigterm(item.identity.kernel.pid),
             Revalidation::Gone => return Verdict::of(Outcome::Gone),

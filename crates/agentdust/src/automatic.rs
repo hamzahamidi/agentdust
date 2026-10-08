@@ -239,6 +239,15 @@ fn domain() -> String {
     format!("gui/{}", unsafe { libc::geteuid() })
 }
 
+fn render_plist(label: &str, exe: &Path, dir: &Path) -> io::Result<String> {
+    let plist = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>Label</key><string>{label}</string><key>ProgramArguments</key><array><string>{}</string><string>auto</string><string>worker</string></array><key>EnvironmentVariables</key><dict><key>AGENTDUST_DATA_DIR</key><string>{}</string></dict><key>RunAtLoad</key><true/><key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict><key>ThrottleInterval</key><integer>10</integer></dict></plist>",
+        xml(exe.to_str().ok_or_else(|| error("binary path is not UTF-8"))?),
+        xml(dir.to_str().ok_or_else(|| error("data directory is not UTF-8"))?),
+    );
+    Ok(plist)
+}
+
 fn install_worker(dir: &Path) -> io::Result<()> {
     let path = plist_path()?;
     let parent = path
@@ -253,11 +262,7 @@ fn install_worker(dir: &Path) -> io::Result<()> {
         ));
     }
     let exe = agentdust_agents::hook_config::stable_exe(&std::env::current_exe()?);
-    let plist = format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>Label</key><string>{LABEL}</string><key>ProgramArguments</key><array><string>{}</string><string>auto</string><string>worker</string></array><key>EnvironmentVariables</key><dict><key>AGENTDUST_DATA_DIR</key><string>{}</string></dict><key>RunAtLoad</key><true/><key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict><key>ThrottleInterval</key><integer>10</integer></dict></plist>",
-        xml(exe.to_str().ok_or_else(|| error("binary path is not UTF-8"))?),
-        xml(dir.to_str().ok_or_else(|| error("data directory is not UTF-8"))?),
-    );
+    let plist = render_plist(LABEL, &exe, dir)?;
     let service = format!("{}/{LABEL}", domain());
     let loaded = Command::new("/bin/launchctl")
         .args(["print", &service])
@@ -505,4 +510,110 @@ fn sweep(executor: &Executor, dir: &Path, history: &mut Vec<Value>) -> io::Resul
         &json!({"wall_ms": clock::wall_ms(), "state": "ready", "recent_results": history, "review": review, "review_truncated": review_count > 100, "pending": pending}),
     )?;
     Ok(pending)
+}
+
+#[cfg(test)]
+mod launchd_tests {
+    use super::*;
+
+    struct Registration {
+        dir: PathBuf,
+        service: String,
+    }
+
+    impl Drop for Registration {
+        fn drop(&mut self) {
+            let _ = launchctl(&["bootout", &self.service]);
+            let _ = fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    fn scratch(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "agentdust-auto-{label}-{}-{}",
+            std::process::id(),
+            clock::wall_ms()
+        ));
+        safe_open::ensure_dir(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn launchagent_xml_escapes_paths_and_parses_as_a_plist() {
+        let dir = scratch("plist");
+        let path = dir.join("test.plist");
+        let plist = render_plist(
+            "com.agentdust.test",
+            Path::new("/tmp/a & b/'agentdust'"),
+            Path::new("/tmp/c <d> \"e\""),
+        )
+        .unwrap();
+        assert!(
+            plist.contains("&amp;")
+                && plist.contains("&lt;")
+                && plist.contains("&quot;")
+                && plist.contains("&apos;")
+        );
+        fs::write(&path, plist).unwrap();
+        let output = Command::new("/usr/bin/plutil")
+            .arg("-lint")
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires the user's GUI launchd domain and an explicitly built test binary"]
+    fn isolated_launchagent_starts_and_unloads_the_worker() {
+        let binary = PathBuf::from(
+            std::env::var_os("AGENTDUST_TEST_BINARY").expect("provide the built agentdust binary"),
+        );
+        let dir = scratch("launchd");
+        let label = format!(
+            "com.agentdust.automatic.test.{}.{}",
+            std::process::id(),
+            clock::wall_ms()
+        );
+        let registration = Registration {
+            dir: dir.clone(),
+            service: format!("{}/{label}", domain()),
+        };
+        let mut policy = PolicyGuard::acquire(&dir).unwrap();
+        policy.policy.enabled = true;
+        policy.policy.projects.push("a".repeat(64).try_into().unwrap());
+        policy.write().unwrap();
+        drop(policy);
+        let path = dir.join("worker.plist");
+        fs::write(&path, render_plist(&label, &binary, &dir).unwrap()).unwrap();
+        launchctl(&["bootstrap", &domain(), path.to_str().unwrap()]).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while !automatic::status(&dir).unwrap()["worker_running"]
+            .as_bool()
+            .unwrap()
+        {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "launchd did not start the isolated worker"
+            );
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let mut policy = PolicyGuard::acquire(&dir).unwrap();
+        policy.policy.enabled = false;
+        policy.write().unwrap();
+        drop(policy);
+        launchctl(&["bootout", &registration.service]).unwrap();
+        assert!(
+            !automatic::status(&dir).unwrap()["worker_running"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(!dir.join("audit.log").exists());
+        drop(registration);
+    }
 }
