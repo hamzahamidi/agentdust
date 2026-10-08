@@ -5,7 +5,7 @@ description: Explain AgentDust disk reports and guide local setup. Use when the 
 
 # Claude Code disk usage
 
-This skill package contains guidance only. It does not connect to a Mac or provide live disk access. Live inspection requires a separately configured local AgentDust MCP connection. AgentDust 0.3.0 supports Claude Code on Apple silicon; setting it up there does not connect it to ChatGPT or Codex.
+This skill package contains guidance only. It does not connect to a Mac or provide live disk access. Live inspection requires a separately configured local AgentDust MCP connection. The guidance package has its own version, separate from the installed binary. AgentDust supports Claude Code on Apple silicon; setting it up there does not connect it to ChatGPT or Codex.
 
 If the user provides `agentdust disk --json`, explain the logical and allocated byte totals by root and category. Allocated bytes are not reclaimable space. History, memory, plugins and worktrees can contain work the user still needs. The report contains sizes and scan status, not file paths or contents.
 

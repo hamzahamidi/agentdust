@@ -41,7 +41,7 @@ These hold whatever else is built. Each is stated again, with its numbers, in th
 | Asset | What goes wrong if it is lost |
 | --- | --- |
 | The user's running processes | A wrong SIGTERM ends work that was not abandoned |
-| Approval authority | A process is signalled without a code the person typed |
+| Cleanup authority | A process is signalled without the person's manual approval or outside an enabled automatic policy |
 | Commands, paths, environments and command output | They can hold secrets. The design never stores them (7.2) and never shows them to the model (3.5) |
 | The data directory: the journal, its generations and `install.secret` | The journal is the evidence for ownership decisions and the secret keys its digests |
 | Journal records | A lost record lowers what is known about a process. A forged one can raise it |

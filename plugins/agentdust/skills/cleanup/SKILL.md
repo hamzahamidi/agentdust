@@ -5,7 +5,7 @@ description: Explain AgentDust process reports and guide safe local cleanup. Use
 
 # AgentDust cleanup
 
-This skill package contains guidance only. It does not connect to a Mac or provide live process access. Live inspection requires a separately configured local AgentDust MCP connection. AgentDust 0.3.0 supports Claude Code on Apple silicon; setting it up there does not connect it to ChatGPT or Codex.
+This skill package contains guidance only. It does not connect to a Mac or provide live process access. Live inspection requires a separately configured local AgentDust MCP connection. The guidance package has its own version, separate from the installed binary. AgentDust supports Claude Code on Apple silicon; setting it up there does not connect it to ChatGPT or Codex.
 
 ## Explain a report the user provides
 

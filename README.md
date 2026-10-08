@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/hamzahamidi/agentdust/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hamzahamidi/agentdust/actions/workflows/ci.yml) [![Latest release](https://img.shields.io/github/v/release/hamzahamidi/agentdust)](https://github.com/hamzahamidi/agentdust/releases/latest) [![License](https://img.shields.io/github/license/hamzahamidi/agentdust)](LICENSE) [![Homebrew custom tap](https://img.shields.io/badge/Homebrew-custom%20tap-FBB040?logo=homebrew&logoColor=black)](https://github.com/hamzahamidi/homebrew-agentdust)
 
-AgentDust is a macOS tool that finds processes left running after Claude Code sessions and stops them only after you approve each one with a typed code. It also reports Claude Code disk usage without deleting files. Codex and Cursor support are deferred.
+AgentDust is a macOS tool that finds processes left running after Claude Code sessions. Manual cleanup requires your typed approval. The next release adds opt-in automatic cleanup for proven leftovers in directories you enable. It also reports Claude Code disk usage without deleting files. Codex and Cursor support are deferred.
 
 **AgentDust 1.0.0 supports Claude Code on Apple silicon. Captured fixtures cover the listed concurrent session, subagent and lifecycle scenarios on Claude Code 2.1.292, including an abrupt CLI exit. Agent Teams remain outside the support claim. The installed Homebrew binary passed controlled human decline and typed approval checks on the maintainer's Mac ([release evidence](docs/v1/readiness.md)).** See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
 
@@ -54,7 +54,7 @@ My Mac was running hot, so I looked for leftovers from my AI coding sessions. Si
 
 Killing every process whose parent PID is 1 is unsafe. A background Node job showed a parent PID of 1 after 0.3 s while its agent was still running. Killing by name or by parent PID can kill live work.
 
-[tidewake](https://github.com/berkkorkmaz/tidewake) is read-only: it audits the leftovers, shows the commands you could run and executes nothing. AgentDust records ownership while the agent runs, through the agent's hooks, and classifies each process. It stops one only after I approve it with a 4-character code that AgentDust generates, and it accepts no approval supplied through a model's tool call. Before signalling, it checks the process identity again, then sends `SIGTERM` to that one PID and nothing else. The hook adds a median of 2.5 ms per event on a `macos-15` runner.
+[tidewake](https://github.com/berkkorkmaz/tidewake) is read-only: it audits the leftovers, shows the commands you could run and executes nothing. AgentDust records ownership while the agent runs, through the agent's hooks, and classifies each process. In the manual flow, I approve cleanup with a 4-character code that AgentDust generates, and it accepts no approval supplied through a model's tool call. Opt-in automatic cleanup uses a directory policy I enable locally and leaves uncertain cases for explicit approval. Before signalling, it checks the process identity again, then sends `SIGTERM` to that one PID and nothing else. The hook adds a median of 2.5 ms per event on a `macos-15` runner.
 
 ## Security and privacy
 
@@ -70,7 +70,7 @@ True of the code today:
 
 Cleanup controls:
 
-- No process is signalled without a code typed by you. AgentDust generates the code and shows it to you.
+- Manual cleanup requires a code typed by you. Automatic cleanup requires an enabled local directory policy and freshly proven ended-session ownership. Suspects always require per-item typed approval.
 - Each process is classified and its identity read again immediately before the signal.
 - The only action is `SIGTERM` to one PID.
 
