@@ -6,6 +6,8 @@ On 2026-10-07, only machine A was available. Its setup check passed, but no inte
 
 On 2026-10-08, AgentDust `1.4.0` was installed through Homebrew from source commit `c89beae63520550c756c59fd9bab979d4cf90b32`; the installed binary SHA-256 was `a80f676ad2fef62e676e11df97fa590fa1a7a2dd195bba57f6844f715346ec4f`. Automatic cleanup was enabled for 37 exact directory scopes and the worker was running. The bounded report contained no recent cleanup results and one `owned-live` review item. No natural cleanup or port incident was observed during release verification. CI fixtures and installed smoke checks demonstrate controlled behavior only; normal-use product value has not yet been observed.
 
+On 2026-10-09, a read-only status check of the same binary showed 37 enabled directory scopes, a running worker, a ready report, one recent `terminated` result, no review items and no pending work. The bounded report now contains one recent result that was absent from the 2026-10-08 check. The report does not retain a result timestamp or session scenario, so the event cannot be assigned to a specific session or date row. It confirms that an automatic cleanup outcome was recorded, not when it occurred or whether it solved a user problem.
+
 Use labels `A`, `B` and `C` for the machines. Record aggregate counts only. Do not add usernames, serial numbers, process IDs, paths, command text, session IDs, raw hook payloads or transcript content.
 
 Record the AgentDust version and exact commit SHA or artifact digest. Add one row for each observation date and machine. Use scenario names such as `session`, `foreground subagent`, `background subagent`, `resume`, `clear`, `abrupt exit` and `Agent Team`.
