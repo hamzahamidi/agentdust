@@ -9,6 +9,7 @@ use crate::apply::audit::{AUDIT_MAX_BYTES, AuditLog, Entry};
 use crate::apply::lock::IdentityLock;
 use crate::apply::signal::{SignalResult, Signaller};
 use crate::apply::timer::Timer;
+use crate::automatic::{self, PolicyGuard};
 use crate::classifier::Finding;
 use crate::code;
 use crate::config::{self, ApplySwitch, Disabled};
@@ -178,18 +179,77 @@ impl Executor {
     }
 
     pub fn execute(&self, plan_id: &str, item: &PlanItem) -> Verdict {
+        if self.enabled().is_err() {
+            return Verdict::of(Outcome::Disabled);
+        }
+        let lock = match self.claim_identity(plan_id, item) {
+            Ok(lock) => lock,
+            Err(verdict) => return verdict,
+        };
+        let guard = match automatic::manual_guard(&self.deps.data_dir) {
+            Ok(guard) => guard,
+            Err(_) => return self.record(plan_id, item, Verdict::of(Outcome::Disabled)),
+        };
+        if guard.policy.keep.contains(&item.identity.kernel) {
+            return self.record(plan_id, item, Verdict::of(Outcome::Disabled));
+        }
+        let verdict = self.locked(plan_id, item, None);
+        let verdict = self.record(plan_id, item, verdict);
+        drop(guard);
+        drop(lock);
+        verdict
+    }
+
+    fn claim_identity(&self, plan_id: &str, item: &PlanItem) -> Result<IdentityLock, Verdict> {
+        match IdentityLock::try_acquire(&self.deps.data_dir.join(LOCKS_DIR), &item.model.item_id) {
+            Ok(Some(lock)) => Ok(lock),
+            Ok(None) => Err(self.record(plan_id, item, Verdict::of(Outcome::HandledElsewhere))),
+            Err(_) => Err(self.record(plan_id, item, Verdict::of(Outcome::LockUnavailable))),
+        }
+    }
+
+    pub fn execute_automatic(&self, plan_id: &str, item: &PlanItem) -> Result<Verdict, String> {
+        let guard = PolicyGuard::acquire(&self.deps.data_dir).map_err(|_| "policy_unavailable".to_owned())?;
+        if let Err(error) = guard.authorize(item) {
+            let message = error.to_string();
+            let reason = match message.as_str() {
+                "kept"
+                | "approval_required"
+                | "journal_unavailable"
+                | "ownership_unavailable"
+                | "shared_ownership"
+                | "project_not_enabled" => message,
+                _ => "policy_unavailable".to_owned(),
+            };
+            let _ = self.audit.append(&Entry::result(
+                plan_id,
+                &item.model,
+                &item.identity.kernel,
+                "skipped",
+                Some(&reason),
+            ));
+            return Err(reason);
+        }
+        Ok(self.execute_with_policy(plan_id, item, Some(&guard)))
+    }
+
+    fn execute_with_policy(
+        &self,
+        plan_id: &str,
+        item: &PlanItem,
+        automatic: Option<&PolicyGuard>,
+    ) -> Verdict {
         if matches!(
             config::apply_switch(&self.deps.data_dir),
             ApplySwitch::Disabled(_)
         ) {
             return Verdict::of(Outcome::Disabled);
         }
-        let lock = match IdentityLock::try_acquire(&self.deps.data_dir.join(LOCKS_DIR), &item.model.item_id) {
-            Ok(Some(lock)) => lock,
-            Ok(None) => return self.record(plan_id, item, Verdict::of(Outcome::HandledElsewhere)),
-            Err(_) => return self.record(plan_id, item, Verdict::of(Outcome::LockUnavailable)),
+        let lock = match self.claim_identity(plan_id, item) {
+            Ok(lock) => lock,
+            Err(verdict) => return verdict,
         };
-        let verdict = self.locked(plan_id, item);
+        let verdict = self.locked(plan_id, item, automatic);
         let verdict = self.record(plan_id, item, verdict);
         drop(lock);
         verdict
@@ -207,13 +267,29 @@ impl Executor {
         verdict
     }
 
-    fn locked(&self, plan_id: &str, item: &PlanItem) -> Verdict {
+    fn locked(&self, plan_id: &str, item: &PlanItem, automatic: Option<&PolicyGuard>) -> Verdict {
         let fresh = match self.deps.surveyor.survey() {
             Ok(fresh) => fresh,
             Err(_) => return Verdict::failed(Reason::SurveyFailed),
         };
         if let Some(verdict) = reclassify(item, &fresh) {
             return verdict;
+        }
+        if matches!(
+            config::apply_switch(&self.deps.data_dir),
+            ApplySwitch::Disabled(_)
+        ) {
+            return Verdict::of(Outcome::Disabled);
+        }
+        if let Some(guard) = automatic {
+            if guard.authorize(item).is_err() {
+                return Verdict::of(Outcome::Disabled);
+            }
+            match guard.claim_attempt(item) {
+                Ok(true) => {}
+                Ok(false) => return Verdict::of(Outcome::HandledElsewhere),
+                Err(_) => return Verdict::of(Outcome::AuditUnavailable),
+            }
         }
         let attempt = Entry::attempt(plan_id, &item.model, &item.identity.kernel);
         if self.audit.append(&attempt).is_err() {
@@ -223,6 +299,12 @@ impl Executor {
     }
 
     fn signal_and_wait(&self, item: &PlanItem) -> Verdict {
+        if matches!(
+            config::apply_switch(&self.deps.data_dir),
+            ApplySwitch::Disabled(_)
+        ) {
+            return Verdict::of(Outcome::Disabled);
+        }
         let sent = match revalidate(&item.identity, self.deps.provider.as_ref()) {
             Revalidation::Match => self.deps.signaller.sigterm(item.identity.kernel.pid),
             Revalidation::Gone => return Verdict::of(Outcome::Gone),

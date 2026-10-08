@@ -5,7 +5,7 @@ description: Explain AgentDust process reports and guide safe local cleanup. Use
 
 # AgentDust cleanup
 
-This skill package contains guidance only. It does not connect to a Mac or provide live process access. Live inspection requires a separately configured local AgentDust MCP connection. AgentDust 0.3.0 supports Claude Code on Apple silicon; setting it up there does not connect it to ChatGPT or Codex.
+This skill package contains guidance only. It does not connect to a Mac or provide live process access. Live inspection requires a separately configured local AgentDust MCP connection. The guidance package has its own version, separate from the installed binary. AgentDust supports Claude Code on Apple silicon; setting it up there does not connect it to ChatGPT or Codex.
 
 ## Explain a report the user provides
 
@@ -22,3 +22,11 @@ Explain classes and evidence as reported. A process name, parent PID, age, or CP
 5. Report the result returned by `agentdust_apply`. Do not repeat an apply call for an item that already has a result.
 
 If live tools are unavailable, say this package does not create that connection. Explain the report the user provides, or direct them to AgentDust's local Claude Code setup. Do not change client settings or install AgentDust as part of this skill.
+
+## Automatic cleanup when the installed binary supports it
+
+If `agentdust_auto_status` is available, call it to explain the human-enabled policy, worker state, recent results and review items. Published `1.0.0` has no automatic cleanup. Do not claim it is enabled unless the status reports it.
+
+The human enables an exact canonical session-start directory using `agentdust auto enable PROJECT` in their own foreground terminal. A local worker continues after Claude Code exits. Only proven owned-ended helpers in enabled scope are eligible; uncertain cases use the existing typed approval flow. Do not invoke policy mutation commands, supply consent text, remove keeps, or broaden the enabled scope. Kept identities stay protected during manual apply too.
+
+Explain survivors and prior-attempt cases without retrying automatically. For uncertain items the user wants to handle, request a fresh plan and follow the manual approval steps above. A pasted automatic report is historical evidence, not approval.

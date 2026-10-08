@@ -1,4 +1,5 @@
 mod apply;
+mod automatic;
 mod disk;
 mod doctor;
 mod hook;
@@ -21,6 +22,7 @@ fn main() -> ExitCode {
         ["doctor"] => doctor::run(false),
         ["doctor", "--json"] => doctor::run(true),
         ["apply"] => apply::run(),
+        ["auto", rest @ ..] => automatic::run(rest),
         ["setup", rest @ ..] => setup::run(rest),
         ["status"] => status::run(),
         ["status", ..] => {
@@ -33,7 +35,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: agentdust hook claude | agentdust mcp | agentdust doctor [--json] | agentdust disk [--json] | agentdust apply | agentdust setup [--check | --remove] [--yes] | agentdust status | agentdust version"
+                "usage: agentdust hook claude | agentdust mcp | agentdust doctor [--json] | agentdust disk [--json] | agentdust apply | agentdust auto enable PROJECT | disable [PROJECT] | pause | resume | keep PID | unkeep PID | status | agentdust setup [--check | --remove] [--yes] | agentdust status | agentdust version"
             );
             ExitCode::from(2)
         }

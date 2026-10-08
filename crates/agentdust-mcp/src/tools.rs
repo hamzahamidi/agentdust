@@ -31,6 +31,7 @@ const DISK: &str = "agentdust_disk";
 const DOCTOR: &str = "agentdust_doctor";
 const PLAN: &str = "agentdust_plan";
 const APPLY: &str = "agentdust_apply";
+const AUTO_STATUS: &str = "agentdust_auto_status";
 const INPUT_KEY: &str = "approval";
 const CODE_TTL: Duration = Duration::from_secs(120);
 
@@ -106,11 +107,15 @@ impl ServerHandler for AgentDustServer {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        Ok(
-            ListToolsResult::with_all_items(vec![doctor_tool(), plan_tool(), apply_tool(), disk_tool()])
-                .with_ttl_ms(0)
-                .with_cache_scope(CacheScope::Private),
-        )
+        Ok(ListToolsResult::with_all_items(vec![
+            doctor_tool(),
+            plan_tool(),
+            apply_tool(),
+            disk_tool(),
+            auto_status_tool(),
+        ])
+        .with_ttl_ms(0)
+        .with_cache_scope(CacheScope::Private))
     }
 
     async fn call_tool(
@@ -120,6 +125,16 @@ impl ServerHandler for AgentDustServer {
     ) -> Result<CallToolResponse, ErrorData> {
         match request.name.as_ref() {
             DOCTOR => self.doctor(),
+            AUTO_STATUS => {
+                if request.arguments.as_ref().is_some_and(|args| !args.is_empty()) {
+                    return Err(ErrorData::invalid_params(
+                        "automatic status takes no arguments",
+                        None,
+                    ));
+                }
+                let dir = paths::data_dir().map_err(internal)?;
+                success(&agentdust_core::automatic::status(&dir).map_err(internal)?)
+            }
             DISK => self.disk(&request).await,
             PLAN => self.plan(),
             APPLY => self.apply(&request, &context).await,
@@ -293,6 +308,13 @@ fn doctor_tool() -> Tool {
     tool::<EmptyArgs>(
         DOCTOR,
         "Read-only inventory of processes and their AgentDust classification.",
+        true,
+    )
+}
+fn auto_status_tool() -> Tool {
+    tool::<EmptyArgs>(
+        AUTO_STATUS,
+        "Read-only automatic cleanup policy status and recent results. Cannot enable, resume, broaden policy, or remove keeps. Uncertain processes require the existing plan/apply approval flow. The human configures policy using agentdust auto in their own terminal.",
         true,
     )
 }

@@ -74,6 +74,7 @@ fn nothing_a_process_chose_reaches_a_file_the_model_or_a_prompt() {
         }
     }
 
+    assert!(!rig.dir.join("automatic/policy.json").exists());
     for path in everything_under(rig.dir.path()) {
         if fs::symlink_metadata(&path).unwrap().is_file() {
             let bytes = fs::read(&path).unwrap();
@@ -96,7 +97,7 @@ fn every_file_and_directory_the_apply_path_writes_is_private_and_known() {
             accept(challenge)
         })
         .unwrap();
-    let known: BTreeSet<&str> = ["audit.log", "audit.lock", "inspection", "locks"]
+    let known: BTreeSet<&str> = ["audit.log", "audit.lock", "inspection", "locks", "automatic"]
         .into_iter()
         .collect();
     let top: BTreeSet<String> = fs::read_dir(rig.dir.path())
