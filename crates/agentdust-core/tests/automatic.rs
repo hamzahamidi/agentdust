@@ -157,6 +157,65 @@ fn keep_blocks_the_existing_manual_executor() {
     assert!(rig.signals().is_empty());
 }
 
+#[test]
+fn manual_execution_holds_the_policy_lock_through_signaling() {
+    let candidate = item(4242, Class::OwnedEnded);
+    let same = apply_support::present(&candidate);
+    let (read_tx, read_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let release_rx = std::sync::Mutex::new(release_rx);
+    let rig = apply_support::Rig::for_item(&candidate)
+        .reads(move |call| {
+            if call == 0 {
+                read_tx.send(()).unwrap();
+                release_rx
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(5))
+                    .unwrap();
+                Ok(same.clone())
+            } else {
+                Ok(agentdust_core::provider::ProcessRead::Gone)
+            }
+        })
+        .build();
+    let mut guard = PolicyGuard::acquire(&rig.dir).unwrap();
+    guard.write().unwrap();
+    drop(guard);
+    thread::scope(|scope| {
+        let action = scope.spawn(|| rig.executor.execute(apply_support::PLAN, &candidate));
+        read_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (kept_tx, kept_rx) = mpsc::channel();
+        let rig = &rig;
+        let candidate = &candidate;
+        let keeper = scope.spawn(move || {
+            started_tx.send(()).unwrap();
+            let mut guard = PolicyGuard::acquire(&rig.dir).unwrap();
+            guard.policy.keep.push(candidate.identity.kernel.clone());
+            guard.write().unwrap();
+            kept_tx.send(()).unwrap();
+        });
+        started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(matches!(
+            kept_rx.recv_timeout(Duration::from_millis(100)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        release_tx.send(()).unwrap();
+        assert_eq!(
+            action.join().unwrap().outcome,
+            agentdust_core::apply::exec::Outcome::Terminated
+        );
+        keeper.join().unwrap();
+    });
+    assert_eq!(rig.signals(), [4242]);
+    assert_eq!(
+        rig.executor.execute(apply_support::PLAN, &candidate).outcome,
+        agentdust_core::apply::exec::Outcome::Disabled
+    );
+    assert_eq!(rig.signals(), [4242]);
+}
+
 #[cfg(target_os = "macos")]
 mod execution {
     use super::*;

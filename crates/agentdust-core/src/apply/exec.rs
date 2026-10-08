@@ -189,7 +189,9 @@ impl Executor {
         {
             return self.record(plan_id, item, Verdict::of(Outcome::Disabled));
         }
-        self.execute_with_policy(plan_id, item, None)
+        let verdict = self.execute_with_policy(plan_id, item, None);
+        drop(guard);
+        verdict
     }
 
     pub fn execute_automatic(&self, plan_id: &str, item: &PlanItem) -> Result<Verdict, String> {
