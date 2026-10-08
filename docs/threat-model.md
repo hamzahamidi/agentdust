@@ -399,7 +399,7 @@ The host application stays in the trusted computing base (7.1).
 
 ## Automatic cleanup permission and restart
 
-Opt-in automatic cleanup uses the existing ownership classifier and executor. Only owned-ended helpers attributed exclusively to one Claude session, including its recorded subagents, can qualify. Every owner must be gone, every recorded session-start directory must be enabled, and the target identity must not be kept. Fresh class, ownership and identity checks still occur inside the per-process critical section. See [automatic cleanup](automatic-cleanup.md).
+Opt-in automatic cleanup uses the existing ownership classifier and executor. Only owned-ended helpers attributed exclusively to one Claude or Codex session, including its recorded subagents, can qualify. Every owner must be gone, every recorded session-start directory must be enabled, and the target identity must not be kept. Fresh class, ownership and identity checks still occur inside the per-process critical section. See [automatic cleanup](automatic-cleanup.md).
 
 Interactive CLI policy writes reject non-terminal and known-agent-originated callers. `auto enable --yes` intentionally permits unattended enablement, including an AI shell acting within a user-authorized scope. AgentDust does not authenticate the user authorization or protect against an injected agent using that flag. The same-UID caller can broaden automatic scope through this supported interface, but cannot use the flag to approve uncertain processes or remove keeps. Classifier proof, fresh identity checks, keeps and attempt receipts still apply. MCP exposes read-only automatic status and no policy mutation. These interfaces do not isolate programs sharing a user ID.
 
