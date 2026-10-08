@@ -4,6 +4,8 @@ This record tracks real use after the limited beta. The v1 release gate is one c
 
 On 2026-10-07, only machine A was available. Its setup check passed, but no interactive Claude Code session has been observed. Machines B and C are unavailable; the optional confidence study has not started.
 
+On 2026-10-08, AgentDust `1.4.0` was installed through Homebrew from source commit `c89beae63520550c756c59fd9bab979d4cf90b32`; the installed binary SHA-256 was `a80f676ad2fef62e676e11df97fa590fa1a7a2dd195bba57f6844f715346ec4f`. Automatic cleanup was enabled for 37 exact directory scopes and the worker was running. The bounded report contained no recent cleanup results and one `owned-live` review item. No natural cleanup or port incident was observed during release verification. CI fixtures and installed smoke checks demonstrate controlled behavior only; normal-use product value has not yet been observed.
+
 Use labels `A`, `B` and `C` for the machines. Record aggregate counts only. Do not add usernames, serial numbers, process IDs, paths, command text, session IDs, raw hook payloads or transcript content.
 
 Record the AgentDust version and exact commit SHA or artifact digest. Add one row for each observation date and machine. Use scenario names such as `session`, `foreground subagent`, `background subagent`, `resume`, `clear`, `abrupt exit` and `Agent Team`.
