@@ -202,7 +202,8 @@ class SecurityPolicyTest(unittest.TestCase):
 
     def test_the_supported_versions_name_the_latest_release_line_and_main(self):
         supported = section(self.text, r"## Supported versions")
-        self.assertIn("latest 0.x release", supported)
+        self.assertIn("latest stable release", supported)
+        self.assertNotIn("before 1.0", supported)
         self.assertIn("`main`", supported)
         self.assertNotIn("Nothing is released yet", self.text)
 
