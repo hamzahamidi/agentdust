@@ -1,6 +1,6 @@
 # AgentDust roadmap
 
-AgentDust 1.0.0 provides process analysis, typed approval cleanup and a read-only disk report for Claude Code on Apple silicon. M0 through M3, M6 and M7 are implemented for this scope. The Claude Code 2.1.292 fixture matrix covers concurrent sessions, subagents, resume, `/clear` and abrupt exit. Homebrew setup, live session discovery, idle measurement, human decline and approved apply passed on the maintainer's Mac using the exact release binary. See the [v1 readiness record](docs/v1/readiness.md), [fixture matrix](docs/m6/fixtures.md) and [design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
+AgentDust 1.1.0 provides process analysis, opt-in automatic cleanup, typed approval cleanup and a read-only disk report for Claude Code on Apple silicon. M0 through M3, M6 and M7 are implemented for this scope. The Claude Code 2.1.292 fixture matrix covers concurrent sessions, subagents, resume, `/clear` and abrupt exit. Homebrew setup, live session discovery, idle measurement, human decline and approved apply passed on the maintainer's Mac using the exact release binary. See the [v1 readiness record](docs/v1/readiness.md), [fixture matrix](docs/m6/fixtures.md) and [design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
 
 ## Goal
 
@@ -37,7 +37,7 @@ Multi-agent here means concurrent Claude Code sessions and foreground or backgro
 | Interface | One MCP server with `agentdust_doctor`, `agentdust_plan`, `agentdust_apply`, `agentdust_disk`, and read-only `agentdust_auto_status`, plus a CLI |
 | Agents | Claude Code first, including concurrent sessions and subagents; Agent Teams experimental; Codex and Cursor deferred |
 | Provenance | Layered evidence: event-driven process sampling, a journal of paired shell calls per adapter, and an environment tag on Claude Code as additive evidence only |
-| Approval | MCP elicitation with a typed one-time code, fail closed |
+| Authorization | Manual MCP elicitation with a typed one-time code, or locally enabled directory policy for proven ended-session leftovers; fail closed |
 | Plan state | Canonical plan in server memory with an opaque ID. `plan.json` is for inspection. A server restart invalidates plans |
 | Actions in 0.1 | SIGTERM to one exactly revalidated PID. No process-group signals, no SIGKILL |
 | Actionable classes | Owned-ended (one batch code) and suspect (one typed code per item). At most 10 items per apply call in total. Managed and unknown are never actionable. Likely-owned stays report-only until its precision is measured |
