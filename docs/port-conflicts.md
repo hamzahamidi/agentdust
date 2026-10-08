@@ -16,6 +16,8 @@ The MCP tool is `agentdust_port` with `{ "port": 3000 }` for diagnosis, or `{ "p
 3. A suspect with `approval_required` needs the existing `agentdust_plan` and `agentdust_apply` typed approval flow. Select only the exact requested listener item from that fresh plan. Live, managed, unknown and likely-owned listeners cannot be cleaned through this feature.
 4. Read the final scan. Retry the requested server start after `no_visible_listener`. Report a survivor or prior attempt without escalating or retrying a signal.
 
+When a server start initiated for the user fails with `EADDRINUSE`, use the port reported by that failure or supplied by the user. If it is ambiguous, report that instead of guessing. The agent can call `agentdust_port` with `resolve: true` for the port. Recovery uses only the existing directory policy. If a listener needs approval, the user must enter the code through the typed approval flow. After any apply attempt, scan the port again without `resolve`. Retry that same server start once only after a fresh `no_visible_listener` result, then report whether it started. Do not repeat cleanup if the retry still fails. A remaining listener or unavailable inventory is reported as the blocker.
+
 ## Report
 
 The JSON report has version `1`, the requested `port`, protocol `tcp`, visibility `current_user_visible`, initial listener results and `remaining_pids` from a final scan. Each listener includes its PID, optional sanitized process finding, result and reason. Raw commands, full paths, environments and listener addresses are not returned. `gone_or_no_longer_listening` means the executor could no longer find that exact listener; it does not claim the process terminated.
