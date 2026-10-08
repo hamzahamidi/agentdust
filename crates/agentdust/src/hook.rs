@@ -24,21 +24,25 @@ pub fn run() {
 
 fn dispatch() {
     let args: Vec<String> = std::env::args().skip(2).collect();
-    if args == ["claude"] {
-        run_claude();
+    match args.as_slice() {
+        [agent] if agent == "claude" => run_agent(Agent::Claude),
+        [agent] if agent == "codex" => run_agent(Agent::Codex),
+        _ => {}
     }
 }
 
-fn run_claude() {
+fn run_agent(agent: Agent) {
     let mut input = BufReader::new(io::stdin().lock());
     let event = claude::parse_event(&mut input);
     let _ = io::copy(&mut input, &mut io::sink());
-    if let Ok(event) = event {
-        let _ = record(&event);
+    if let Ok(event) = event
+        && (agent != Agent::Codex || agentdust_agents::codex::valid_session(&event))
+    {
+        let _ = record(&event, agent);
     }
 }
 
-fn record(event: &HookEvent) -> Result<(), Box<dyn Error>> {
+fn record(event: &HookEvent, agent: Agent) -> Result<(), Box<dyn Error>> {
     let Some(kind) = claude::journal_kind(event) else {
         return Ok(());
     };
@@ -53,7 +57,7 @@ fn record(event: &HookEvent) -> Result<(), Box<dyn Error>> {
         }
     }
     let secret = LazySecret::new(&dir);
-    let handed_out = (kind == Kind::SessionStart)
+    let handed_out = (agent == Agent::Claude && kind == Kind::SessionStart)
         .then(|| session_tag(&secret))
         .flatten();
     let subagent_id = event.agent_id.as_deref().and_then(|id| {
@@ -69,15 +73,21 @@ fn record(event: &HookEvent) -> Result<(), Box<dyn Error>> {
         } else {
             kind
         },
-        agent: Agent::Claude,
+        agent,
         session_id: event.session_id.clone(),
         subagent_id,
-        agent_identity: agent_identity(),
+        agent_identity: agent_identity(agent),
         tool_use_id: event.tool_use_id.clone(),
         wall_ts: clock::wall_ms(),
         mono_ts: clock::monotonic_ns(),
         boot: darwin::boot_session_uuid()?,
-        session_tag_key: handed_out.as_ref().map(|(_, key)| key.clone()),
+        session_tag_key: if agent == Agent::Codex {
+            secret
+                .get()
+                .and_then(|secret| tag::codex_key_of(secret, event.session_id.as_bytes()))
+        } else {
+            handed_out.as_ref().map(|(_, key)| key.clone())
+        },
         cwd_key: event.cwd.as_deref().and_then(|cwd| cwd_key(&secret, cwd)),
         exe_base: None,
     };
@@ -126,9 +136,9 @@ fn hand_over(tag: &SessionTag) {
     let _ = tag::append_export(&PathBuf::from(path), tag);
 }
 
-fn agent_identity() -> Option<AgentIdentity> {
+fn agent_identity(agent: Agent) -> Option<AgentIdentity> {
     let provider = DarwinProvider::new().ok()?;
-    let found = ancestry::find_agent(&provider, parent_id() as i32)?;
+    let found = ancestry::find_agent_for(&provider, parent_id() as i32, agent)?;
     AgentIdentity::from_process(&found.identity).ok()
 }
 

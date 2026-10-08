@@ -4,6 +4,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 use crate::identity::{KernelIdentity, ProcessIdentity};
+use crate::journal::Agent;
 use crate::provider::{ProcessProvider, ProcessRead};
 
 pub const MAX_DEPTH: usize = 64;
@@ -32,6 +33,10 @@ pub struct Found {
 }
 
 pub fn find_agent<P: AncestryProvider + ?Sized>(provider: &P, start: i32) -> Option<Found> {
+    find_agent_for(provider, start, Agent::Claude)
+}
+
+pub fn find_agent_for<P: AncestryProvider + ?Sized>(provider: &P, start: i32, agent: Agent) -> Option<Found> {
     let mut seen = HashSet::new();
     let mut pid = start;
     for _ in 0..MAX_DEPTH {
@@ -40,7 +45,7 @@ pub fn find_agent<P: AncestryProvider + ?Sized>(provider: &P, start: i32) -> Opt
         }
         let kernel = match provider.read(pid) {
             Ok(ProcessRead::Present(identity)) => {
-                if let Some(via) = anchor(provider, &identity) {
+                if let Some(via) = anchor(provider, &identity, agent) {
                     return Some(Found { identity, via });
                 }
                 identity.kernel
@@ -75,12 +80,16 @@ pub fn script_names_agent(script: &[u8]) -> bool {
         .any(|window| window == SCRIPT_MARK)
 }
 
-fn anchor<P: AncestryProvider + ?Sized>(provider: &P, identity: &ProcessIdentity) -> Option<Anchor> {
+fn anchor<P: AncestryProvider + ?Sized>(
+    provider: &P,
+    identity: &ProcessIdentity,
+    agent: Agent,
+) -> Option<Anchor> {
     let path = &identity.evidence.exe_path;
-    if agent_exe(path) {
+    if (agent == Agent::Claude && agent_exe(path)) || (agent == Agent::Codex && codex_exe(path)) {
         return Some(Anchor::Executable);
     }
-    if !is_node(path) {
+    if agent != Agent::Claude || !is_node(path) {
         return None;
     }
     let script = provider.script_argument(identity.kernel.pid).ok().flatten()?;
@@ -93,4 +102,11 @@ fn basename(path: &Path) -> &[u8] {
         .rsplit(|byte| *byte == b'/')
         .next()
         .unwrap_or_default()
+}
+
+pub fn codex_exe(path: &Path) -> bool {
+    matches!(
+        basename(path),
+        b"codex" | b"codex-aarch64-apple-darwin" | b"codex-x86_64-apple-darwin"
+    )
 }

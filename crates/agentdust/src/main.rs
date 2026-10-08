@@ -35,7 +35,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: agentdust hook claude | agentdust mcp | agentdust doctor [--json] | agentdust disk [--json] | agentdust apply | agentdust auto enable PROJECT | disable [PROJECT] | pause | resume | keep PID | unkeep PID | status | agentdust setup [--check | --remove] [--yes] | agentdust status | agentdust version"
+                "usage: agentdust hook claude | agentdust hook codex | agentdust mcp | agentdust doctor [--json] | agentdust disk [--json] | agentdust apply | agentdust auto enable PROJECT | disable [PROJECT] | pause | resume | keep PID | unkeep PID | status | agentdust setup [codex] [--check | --remove] [--yes] | agentdust status | agentdust version"
             );
             ExitCode::from(2)
         }

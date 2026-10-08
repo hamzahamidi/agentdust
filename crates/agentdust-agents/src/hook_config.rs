@@ -151,11 +151,11 @@ pub fn group_hash(group: &Value) -> String {
     sha256_hex(canonical_json(group).as_bytes())
 }
 
-fn group_json(spec: HookSpec, command: &str) -> Json {
+fn group_json(spec: HookSpec, command: &str, timeout: u64) -> Json {
     let hook = Json::Object(vec![
         ("type".to_owned(), Json::Str("command".to_owned())),
         ("command".to_owned(), Json::Str(command.to_owned())),
-        ("timeout".to_owned(), Json::Int(HOOK_TIMEOUT_SECS)),
+        ("timeout".to_owned(), Json::Int(timeout)),
     ]);
     let mut members = Vec::new();
     if let Some(matcher) = spec.matcher {
@@ -282,8 +282,13 @@ fn key(name: &str) -> Seg {
     Seg::Key(name.to_owned())
 }
 
-fn add_group(working: &str, spec: HookSpec, command: &str) -> Result<(String, bool, bool), PatchError> {
-    let group = group_json(spec, command);
+fn add_group(
+    working: &str,
+    spec: HookSpec,
+    command: &str,
+    timeout: u64,
+) -> Result<(String, bool, bool), PatchError> {
+    let group = group_json(spec, command, timeout);
     let settings = read_settings(working)?;
     if settings.get("hooks").is_none() {
         let hooks = Json::Object(vec![(spec.event.to_owned(), Json::Array(vec![group]))]);
@@ -306,6 +311,16 @@ pub fn install(
     target: &str,
     owned: &[Entry],
     command: &str,
+) -> Result<Install, PatchError> {
+    install_with_timeout(text, target, owned, command, HOOK_TIMEOUT_SECS)
+}
+
+pub fn install_with_timeout(
+    text: Option<&str>,
+    target: &str,
+    owned: &[Entry],
+    command: &str,
+    timeout: u64,
 ) -> Result<Install, PatchError> {
     let mut working = base_text(text).to_owned();
     let settings = read_settings(&working)?;
@@ -333,9 +348,9 @@ pub fn install(
                 ));
             }
             HookState::Absent | HookState::Missing => {
-                let (edited, created_hooks, created_event) = add_group(&working, *spec, command)?;
+                let (edited, created_hooks, created_event) = add_group(&working, *spec, command, timeout)?;
                 working = edited;
-                let hash = group_hash(&group_json(*spec, command).to_value());
+                let hash = group_hash(&group_json(*spec, command, timeout).to_value());
                 entries.push(entry(
                     target,
                     *spec,

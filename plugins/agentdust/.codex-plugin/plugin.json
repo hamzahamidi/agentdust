@@ -1,6 +1,6 @@
 {
   "name": "agentdust",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Explain AgentDust reports and local setup.",
   "author": {
     "name": "Hamza Hamidi",
@@ -14,7 +14,8 @@
     "claude-code",
     "process-cleanup",
     "disk-usage",
-    "local-mcp"
+    "local-mcp",
+    "codex"
   ],
   "skills": "./skills/",
   "interface": {
@@ -45,7 +46,7 @@
     "com.openai": {
       "onboardingSkill": "./skills/cleanup/SKILL.md",
       "publication": {
-        "release_notes": "Adds batch directory enablement and user-authorized unattended CLI setup guidance for AgentDust 1.2.0. The package contains skills only; live inspection requires a separate local MCP connection."
+        "release_notes": "Adds Codex native hook setup and exact host-exit cleanup guidance for AgentDust 1.3.0. Desktop cleanup waits for every recorded shared host to exit. This package contains skills only; live inspection requires a separate local MCP connection."
       }
     }
   }

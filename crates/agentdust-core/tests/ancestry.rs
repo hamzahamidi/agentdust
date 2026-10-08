@@ -264,3 +264,28 @@ fn nothing_after_the_agent_is_read() {
 fn an_unknown_start_pid_gives_none() {
     assert!(find_agent(&Tree::new(), 4242).is_none());
 }
+
+#[test]
+fn codex_ancestry_does_not_anchor_a_claude_process() {
+    use agentdust_core::ancestry::find_agent_for;
+    use agentdust_core::journal::Agent;
+    let tree = Tree::new()
+        .process(600, 500, "/bin/sh")
+        .process(500, 400, CLAUDE)
+        .process(400, 1, "/Applications/Codex.app/Contents/Resources/codex");
+    assert_eq!(
+        find_agent_for(&tree, 600, Agent::Codex)
+            .unwrap()
+            .identity
+            .kernel
+            .pid,
+        400
+    );
+    assert_eq!(find_agent(&tree, 600).unwrap().identity.kernel.pid, 500);
+    let unknown = Tree::new().process(600, 1, "/Applications/Codex.app/Contents/MacOS/Codex");
+    assert!(find_agent_for(&unknown, 600, Agent::Codex).is_none());
+    for exe in ["codex", "codex-aarch64-apple-darwin", "codex-x86_64-apple-darwin"] {
+        let tree = Tree::new().process(600, 1, &format!("/usr/bin/{exe}"));
+        assert!(find_agent_for(&tree, 600, Agent::Codex).is_some());
+    }
+}

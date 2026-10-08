@@ -10,6 +10,7 @@ use crate::safe_open::{self, SafeOpenError};
 use crate::secret::Secret;
 
 pub const ENV_NAME: &str = "AGENTDUST_SESSION";
+pub const CODEX_ENV_NAME: &str = "CODEX_SESSION_ID";
 pub const TAG_BYTES: usize = 16;
 pub const TAG_LEN: usize = TAG_BYTES * 2;
 
@@ -86,4 +87,22 @@ fn write_export(mut file: File, tag: &SessionTag) -> Result<(), SafeOpenError> {
             Err(err) => return Err(err.into()),
         }
     }
+}
+
+pub fn valid_codex_session(raw: &[u8]) -> bool {
+    raw.len() == 36
+        && raw.iter().enumerate().all(|(i, byte)| {
+            if matches!(i, 8 | 13 | 18 | 23) {
+                *byte == b'-'
+            } else {
+                byte.is_ascii_digit() || (b'a'..=b'f').contains(byte)
+            }
+        })
+}
+
+pub fn codex_key_of(secret: &Secret, raw: &[u8]) -> Option<SessionTagKey> {
+    valid_codex_session(raw).then(|| {
+        SessionTagKey::try_from(keyed_digest(secret.as_bytes(), Domain::CodexSession, raw))
+            .expect("a keyed digest is 64 lowercase hexadecimal characters")
+    })
 }

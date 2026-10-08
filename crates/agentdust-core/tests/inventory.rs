@@ -266,3 +266,43 @@ fn a_process_without_a_readable_path_is_never_an_agent_script() {
     let buf = buffer("/opt/homebrew/bin/node", &["node", "/x/claude/cli.js"], &[]);
     assert!(!read_args(Some(&buf), None, None).agent_script);
 }
+
+#[test]
+fn codex_session_marker_is_domain_separated_and_thread_id_is_not_used() {
+    let secret = Secret::from_bytes([42; 32]);
+    let session = "12345678-1234-1234-1234-123456789abc";
+    let value = format!("CODEX_SESSION_ID={session}");
+    let buf = buffer("/bin/x", &["x"], &[&value, "CODEX_THREAD_ID=another-thread"]);
+    let key = agentdust_core::tag::codex_key_of(&secret, session.as_bytes()).unwrap();
+    assert_eq!(
+        read_args(Some(&buf), None, Some(&secret)).tag,
+        Tag::Keyed(key.clone())
+    );
+    assert_ne!(key, agentdust_core::tag::key_of(&secret, session.as_bytes()));
+    let thread_only = buffer(
+        "/bin/x",
+        &["x"],
+        &["CODEX_THREAD_ID=12345678-1234-1234-1234-123456789abc"],
+    );
+    assert_eq!(
+        read_args(Some(&thread_only), None, Some(&secret)).tag,
+        Tag::Absent
+    );
+    assert_eq!(read_args(Some(&buf), None, None).tag, Tag::Unkeyed);
+}
+
+#[test]
+fn invalid_or_dual_agent_session_markers_are_unverifiable() {
+    let secret = Secret::from_bytes([42; 32]);
+    for vars in [
+        vec!["CODEX_SESSION_ID=bad"],
+        vec!["CODEX_SESSION_ID="],
+        vec![
+            "CODEX_SESSION_ID=12345678-1234-1234-1234-123456789abc",
+            "AGENTDUST_SESSION=abc",
+        ],
+    ] {
+        let buf = buffer("/bin/x", &["x"], &vars);
+        assert_eq!(read_args(Some(&buf), None, Some(&secret)).tag, Tag::Unreadable);
+    }
+}

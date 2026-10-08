@@ -164,6 +164,11 @@ impl Draft {
                 | Kind::ServerStart => {}
             }
         }
+        if record.agent == Agent::Codex
+            && let Some(key) = &record.session_tag_key
+        {
+            self.tag_keys.insert(key.clone());
+        }
         match record.kind {
             Kind::SessionStart => {
                 self.started = true;
@@ -263,6 +268,9 @@ pub fn scopes(records: &[Record], probe: &dyn LivenessProbe) -> Vec<Scope> {
     let mut groups: HashMap<(Agent, &str), Vec<usize>> = HashMap::new();
     let mut ambiguous_sessions: HashSet<(Agent, String)> = HashSet::new();
     for record in records {
+        if record.agent == Agent::Codex && record.agent_identity.is_none() {
+            ambiguous_sessions.insert((record.agent, record.session_id.clone()));
+        }
         if record.kind == Kind::SubagentAttributionUnknown
             || (matches!(record.kind, Kind::SubagentStart | Kind::SubagentStop)
                 && record.subagent_id.is_none())
@@ -352,7 +360,9 @@ pub fn scopes(records: &[Record], probe: &dyn LivenessProbe) -> Vec<Scope> {
                     subagent_ids: draft.subagent_ids,
                     subagents: draft.subagents,
                     additional_owners,
-                    attribution_ambiguous: draft.attribution_ambiguous || session_ambiguous,
+                    attribution_ambiguous: draft.attribution_ambiguous
+                        || session_ambiguous
+                        || (agent == Agent::Codex && !draft.started),
                 }
             },
         )

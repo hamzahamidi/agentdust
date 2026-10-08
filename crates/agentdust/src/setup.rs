@@ -10,7 +10,7 @@ use agentdust_agents::hook_config::stable_exe;
 use agentdust_agents::native_cli::{CliRunner, SystemRunner};
 use agentdust_core::paths;
 
-const USAGE: &str = "usage: agentdust setup [--check | --remove] [--yes]";
+const USAGE: &str = "usage: agentdust setup [codex] [--check | --remove] [--yes]";
 const CLI_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -23,11 +23,13 @@ enum Mode {
 struct Options {
     mode: Mode,
     yes: bool,
+    codex: bool,
 }
 
 fn parse(args: &[&str]) -> Option<Options> {
     let mut mode = None;
     let mut yes = false;
+    let mut codex = false;
     for arg in args {
         match *arg {
             "--check" | "--remove" => {
@@ -41,6 +43,7 @@ fn parse(args: &[&str]) -> Option<Options> {
                 }
             }
             "--yes" if !yes => yes = true,
+            "codex" if !codex => codex = true,
             _ => return None,
         }
     }
@@ -48,7 +51,7 @@ fn parse(args: &[&str]) -> Option<Options> {
     if mode == Mode::Check && yes {
         return None;
     }
-    Some(Options { mode, yes })
+    Some(Options { mode, yes, codex })
 }
 
 pub struct Context {
@@ -113,6 +116,9 @@ pub fn run(args: &[&str]) -> ExitCode {
             "agentdust setup needs a terminal to ask for your consent. Run it in a terminal, or pass --yes to approve the printed changes without being asked."
         );
         return ExitCode::FAILURE;
+    }
+    if options.codex {
+        return run_codex(options);
     }
     let context = match Context::detect() {
         Ok(context) => context,
@@ -192,4 +198,48 @@ fn declined() -> ExitCode {
 fn failed(reason: &str) -> ExitCode {
     eprintln!("agentdust setup: {reason}");
     ExitCode::FAILURE
+}
+
+fn run_codex(options: Options) -> ExitCode {
+    use agentdust_agents::codex_setup::{self, Mode as CodexMode};
+    let result = (|| -> Result<(String, bool), String> {
+        let config_dir = match std::env::var_os("CODEX_HOME").filter(|d| !d.is_empty()) {
+            Some(dir) => PathBuf::from(dir),
+            None => PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set")?).join(".codex"),
+        };
+        if !config_dir.is_absolute() {
+            return Err("CODEX_HOME must be absolute".into());
+        }
+        let cli = find_on_path("codex").ok_or("Codex CLI was not found on PATH")?;
+        let runner = SystemRunner::for_codex(cli, config_dir.clone(), CLI_TIMEOUT);
+        let exe = stable_exe(&std::env::current_exe().map_err(|e| e.to_string())?);
+        let env = codex_setup::SetupEnv {
+            config_dir,
+            data_dir: paths::data_dir().map_err(|e| e.to_string())?,
+            exe,
+            runner: &runner,
+        };
+        let mode = match options.mode {
+            Mode::Install => CodexMode::Install,
+            Mode::Check => CodexMode::Check,
+            Mode::Remove => CodexMode::Remove,
+        };
+        codex_setup::run(&env, mode, &mut |plan| {
+            println!("{plan}");
+            options.yes
+                || claude_setup::ask_yes_no(
+                    &mut io::stdin().lock(),
+                    &mut io::stdout(),
+                    "Apply these changes? [y/N] ",
+                )
+                .unwrap_or(false)
+        })
+    })();
+    match result {
+        Ok((text, complete)) => {
+            print!("{text}");
+            exit(complete)
+        }
+        Err(reason) => failed(&reason),
+    }
 }
