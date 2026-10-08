@@ -1,6 +1,6 @@
 # Threat model
 
-AgentDust finds processes that AI coding agents leave behind and signals them only after a typed code. This page says who or what could make it do harm, what they can reach, what stops them and what risk is left.
+AgentDust finds processes that AI coding agents leave behind and signals them through manual typed approval or a previously enabled automatic directory policy. This page says who or what could make it do harm, what they can reach, what stops them and what risk is left.
 
 It has twelve sections against [the design spec](superpowers/specs/2026-10-03-agentdust-design.md). Sections 1 to 8 are the eight adversaries that [ROADMAP.md](../ROADMAP.md) names for M1. Sections 9 to 12 cover the storage under the journal. Their failures come from the environment, from an accident, from a planted file or from the timing of a short-lived process, so they are named for the failure and not for one attacker: an unsupported filesystem, journal poisoning and short writes, stale writers and rotation, and durability limits.
 
@@ -154,7 +154,7 @@ Untrusted: everything a model writes, process metadata, the contents of hook pay
 
 **Residual risk.**
 
-- Nothing authenticates a journal writer. A program that runs as the user can append well-formed records, and it can read `install.secret` and test guesses against `cwd_key`. Spec 7.4 accepts both. The effect is bounded: a forged record can at most change the class a process is given, a signal still needs a fresh identity check and a typed code, and the target is a process of the same user that the attacker could already signal.
+- Nothing authenticates a journal writer. A program that runs as the user can append well-formed records, and it can read `install.secret` and test guesses against `cwd_key`. Spec 7.4 accepts both. The effect is bounded: a forged record can at most change the class a process is given, a signal still needs fresh identity and ownership checks plus either manual typed approval or satisfaction of the enabled automatic directory policy, and the target is a process of the same user that the attacker could already signal.
 - `O_NOFOLLOW` covers the last path component. A symlink in an ancestor of the data directory is followed, and files are opened by path after the directory check. A same-user program that swaps the directory between the check and the open can redirect one write to another file of the same user that passes the owner, mode and link checks.
 - The foreign-owner refusal is tested by giving the check another expected user, not with a second account.
 - One planted file can stop rotation and retention until a person removes it, and the other same-user effects on the journal are in sections 10 and 11.
@@ -309,7 +309,7 @@ Spec 7.1 points this threat at section 8.3. The release controls are in 8.4, and
 
 **Residual risk.**
 
-- **Nothing authenticates the writer.** A program that runs as the user can append well-formed records that say anything. Spec 7.4 puts that out of scope. A forged record can at most change the class a process is given, and a signal still needs a fresh identity check and a typed code.
+- **Nothing authenticates the writer.** A program that runs as the user can append well-formed records that say anything. Spec 7.4 puts that out of scope. A forged record can at most change the class a process is given, and a signal still needs fresh identity and ownership checks plus either manual typed approval or satisfaction of the enabled automatic directory policy.
 - A line of a newer schema version is a switch that any program of the user can throw. One planted line makes owned classes unavailable (fail closed) and keeps its generation from ever being shrunk. By design the effect is lost cleanup and not a wrong signal. Every future schema has to keep `v` as the first key of its compact JSON, because a line over 65,536 bytes whose `v` is not first reads as malformed and not as newer.
 - A short write loses the record being written. The hook drops it and does not retry. The cut bytes stay in the file as one torn frame: in the active file until rotation moves it, and in a generation until a retention run rewrites that generation for another reason.
 - A read that runs while an append is in flight can see a cut tail. It is reported as a truncated last line and the record can be missing from that read.

@@ -179,6 +179,13 @@ impl Executor {
     }
 
     pub fn execute(&self, plan_id: &str, item: &PlanItem) -> Verdict {
+        if self.enabled().is_err() {
+            return Verdict::of(Outcome::Disabled);
+        }
+        let lock = match self.claim_identity(plan_id, item) {
+            Ok(lock) => lock,
+            Err(verdict) => return verdict,
+        };
         let guard = match automatic::manual_guard(&self.deps.data_dir) {
             Ok(guard) => guard,
             Err(_) => return self.record(plan_id, item, Verdict::of(Outcome::Disabled)),
@@ -186,9 +193,19 @@ impl Executor {
         if guard.policy.keep.contains(&item.identity.kernel) {
             return self.record(plan_id, item, Verdict::of(Outcome::Disabled));
         }
-        let verdict = self.execute_with_policy(plan_id, item, None);
+        let verdict = self.locked(plan_id, item, None);
+        let verdict = self.record(plan_id, item, verdict);
         drop(guard);
+        drop(lock);
         verdict
+    }
+
+    fn claim_identity(&self, plan_id: &str, item: &PlanItem) -> Result<IdentityLock, Verdict> {
+        match IdentityLock::try_acquire(&self.deps.data_dir.join(LOCKS_DIR), &item.model.item_id) {
+            Ok(Some(lock)) => Ok(lock),
+            Ok(None) => Err(self.record(plan_id, item, Verdict::of(Outcome::HandledElsewhere))),
+            Err(_) => Err(self.record(plan_id, item, Verdict::of(Outcome::LockUnavailable))),
+        }
     }
 
     pub fn execute_automatic(&self, plan_id: &str, item: &PlanItem) -> Result<Verdict, String> {
@@ -228,10 +245,9 @@ impl Executor {
         ) {
             return Verdict::of(Outcome::Disabled);
         }
-        let lock = match IdentityLock::try_acquire(&self.deps.data_dir.join(LOCKS_DIR), &item.model.item_id) {
-            Ok(Some(lock)) => lock,
-            Ok(None) => return self.record(plan_id, item, Verdict::of(Outcome::HandledElsewhere)),
-            Err(_) => return self.record(plan_id, item, Verdict::of(Outcome::LockUnavailable)),
+        let lock = match self.claim_identity(plan_id, item) {
+            Ok(lock) => lock,
+            Err(verdict) => return verdict,
         };
         let verdict = self.locked(plan_id, item, automatic);
         let verdict = self.record(plan_id, item, verdict);
