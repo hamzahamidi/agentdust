@@ -99,7 +99,11 @@ pub fn run(env: &SetupEnv, mode: Mode, ask: &mut dyn FnMut(&str) -> bool) -> Res
     let config = user_file::load(&env.config_dir.join("config.toml")).map_err(|e| e.to_string())?;
     if let Some(config) = text(&config)? {
         let parsed: toml::Value = toml::from_str(config).map_err(|_| "Codex config.toml is invalid")?;
-        if parsed.get("hooks").is_some() {
+        if parsed.get("hooks").is_some_and(|hooks| {
+            !hooks.as_table().is_some_and(|table| {
+                table.len() == 1 && table.get("state").is_some_and(toml::Value::is_table)
+            })
+        }) {
             return Err("Codex has inline hooks in config.toml. Move them to hooks.json before using AgentDust setup.".into());
         }
         if parsed

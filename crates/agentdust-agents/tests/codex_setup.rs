@@ -93,7 +93,15 @@ fn codex_decline_and_failed_mcp_registration_leave_hooks_unchanged() {
 }
 #[test]
 fn codex_inline_hooks_disabled_hooks_and_symlinks_are_preserved() {
-    for config in ["[hooks]\n", "[features]\nhooks = false\n"] {
+    for config in [
+        "[hooks]\n",
+        "hooks = false\n",
+        "[hooks]\nstate = false\n",
+        "[hooks]\nunknown = []\n",
+        "[features]\nhooks = false\n",
+        "[features]\nhooks = false\n[hooks.state]\n",
+        "[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\ntype = 'command'\ncommand = 'my-script'\n[hooks.state]\n",
+    ] {
         let dir = TempDir::new("codex-config-conflict");
         let runner = Codex::default();
         let env = env(&dir, &runner);
@@ -102,6 +110,11 @@ fn codex_inline_hooks_disabled_hooks_and_symlinks_are_preserved() {
         assert!(codex_setup::run(&env, Mode::Install, &mut |_| panic!("must preflight")).is_err());
         assert!(!env.config_dir.join("hooks.json").exists());
         assert!(!env.data_dir.exists());
+        assert_eq!(
+            fs::read_to_string(env.config_dir.join("config.toml")).unwrap(),
+            config
+        );
+        assert!(runner.calls.borrow().is_empty());
     }
     let dir = TempDir::new("codex-symlink");
     let runner = Codex::default();
@@ -111,6 +124,26 @@ fn codex_inline_hooks_disabled_hooks_and_symlinks_are_preserved() {
     symlink(dir.join("outside"), env.config_dir.join("hooks.json")).unwrap();
     assert!(codex_setup::run(&env, Mode::Install, &mut |_| panic!("must preflight")).is_err());
     assert_eq!(fs::read_to_string(dir.join("outside")).unwrap(), "{}");
+}
+#[test]
+fn codex_trust_state_is_preserved_through_install_check_and_remove() {
+    let dir = TempDir::new("codex-trust-state");
+    let runner = Codex::default();
+    let env = env(&dir, &runner);
+    fs::create_dir(&env.config_dir).unwrap();
+    let config =
+        "[hooks.state.\"/tmp/hooks.json:session_start:0:0\"]\ntrusted_hash = 'sha256:abc'\ndisabled = true\n";
+    let path = env.config_dir.join("config.toml");
+    fs::write(&path, config).unwrap();
+    for mode in [Mode::Install, Mode::Check, Mode::Install, Mode::Remove] {
+        assert!(
+            codex_setup::run(&env, mode, &mut |_| mode != Mode::Check)
+                .unwrap()
+                .1
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), config);
+    }
+    assert!(!runner.registered.get());
 }
 #[test]
 fn preexisting_codex_mcp_registration_survives_removal() {
