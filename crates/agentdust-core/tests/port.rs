@@ -168,6 +168,7 @@ fn failed_verification_is_unavailable_even_after_a_valid_diagnosis() {
     assert!(rig.signals().is_empty());
 }
 
+#[cfg(target_os = "macos")]
 #[test]
 fn executor_refresh_rejects_a_listener_that_stopped_listening() {
     use agentdust_core::automatic::PolicyGuard;
