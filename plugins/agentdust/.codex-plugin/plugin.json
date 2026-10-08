@@ -1,7 +1,7 @@
 {
   "name": "agentdust",
-  "version": "0.7.0",
-  "description": "Explain AgentDust reports and local setup.",
+  "version": "0.8.0",
+  "description": "Explain AgentDust reports, setup and port recovery.",
   "author": {
     "name": "Hamza Hamidi",
     "url": "https://github.com/hamzahamidi"
@@ -20,14 +20,16 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "AgentDust",
-    "shortDescription": "Read AgentDust local reports",
-    "longDescription": "Explain AgentDust process and disk reports that users provide, and guide local setup. This skills package does not connect to a Mac or provide live process access. Live inspection requires a separately configured local AgentDust MCP connection. Manual cleanup requires AgentDust's typed approval. Automatic cleanup requires a user-authorized local directory policy.",
+    "shortDescription": "Guide cleanup, local port recovery and setup",
+    "longDescription": "Explain AgentDust process and disk reports, guide client setup and help an agent recover a requested local server start after EADDRINUSE. This package contains guidance only and does not provide live process access. Port diagnosis and recovery require access to local AgentDust tools through the CLI or a separately configured MCP connection. Automatic cleanup requires an existing user-authorized directory policy; uncertain cleanup needs typed approval. Setup does not enable directory scopes.",
     "developerName": "Hamza Hamidi",
     "category": "Developer Tools",
     "capabilities": [
       "Explain AgentDust process reports",
       "Explain AgentDust disk reports",
-      "Guide local AgentDust setup"
+      "Guide local AgentDust setup",
+      "Guide local AgentDust port-conflict recovery",
+      "Summarize client setup readiness"
     ],
     "websiteURL": "https://github.com/hamzahamidi/agentdust",
     "supportURL": "https://github.com/hamzahamidi/agentdust/issues",
@@ -35,7 +37,8 @@
     "defaultPrompt": [
       "Explain this AgentDust doctor report: ",
       "Help me understand this AgentDust disk report: ",
-      "How do I set up AgentDust locally?"
+      "How do I set up AgentDust locally?",
+      "My server start failed with EADDRINUSE. Help me recover using AgentDust."
     ],
     "brandColor": "#25272B",
     "brandColorDark": "#E5C86B",
@@ -46,7 +49,7 @@
     "com.openai": {
       "onboardingSkill": "./skills/cleanup/SKILL.md",
       "publication": {
-        "release_notes": "Adds TCP port diagnosis and recovery guidance for AgentDust 1.4.0, using the existing enabled-directory automatic policy and typed approval for uncertain actionable listeners. This package contains skills only; live inspection requires a separate local MCP connection."
+        "release_notes": "Adds agent-guided server-start recovery with AgentDust's existing directory policy, fresh port checks after approval, and a single retry. Adds client setup readiness guidance. This package contains skills only; live process and port inspection needs local CLI access or a separate MCP connection."
       }
     }
   }

@@ -80,7 +80,7 @@ Port-conflict diagnosis and recovery are implemented in `1.4.0`: identify curren
 | --- | --- |
 | M0 through M3, M6 and M7 | Implemented for the documented Claude Code and Apple silicon scope |
 | M9 controlled Homebrew acceptance | Complete; measurement limits remain in the [readiness record](docs/v1/readiness.md) |
-| Plugin/setup guidance | Guidance package `0.7.0` explains installed binary versus package versions and automatic results |
+| Plugin/setup guidance | Guidance package `0.8.0` explains setup readiness, agent-guided port recovery and automatic results |
 | Automatic cleanup | Implemented for `1.1.0`; measure value during normal use |
 | Port-conflict recovery | Implemented in `1.4.0`; measure useful recovery during normal use |
 | M8 directory submission and upstream work | Optional |

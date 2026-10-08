@@ -35,7 +35,7 @@ Releases follow [Semantic Versioning](docs/release.md#semantic-versioning): comp
 
 ## Resolve a busy TCP port
 
-Ask Claude or Codex: “Check what holds port 3000 and clean up a proven leftover.” The `agentdust_port` tool diagnoses listeners by default. With `resolve: true`, it attempts cleanup under your existing enabled-project policy, then checks listeners again. Uncertain actionable processes require typed approval through the existing plan/apply flow.
+Ask Claude or Codex: “Check what holds port 3000 and clean up a proven leftover.” With the AgentDust cleanup skill available, when a server start it initiated fails with `EADDRINUSE`, the agent can diagnose the port, attempt automatic cleanup for proven leftovers under your existing enabled-project policy, and retry that same start once after a fresh scan shows no visible listener. The `agentdust_port` tool diagnoses listeners by default. With `resolve: true`, it attempts cleanup under your existing enabled-project policy, then checks listeners again. Uncertain actionable processes require typed approval through the existing plan/apply flow.
 
 ```bash
 agentdust port 3000
