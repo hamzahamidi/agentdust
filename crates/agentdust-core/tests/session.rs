@@ -466,3 +466,57 @@ fn scopes_come_out_in_the_order_they_were_opened_across_sessions() {
         .collect();
     assert_eq!(order, [("b", 10), ("a", 20), ("b", 30)]);
 }
+
+#[test]
+fn codex_end_and_subagent_stop_do_not_replace_exact_host_death() {
+    let records = [
+        rec(Kind::SessionStart).agent(Agent::Codex).by(10).tagged(1),
+        rec(Kind::SubagentStart)
+            .agent(Agent::Codex)
+            .by(11)
+            .sub("child")
+            .tagged(1),
+        rec(Kind::SubagentStop)
+            .agent(Agent::Codex)
+            .by(11)
+            .sub("child")
+            .tagged(1),
+        rec(Kind::SessionEnd).agent(Agent::Codex).by(10).tagged(1),
+    ];
+    for table in [Table::new().alive(10).gone(11), Table::new().gone(10).alive(11)] {
+        let found = run(&records, &table);
+        assert!(!found[0].agent_gone());
+        assert!(!found[0].degraded());
+    }
+    assert!(run(&records, &Table::new().gone(10).gone(11))[0].agent_gone());
+}
+
+#[test]
+fn codex_host_switch_without_session_start_and_missing_ancestry_fail_closed() {
+    let start = rec(Kind::SessionStart).agent(Agent::Codex).by(10).tagged(1);
+    let switched = rec(Kind::ShellStart).agent(Agent::Codex).by(20).tagged(1);
+    let found = run(&[start.clone(), switched], &Table::new().gone(10).alive(20));
+    assert_eq!(found.len(), 2);
+    assert!(found[1].tag_keys.contains(&key(1)));
+    assert!(found[1].degraded());
+    let missing = rec(Kind::ShellStart).agent(Agent::Codex).tagged(1);
+    assert!(
+        run(&[start, missing], &Table::new().gone(10))
+            .iter()
+            .all(|s| s.degraded())
+    );
+}
+
+#[test]
+fn resumed_codex_session_keeps_all_exact_hosts_in_the_tag_index() {
+    let records = [
+        rec(Kind::SessionStart).agent(Agent::Codex).by(10).tagged(1),
+        rec(Kind::SessionEnd).agent(Agent::Codex).by(10).tagged(1),
+        rec(Kind::SessionStart).agent(Agent::Codex).by(20).tagged(1),
+    ];
+    let found = run(&records, &Table::new().gone(10).alive(20));
+    assert_eq!(found.len(), 2);
+    assert!(found.iter().all(|s| s.tag_keys.contains(&key(1))));
+    assert!(found[0].agent_gone());
+    assert!(!found[1].agent_gone());
+}

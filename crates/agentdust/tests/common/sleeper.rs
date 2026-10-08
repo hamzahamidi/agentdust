@@ -54,6 +54,8 @@ pub fn spawn(dir: &Path, name: &str, cwd: &Path, envs: &[(&str, &str)], markers:
         .args(markers)
         .env(SECONDS, LIFE)
         .env_remove("AGENTDUST_SESSION")
+        .env_remove("CODEX_SESSION_ID")
+        .env_remove("CODEX_THREAD_ID")
         .envs(envs.iter().copied())
         .current_dir(cwd)
         .stdin(Stdio::null())

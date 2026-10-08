@@ -13,7 +13,7 @@ use crate::identity::KernelIdentity;
 use crate::journal::SessionTagKey;
 use crate::procargs;
 use crate::secret::Secret;
-use crate::tag::{self, ENV_NAME};
+use crate::tag::{self, CODEX_ENV_NAME, ENV_NAME};
 
 pub const IDLE_SAMPLE_GAP: Duration = Duration::from_secs(2);
 pub const LAUNCHCTL: &str = "/bin/launchctl";
@@ -142,11 +142,19 @@ pub fn read_args(buf: Option<&[u8]>, exe_path: Option<&Path>, secret: Option<&Se
     };
     let tag = match procargs::parse(buf) {
         Err(_) => Tag::Unreadable,
-        Ok(parsed) => match (procargs::env_value(&parsed, ENV_NAME), secret) {
-            (None, _) => Tag::Absent,
-            (Some(_), None) => Tag::Unkeyed,
-            (Some(value), Some(secret)) => Tag::Keyed(tag::key_of(secret, value)),
-        },
+        Ok(parsed) => {
+            let claude = procargs::env_value(&parsed, ENV_NAME);
+            let codex = procargs::env_value(&parsed, CODEX_ENV_NAME);
+            match (claude, codex, secret) {
+                (None, None, _) => Tag::Absent,
+                (Some(_), Some(_), _) => Tag::Unreadable,
+                (_, _, None) => Tag::Unkeyed,
+                (Some(value), None, Some(secret)) => Tag::Keyed(tag::key_of(secret, value)),
+                (None, Some(value), Some(secret)) => {
+                    tag::codex_key_of(secret, value).map_or(Tag::Unreadable, Tag::Keyed)
+                }
+            }
+        }
     };
     let agent_script = exe_path.is_some_and(ancestry::is_node)
         && procargs::script_argument(buf)

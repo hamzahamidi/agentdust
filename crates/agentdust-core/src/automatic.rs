@@ -117,7 +117,10 @@ impl PolicyGuard {
             .filter(|owners| !owners.is_empty())
             .ok_or_else(|| error("ownership_unavailable"))?;
         if owners.iter().any(|owner| {
-            owner.agent != crate::journal::Agent::Claude
+            !matches!(
+                owner.agent,
+                crate::journal::Agent::Claude | crate::journal::Agent::Codex
+            ) || owner.agent != owners[0].agent
                 || owner.session_id != owners[0].session_id
                 || owner.identity.boot_session_uuid != owners[0].identity.boot_session_uuid
         }) {

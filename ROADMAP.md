@@ -1,6 +1,6 @@
 # AgentDust roadmap
 
-AgentDust 1.1.0 provides process analysis, opt-in automatic cleanup, typed approval cleanup and a read-only disk report for Claude Code on Apple silicon. M0 through M3, M6 and M7 are implemented for this scope. The Claude Code 2.1.292 fixture matrix covers concurrent sessions, subagents, resume, `/clear` and abrupt exit. The 1.0.0 Homebrew setup, live session discovery, idle measurement, human decline and approved apply passed on the maintainer's Mac using that exact release binary. See the [v1 readiness record](docs/v1/readiness.md), [fixture matrix](docs/m6/fixtures.md) and [design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
+AgentDust 1.3.0 provides process analysis, opt-in automatic cleanup, typed approval cleanup and a read-only disk report for Claude Code on Apple silicon, with Codex tracking and cleanup after exact host exit. M0 through M3, M6 and M7 are implemented for this scope. The Claude Code 2.1.292 fixture matrix covers concurrent sessions, subagents, resume, `/clear` and abrupt exit. The 1.0.0 Homebrew setup, live session discovery, idle measurement, human decline and approved apply passed on the maintainer's Mac using that exact release binary. See the [v1 readiness record](docs/v1/readiness.md), [fixture matrix](docs/m6/fixtures.md) and [design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
 
 ## Project setup
 
@@ -10,7 +10,7 @@ Binary `1.2.0` adds one-confirmation directory batches and `auto enable --yes --
 
 A macOS developer who uses Claude Code enables a local cleanup policy once for selected projects. AgentDust automatically stops proven leftovers from ended sessions in that scope and leaves uncertain cases for explicit approval. Claude Code explains the diagnosis and the result. Version 1.0 provides manual typed approval; version 1.1 adds opt-in automatic cleanup ([commands and limits](docs/automatic-cleanup.md)).
 
-Multi-agent here means concurrent Claude Code sessions and foreground or background subagents. Agent Teams are opt-in and experimental, so they stay outside the supported v1 matrix until their events and ownership are separately validated. Codex, Cursor and other adapters remain deferred.
+Multi-agent here means concurrent Claude Code sessions and foreground or background subagents. Agent Teams are opt-in and experimental, so they stay outside the supported v1 matrix until their events and ownership are separately validated. Codex has native hook and session-marker attribution; automatic cleanup requires exact host exit. Cursor and other adapters remain deferred.
 
 ## Principles
 
@@ -39,7 +39,7 @@ Multi-agent here means concurrent Claude Code sessions and foreground or backgro
 | v1 scope | Process hygiene end to end, plus a read-only disk report |
 | Language | Rust, one binary, Tokio only in the MCP subcommand |
 | Interface | One MCP server with `agentdust_doctor`, `agentdust_plan`, `agentdust_apply`, `agentdust_disk`, and read-only `agentdust_auto_status`, plus a CLI |
-| Agents | Claude Code first, including concurrent sessions and subagents; Agent Teams experimental; Codex and Cursor deferred |
+| Agents | Claude Code first, including concurrent sessions and subagents; Codex native hooks and host-exit cleanup; Agent Teams experimental; Cursor deferred |
 | Provenance | Layered evidence: event-driven process sampling, a journal of paired shell calls per adapter, and an environment tag on Claude Code as additive evidence only |
 | Authorization | Manual MCP elicitation with a typed one-time code, or locally enabled directory policy for proven ended-session leftovers; fail closed |
 | Plan state | Canonical plan in server memory with an opaque ID. `plan.json` is for inspection. A server restart invalidates plans |
@@ -55,7 +55,7 @@ Multi-agent here means concurrent Claude Code sessions and foreground or backgro
 
 ## Current priority
 
-The current priority is using the opt-in automatic cleanup on the available Mac and recording useful cleanups, kept helpers and incorrect proposals. The 1.0 Homebrew acceptance is complete for Claude Code on Apple silicon. Real false proposals, setup execution time and live concurrency latency remain follow-up observations. Agent Teams, Codex, Cursor, other AI hosts and operating system expansion remain deferred.
+The current priority is using the opt-in automatic cleanup on the available Mac and recording useful cleanups, kept helpers and incorrect proposals. The 1.0 Homebrew acceptance is complete for Claude Code on Apple silicon. Real false proposals, setup execution time and live concurrency latency remain follow-up observations. Immediate Codex desktop cleanup, Agent Teams, Cursor, other AI hosts and operating system expansion remain deferred.
 
 ## Automatic cleanup in 1.1
 
@@ -80,11 +80,12 @@ Port-conflict diagnosis is the next candidate after automatic cleanup proves use
 | --- | --- |
 | M0 through M3, M6 and M7 | Implemented for the documented Claude Code and Apple silicon scope |
 | M9 controlled Homebrew acceptance | Complete; measurement limits remain in the [readiness record](docs/v1/readiness.md) |
-| Plugin/setup guidance | Guidance package `0.4.0` explains installed binary versus package versions and automatic results |
+| Plugin/setup guidance | Guidance package `0.6.0` explains installed binary versus package versions and automatic results |
 | Automatic cleanup | Implemented for `1.1.0`; measure value during normal use |
 | Port-conflict recovery | Candidate after automation delivers useful results |
 | M8 directory submission and upstream work | Optional |
-| M4, M5, other MCP hosts, M10 through M12 and native Windows | Deferred |
+| Codex desktop cleanup while its server stays alive | Deferred until session revocation and live subagent protection have a separate proof |
+| M5, other MCP hosts, M10 through M12 and native Windows | Deferred |
 
 ## Milestones
 
@@ -133,10 +134,15 @@ Exit: controlled Claude fixtures become owned-ended only after every exact attri
 
 Acceptance: the exact Homebrew 1.0 binary passed setup, live discovery, human decline and approved one-helper cleanup on the maintainer's Mac. A separate clean-account run and setup execution time are unmeasured, as recorded in the [readiness record](docs/v1/readiness.md). They are not additional 1.0 release gates.
 
-### M4 Codex adapter and setup (L, deferred)
+### M4 Codex adapter and setup
 
-- `hooks.json` under `CODEX_HOME` with `PreToolUse` and `PostToolUse` Bash matchers, MCP registration through `codex mcp add`.
-- Its own acceptance matrix and setup rollback tests. The correlation engine ships here as likely-owned evidence only.
+- Six native user hooks under `CODEX_HOME`, paired Bash calls and native MCP registration through `codex mcp add`.
+- `CODEX_SESSION_ID` is correlated with hook session IDs through a separate keyed digest. No command rewriting or transcript parsing.
+- Exact runtime identities control liveness. Session end and subagent turn completion do not replace host exit. Concurrent and resumed hosts sharing a session marker all stay in the ownership set.
+- Missing ancestry, a host switch without a recorded session start and mixed Claude/Codex markers cannot grant automatic cleanup.
+- Setup install, removal, idempotence, rollback and user-setting preservation tests are in `crates/agentdust-agents/tests/codex_setup.rs`.
+
+Remaining: immediate cleanup after a desktop chat ends while its shared server stays alive. This requires independently defensible session revocation, resume and live subagent protection. The current adapter waits for exact host exit. See [support and limits](docs/codex.md).
 
 ### M5 Cursor adapter and setup (L, deferred)
 

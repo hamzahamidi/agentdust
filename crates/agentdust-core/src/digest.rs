@@ -8,6 +8,7 @@ const HEX: &[u8; 16] = b"0123456789abcdef";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Domain {
     Session,
+    CodexSession,
     Subagent,
     Cwd,
 }
@@ -16,6 +17,7 @@ impl Domain {
     pub fn label(self) -> &'static str {
         match self {
             Self::Session => "AGENTDUST-SESSION-v1",
+            Self::CodexSession => "AGENTDUST-CODEX-SESSION-v1",
             Self::Subagent => "AGENTDUST-SUBAGENT-v1",
             Self::Cwd => "AGENTDUST-CWD-v1",
         }

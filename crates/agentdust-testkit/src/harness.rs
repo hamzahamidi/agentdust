@@ -326,6 +326,8 @@ impl Harness {
         let child = Command::new(&self.fixture)
             .args(spec.args())
             .env_remove("AGENTDUST_SESSION")
+            .env_remove("CODEX_SESSION_ID")
+            .env_remove("CODEX_THREAD_ID")
             .envs(spec.env.iter().map(|(name, value)| (name, value)))
             .stdin(Stdio::null())
             .stdout(Stdio::null())

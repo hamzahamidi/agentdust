@@ -332,3 +332,57 @@ fn a_data_directory_below_a_missing_parent_records_nothing_and_creates_nothing()
     assert!(fs::read_dir(&root).unwrap().next().is_none());
     fs::remove_dir_all(&root).unwrap();
 }
+
+#[test]
+fn codex_hooks_record_native_session_marker_without_rewriting_commands_or_exporting() {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let dir = private_dir("codex-hooks");
+    let env_file = dir.join("unrelated-env");
+    fs::write(&env_file, "unchanged").unwrap();
+    let session = "12345678-1234-1234-1234-123456789abc";
+    for event in [
+        "SessionStart",
+        "PreToolUse",
+        "PostToolUse",
+        "SubagentStart",
+        "SubagentStop",
+        "SessionEnd",
+    ] {
+        let input = serde_json::json!({"session_id": session, "hook_event_name": event, "cwd": "/tmp/project", "tool_name": "Bash", "tool_use_id": "call1", "agent_id": if event.starts_with("Subagent") { Some("child1") } else { None }, "tool_input": {"command": "secret-command"}, "tool_response": {"stdout": "secret-output"}});
+        let mut child = Command::new(env!("CARGO_BIN_EXE_agentdust"))
+            .args(["hook", "codex"])
+            .env("AGENTDUST_DATA_DIR", &dir)
+            .env("CLAUDE_ENV_FILE", &env_file)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(input.to_string().as_bytes())
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(output.stderr.is_empty());
+    }
+    let records = journal::read(&dir).unwrap().records;
+    assert_eq!(records.len(), 6);
+    let secret = agentdust_core::secret::load_existing(&dir).unwrap();
+    let expected = agentdust_core::tag::codex_key_of(&secret, session.as_bytes()).unwrap();
+    assert!(
+        records
+            .iter()
+            .all(|r| r.agent == Agent::Codex && r.session_tag_key.as_ref() == Some(&expected))
+    );
+    assert!(records[3].subagent_id.is_some());
+    assert_eq!(fs::read_to_string(env_file).unwrap(), "unchanged");
+    let stored = fs::read_to_string(dir.join("journal.jsonl")).unwrap();
+    assert!(!stored.contains("secret-command"));
+    assert!(!stored.contains("secret-output"));
+    fs::remove_dir_all(dir).unwrap();
+}

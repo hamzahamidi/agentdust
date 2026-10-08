@@ -2,7 +2,9 @@
 
 AgentDust `1.1.0` adds opt-in automatic cleanup for Claude Code on Apple silicon. Version `1.0.0` provides manual cleanup only. Check `agentdust version` before using these commands.
 
-A local worker survives Claude Code termination. It stops a helper only when the existing classifier freshly proves ownership by an ended Claude session, every recorded owner is gone, the human enabled the recorded directory, and the helper is not kept. Uncertain cases remain available through the manual approval flow.
+A local worker survives Claude Code termination. It stops a helper only when the existing classifier freshly proves ownership by an ended supported session, every recorded owner process is gone, the human enabled the recorded directory, and the helper is not kept. Uncertain cases remain available through the manual approval flow.
+
+Codex support in `1.3.0` uses the same policy. Run `agentdust setup codex --yes`, review hook trust in Codex `/hooks`, and start a new chat. A shared desktop server must exit before its tagged helpers qualify for automatic cleanup. A chat ending or a subagent turn finishing does not substitute for host exit. See [Codex support](codex.md).
 
 ## Enable one directory
 

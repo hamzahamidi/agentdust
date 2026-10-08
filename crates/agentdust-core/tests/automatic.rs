@@ -231,7 +231,7 @@ mod execution {
             &Record {
                 v: SCHEMA_VERSION,
                 kind: Kind::SessionStart,
-                agent: Agent::Claude,
+                agent: owner.agent,
                 session_id: owner.session_id.clone(),
                 subagent_id: None,
                 agent_identity: Some(
@@ -273,6 +273,50 @@ mod execution {
         );
         assert_eq!(rig.signals(), [4242]);
         assert!(rig.audit().iter().all(|line| line["plan"] == "auto-test"));
+    }
+
+    #[test]
+    fn codex_automatic_cleanup_preserves_live_owner_keep_pause_and_receipt_checks() {
+        for mode in ["ended", "live", "keep", "pause", "scope", "cursor"] {
+            let mut candidate = item(4242, Class::OwnedEnded);
+            candidate.attribution_owners.as_mut().unwrap()[0].agent = if mode == "cursor" {
+                Agent::Cursor
+            } else {
+                Agent::Codex
+            };
+            let rig = if mode == "live" {
+                Rig::for_item(&candidate)
+                    .survey(|_| Ok(vec![finding(4242, Class::OwnedLive)]))
+                    .build()
+            } else {
+                Rig::for_item(&candidate).build()
+            };
+            enable(&rig, &candidate);
+            let mut guard = PolicyGuard::acquire(&rig.dir).unwrap();
+            match mode {
+                "keep" => guard.policy.keep.push(candidate.identity.kernel.clone()),
+                "pause" => guard.policy.enabled = false,
+                "scope" => guard.policy.projects.clear(),
+                _ => {}
+            }
+            guard.write().unwrap();
+            drop(guard);
+            let result = rig.executor.execute_automatic("codex-test", &candidate);
+            if mode == "ended" {
+                assert_eq!(result.unwrap().outcome, Outcome::Terminated);
+                assert_eq!(rig.signals(), [4242]);
+                assert_eq!(
+                    rig.executor
+                        .execute_automatic("codex-again", &candidate)
+                        .unwrap()
+                        .outcome,
+                    Outcome::HandledElsewhere
+                );
+                assert_eq!(rig.signals(), [4242]);
+            } else {
+                assert!(rig.signals().is_empty(), "{mode}");
+            }
+        }
     }
 
     #[test]

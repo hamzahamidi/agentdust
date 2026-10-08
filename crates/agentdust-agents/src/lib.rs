@@ -1,6 +1,8 @@
 mod budget;
 pub mod claude;
 pub mod claude_setup;
+pub mod codex;
+pub mod codex_setup;
 pub mod diff;
 pub mod hook_config;
 pub mod json_edit;

@@ -36,6 +36,7 @@ pub trait CliRunner {
 pub struct SystemRunner {
     program: PathBuf,
     config_dir: Option<PathBuf>,
+    config_env: &'static str,
     timeout: Duration,
 }
 
@@ -44,6 +45,18 @@ impl SystemRunner {
         Self {
             program,
             config_dir,
+            config_env: "CLAUDE_CONFIG_DIR",
+            timeout,
+        }
+    }
+}
+
+impl SystemRunner {
+    pub fn for_codex(program: PathBuf, config_dir: PathBuf, timeout: Duration) -> Self {
+        Self {
+            program,
+            config_dir: Some(config_dir),
+            config_env: "CODEX_HOME",
             timeout,
         }
     }
@@ -92,7 +105,7 @@ impl CliRunner for SystemRunner {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         if let Some(dir) = &self.config_dir {
-            command.env("CLAUDE_CONFIG_DIR", dir);
+            command.env(self.config_env, dir);
         }
         let mut child = command.spawn().map_err(|err| CliError::Spawn(err.to_string()))?;
         let stdout = drain(child.stdout.take());

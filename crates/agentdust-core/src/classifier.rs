@@ -318,7 +318,7 @@ impl<'a> Context<'a> {
                 .identity
                 .exe_path
                 .as_deref()
-                .is_some_and(ancestry::agent_exe)
+                .is_some_and(|path| ancestry::agent_exe(path) || ancestry::codex_exe(path))
             || self.agents.contains(&process.identity.kernel)
     }
 

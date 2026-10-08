@@ -39,38 +39,50 @@ fn worker(sandbox: &Sandbox) -> Fixture {
 #[test]
 #[ignore = "uses the explicitly built fixture sleeper and starts only an isolated test worker"]
 fn normal_exit_cleans_one_helper_preserves_keep_and_never_retries_a_survivor_after_restart() {
-    check_exit(false);
+    check_exit(false, Agent::Claude);
 }
 
 #[test]
 #[ignore = "uses the explicitly built fixture sleeper and starts only an isolated test worker"]
 fn abrupt_exit_cleans_one_helper_preserves_keep_and_never_retries_a_survivor_after_restart() {
-    check_exit(true);
+    check_exit(true, Agent::Claude);
 }
 
-fn check_exit(abrupt: bool) {
+#[test]
+#[ignore = "uses the explicitly built fixture sleeper and starts only an isolated test worker"]
+fn codex_normal_host_exit_cleans_one_helper_and_preserves_keep_and_restart_receipts() {
+    check_exit(false, Agent::Codex);
+}
+
+#[test]
+#[ignore = "uses the explicitly built fixture sleeper and starts only an isolated test worker"]
+fn codex_abrupt_host_exit_cleans_one_helper_and_preserves_keep_and_restart_receipts() {
+    check_exit(true, Agent::Codex);
+}
+
+fn check_exit(abrupt: bool, agent: Agent) {
     let fixture =
         std::env::var_os("AGENTDUST_FIXTURE_SLEEPER").expect("build fixture-sleeper and provide its path");
     let sandbox = Sandbox::new("auto-worker");
     let secret = load_or_create(&sandbox.data).unwrap();
     let key = agentdust_core::cwd::cwd_key(&secret, sandbox.home.to_str().unwrap()).unwrap();
     let tag = SessionTag::generate().unwrap();
+    let session = "12345678-1234-1234-1234-123456789abc";
+    let (marker_name, marker, tag_key) = if agent == Agent::Codex {
+        (
+            "CODEX_SESSION_ID",
+            session,
+            agentdust_core::tag::codex_key_of(&secret, session.as_bytes()).unwrap(),
+        )
+    } else {
+        ("AGENTDUST_SESSION", tag.as_str(), tag.key(&secret))
+    };
     let mut harness = Harness::new(fixture).unwrap();
     let target_tree = harness
-        .spawn_tree(
-            &ProcSpec::new()
-                .seconds(120)
-                .spawn(1)
-                .env("AGENTDUST_SESSION", tag.as_str()),
-        )
+        .spawn_tree(&ProcSpec::new().seconds(120).spawn(1).env(marker_name, marker))
         .unwrap();
     let kept_tree = harness
-        .spawn_tree(
-            &ProcSpec::new()
-                .seconds(120)
-                .spawn(1)
-                .env("AGENTDUST_SESSION", tag.as_str()),
-        )
+        .spawn_tree(&ProcSpec::new().seconds(120).spawn(1).env(marker_name, marker))
         .unwrap();
     let survivor_tree = harness
         .spawn_tree(
@@ -78,7 +90,7 @@ fn check_exit(abrupt: bool) {
                 .seconds(120)
                 .spawn(1)
                 .ignore_term()
-                .env("AGENTDUST_SESSION", tag.as_str()),
+                .env(marker_name, marker),
         )
         .unwrap();
     harness.orphan(target_tree.parent).unwrap();
@@ -100,15 +112,15 @@ fn check_exit(abrupt: bool) {
     let start = Record {
         v: SCHEMA_VERSION,
         kind: Kind::SessionStart,
-        agent: Agent::Claude,
-        session_id: "isolated-worker-session".into(),
+        agent,
+        session_id: session.into(),
         subagent_id: None,
         agent_identity: Some(AgentIdentity::from_process(&identity).unwrap()),
         tool_use_id: None,
         wall_ts: 1,
         mono_ts: 1,
         boot: identity.kernel.boot_session_uuid.clone(),
-        session_tag_key: Some(tag.key(&secret)),
+        session_tag_key: Some(tag_key),
         cwd_key: Some(key.clone()),
         exe_base: None,
     };

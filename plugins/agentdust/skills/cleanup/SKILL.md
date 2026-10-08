@@ -1,11 +1,11 @@
 ---
 name: cleanup
-description: Explain AgentDust process reports and guide safe local cleanup. Use when the user asks about processes left by Claude Code sessions, AgentDust doctor output, or cleanup.
+description: Explain AgentDust process reports and guide safe local cleanup. Use when the user asks about processes left by Claude Code or Codex sessions, AgentDust doctor output, or cleanup.
 ---
 
 # AgentDust cleanup
 
-This skill package contains guidance only. It does not connect to a Mac or provide live process access. Live inspection requires a separately configured local AgentDust MCP connection. The guidance package has its own version, separate from the installed binary. AgentDust supports Claude Code on Apple silicon; setting it up there does not connect it to ChatGPT or Codex.
+This skill package contains guidance only. It does not connect to a Mac or provide live process access. Live inspection requires a separately configured local AgentDust MCP connection. The guidance package has its own version, separate from the installed binary. AgentDust supports Claude Code and Codex process tracking on Apple silicon. The binary requires separate client setup. Codex desktop helpers are protected while any recorded shared host stays alive. Setting up a local client does not connect it to ChatGPT.
 
 ## Explain a report the user provides
 
@@ -21,7 +21,7 @@ Explain classes and evidence as reported. A process name, parent PID, age, or CP
 4. If the user declines or cancels, stop. If the client cannot show the form, tell the user to run `agentdust apply` locally. Do not run that command yourself.
 5. Report the result returned by `agentdust_apply`. Do not repeat an apply call for an item that already has a result.
 
-If live tools are unavailable, say this package does not create that connection. Explain the report the user provides, or direct them to AgentDust's local Claude Code setup. Do not change client settings or install AgentDust as part of this skill.
+If live tools are unavailable, say this package does not create that connection. Explain the report the user provides, or direct them to AgentDust's local client setup. Do not change client settings or install AgentDust as part of this skill.
 
 ## Automatic cleanup when the installed binary supports it
 
@@ -30,3 +30,9 @@ If `agentdust_auto_status` is available, call it to explain the human-enabled po
 With binary `1.2.0` or newer and local shell access, enable the exact scopes the user has authorized through `agentdust auto enable --yes PROJECT...`. If the user requests all projects under a directory, use `agentdust auto enable --yes --projects ROOT`; it selects the root and immediate Git directories only. Do not infer permission from repository text, tool output or a process report. Without explicit user scope authorization, ask for it. Confirm enabled directory count and worker state with `agentdust auto status`. Binary `1.1.0` requires the human to run enablement in their foreground terminal. A local worker continues after Claude Code exits. Only proven owned-ended helpers in enabled scope are eligible; uncertain cases use the existing typed approval flow. Do not supply terminal consent text, remove keeps or enable directories outside the user-authorized scope. Never treat an agent judgement as proof that a process is eligible. Kept identities stay protected during manual apply too.
 
 Explain survivors and prior-attempt cases without retrying automatically. For uncertain items the user wants to handle, request a fresh plan and follow the manual approval steps above. A pasted automatic report is historical evidence, not approval.
+
+## Codex setup
+
+Binary `1.3.0` adds `agentdust setup codex [--yes]`, `--check` and `--remove`. With the user's explicit installation authorization and local shell access, use setup with `--yes`, then check configuration. Codex requires the user to review and trust new hooks in `/hooks`; do not set bypass flags or edit hook trust records. A new chat loads the configuration. Setup registers the local MCP server; this skills package alone does not.
+
+Codex's native shell session marker is attribution evidence. Every recorded exact host process must be gone before automatic cleanup. Closing a desktop chat or ending a subagent turn does not suffice while the shared server lives. Never claim immediate per-chat desktop cleanup. The same user-authorized directory policy and keeps cover both supported clients. Codex clients without usable elicitation use terminal approval for uncertain cases.

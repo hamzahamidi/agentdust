@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-08",
+  "platform": "macOS Apple silicon",
+  "codex_version": "0.156.1",
+  "native_hooks": {
+    "events": [
+      "session_start",
+      "shell_start",
+      "shell_end",
+      "session_end"
+    ],
+    "actual_codex_host_identified": true,
+    "shell_marker_matches_hook_session_id": true,
+    "isolated_hook_trust_bypass": true,
+    "persistent_hook_trust_modified": false
+  },
+  "native_cli_setup": {
+    "private_configuration": true,
+    "install": true,
+    "check": true,
+    "remove": true
+  },
+  "controlled_worker_fixtures": {
+    "normal_codex_host_exit": true,
+    "abrupt_codex_host_exit": true,
+    "live_owner_protected": true,
+    "kept_helper_protected": true,
+    "unrelated_helper_protected": true,
+    "survivor_not_signalled_twice_after_restart": true
+  },
+  "limits": {
+    "natural_codex_leak_reproduced": false,
+    "native_desktop_hooks_verified": false,
+    "immediate_desktop_chat_cleanup_supported": false
+  }
+}
