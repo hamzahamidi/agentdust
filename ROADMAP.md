@@ -196,7 +196,7 @@ Exit: Claude Desktop package works on a clean account with the required local se
 
 Revisit another platform when user demand and demonstrated product value justify its provider, packaging and acceptance work.
 
-The current target is Claude Code on macOS arm64. Keep Codex and Cursor deferred. The controlled Homebrew acceptance is complete; unresolved measurement limits remain in the readiness record. Automatic cleanup is the current product priority. The multi-Mac, two-week study is optional confidence evidence after 1.0.
+The current platform is macOS arm64 with Claude Code and the conservative native Codex adapter. Cursor remains deferred. The controlled Homebrew acceptance is complete; unresolved measurement limits remain in the readiness record. Automatic cleanup is the current product priority. The multi-Mac, two-week study is optional confidence evidence after 1.0.
 
 ### M10 Intel macOS (M)
 
@@ -230,7 +230,7 @@ Native Windows is not scheduled. Start it only after user requests justify a sep
 
 ## Deferred capabilities
 
-Codex and Cursor adapters, process-group signals, `SIGKILL`, listening ports, persisted plans.
+Immediate per-chat Codex cleanup while a shared host remains alive, the Cursor adapter, process-group signals, `SIGKILL`, listening ports, persisted plans.
 
 ## Optional external work
 
@@ -247,7 +247,7 @@ Disk deletion or quarantine (1.x, rebuildable caches only), Linux and Windows, d
 | MCP clients differ in elicitation behaviour | M0 matrix, pinned SDK, typed-code regression tests, refuse `apply` on any failing client |
 | `CLAUDE_ENV_FILE` is missing on resume, `/clear` or in plugin hooks | Tag is additive evidence only, with explicit acceptance cases |
 | Hook latency grows under journal contention | 3 and 16 writer benchmark in M1, hard budget in CI |
-| Weaker provenance for Codex and Cursor | Correlation evidence is likely-owned and report-only until its precision is measured |
+| Missing Codex native markers or host identity, and weaker Cursor provenance | Codex requires its native marker and every exact recorded host gone. Incomplete evidence stays report-only. Cursor remains deferred |
 | A suspect is a deliberately detached process | Evidence shown per item, one typed code per item, SIGTERM only, audit log, deny list, false positives counted in the 1.0 evidence |
 | Secrets in commands reach the journal | Ingestion minimisation, privacy invariant test |
 | Config patching damages a user file | Surgical edits, diff plus consent, per-product rollback, `--check`, `--remove` |
