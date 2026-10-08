@@ -424,3 +424,11 @@ The scanner reads directory entries and metadata only. Each root path component 
 The CLI and MCP return fixed root labels, categories, counters and statuses. Raw entry names and filesystem errors are not returned. The scanner writes no journal, report or approval state and performs no deletion. Root overrides come from the launching user's environment, never a model argument.
 
 The scan checks its budget between directory entries and before each root: 100,000 entries, 64 directory levels or 10 seconds, with a partial result. One MCP disk scan runs at a time. A filesystem call can block beyond the budget. Concurrent modifications can change totals; the report is not a snapshot or a reclaimable-space calculation. See [M7 scope and limits](m7/disk.md).
+
+## TCP listener recovery
+
+The TCP listener inventory is an additional constraint, not ownership or authorization evidence. The full process classifier resolves every owner before listener filtering. Before each automatic attempt, the executor repeats that classification and the exact listener identity check. The existing enabled-project policy, keeps, apply switch, owner revalidation, per-process lock and durable receipt control signaling.
+
+The macOS adapter invokes `/usr/sbin/lsof` with fixed TCP LISTEN arguments, numeric addresses and ports, and only PID/socket-name fields. It clears the child environment, bounds each output stream to 64 KiB and imposes a five-second capture deadline. Warnings, malformed output, identity churn, more than 16 listeners or failed scans cannot authorize cleanup. Commands and environments are not collected. Native identities before and after the scan must match.
+
+The final scan reports current-user-visible listeners. An empty result does not prove that another user has no listener or that a subsequent bind will succeed. TCP socket state can change after any scan; this feature is not an atomic port reservation. UDP and remote hosts are outside its scope. Uncertain actionable listeners use the existing human approval flow, with the requested exact item selected from a fresh plan.

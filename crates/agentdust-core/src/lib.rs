@@ -20,6 +20,7 @@ pub mod journal;
 pub mod manifest;
 pub mod paths;
 pub mod plan;
+pub mod port;
 pub mod procargs;
 pub mod provider;
 pub mod revalidate;
@@ -35,3 +36,6 @@ pub mod user_file;
 pub mod darwin;
 #[cfg(target_os = "macos")]
 pub mod live;
+
+#[cfg(target_os = "macos")]
+pub mod port_live;

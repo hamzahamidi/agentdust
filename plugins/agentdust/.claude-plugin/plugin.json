@@ -1,7 +1,7 @@
 {
   "name": "agentdust",
   "description": "Claude Code process cleanup and read-only disk reports with AgentDust",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "author": {
     "name": "Hamza Hamidi",
     "url": "https://github.com/hamzahamidi"

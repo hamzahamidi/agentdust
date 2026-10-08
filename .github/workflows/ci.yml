@@ -59,4 +59,8 @@ jobs:
         env:
           AGENTDUST_FIXTURE_SLEEPER: ${{ github.workspace }}/target/debug/fixture-sleeper
         run: cargo test --locked -p agentdust --test automatic_worker -- --ignored --test-threads=1
+      - name: Check controlled TCP listener recovery
+        env:
+          AGENTDUST_FIXTURE_LISTENER: ${{ github.workspace }}/target/debug/fixture-listener
+        run: cargo test --locked -p agentdust --test port -- --ignored --test-threads=1
       - run: cargo test --release -p agentdust --test hook_latency --locked -- --ignored --nocapture --test-threads=1
