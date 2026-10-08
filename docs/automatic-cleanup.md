@@ -6,15 +6,28 @@ A local worker survives Claude Code termination. It stops a helper only when the
 
 ## Enable one directory
 
-Run these commands in your own foreground terminal, outside an AI agent:
+For interactive setup, run these commands in your own foreground terminal:
 
 ```bash
 agentdust setup
-agentdust auto enable /absolute/path/to/project
+agentdust auto enable /absolute/path/to/project /absolute/path/to/another-project
 agentdust auto status
 ```
 
-The policy command describes the change and requires typing `ENABLE`. Other policy changes require typing `CONFIRM`. There is no unattended approval flag. MCP exposes no policy mutation. The CLI refuses non-interactive calls and calls with a known agent ancestor.
+The command lists the complete canonical scope and requires one `ENABLE` for the batch. Other policy changes require typing `CONFIRM`.
+
+Binary `1.2.0` adds agent-driven setup after the user authorizes a scope:
+
+```bash
+agentdust auto enable --yes --projects /absolute/path/to/projects
+agentdust auto status
+```
+
+`--projects ROOT` selects `ROOT` and its immediate child Git repositories or worktree roots. It does not recurse, follow child symlinks or use Git metadata to discover worktrees elsewhere. Explicit directories can also be passed together: `agentdust auto enable --yes PROJECT ANOTHER_PROJECT`.
+
+`--yes` bypasses terminal consent for enablement only. The caller is responsible for obtaining the user's authorization for the selected scope. AgentDust cannot authenticate a chat message or an agent's account of permission. The flag cannot remove keeps or approve uncertain processes. MCP exposes read-only status; an agent needs local shell access to enable policy. Without `--yes`, the CLI still refuses non-interactive and known-agent callers.
+
+All selected directories are validated and deduplicated before policy changes. The final policy has at most 128 exact directory scopes, including existing scopes. One policy write enables the batch and one worker registration starts it. Invalid paths or a scope limit failure preserve policy and worker state.
 
 The selected scope is the canonical directory recorded at `SessionStart`. A session started in `/project/packages/server` needs that directory enabled separately from `/project`. There is no recursive path allowance. Symlink aliases use the same canonicalization as the hook. Existing journal evidence in an enabled directory can qualify during startup reconciliation.
 

@@ -2,6 +2,10 @@
 
 AgentDust 1.1.0 provides process analysis, opt-in automatic cleanup, typed approval cleanup and a read-only disk report for Claude Code on Apple silicon. M0 through M3, M6 and M7 are implemented for this scope. The Claude Code 2.1.292 fixture matrix covers concurrent sessions, subagents, resume, `/clear` and abrupt exit. The 1.0.0 Homebrew setup, live session discovery, idle measurement, human decline and approved apply passed on the maintainer's Mac using that exact release binary. See the [v1 readiness record](docs/v1/readiness.md), [fixture matrix](docs/m6/fixtures.md) and [design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
 
+## Project setup
+
+Binary `1.2.0` adds one-confirmation directory batches and `auto enable --yes --projects ROOT` for user-authorized AI setup. Discovery covers the parent and immediate Git directories. Automatic eligibility still comes from classifier proof, not agent judgement. Uncertain cases require manual approval.
+
 ## Goal
 
 A macOS developer who uses Claude Code enables a local cleanup policy once for selected projects. AgentDust automatically stops proven leftovers from ended sessions in that scope and leaves uncertain cases for explicit approval. Claude Code explains the diagnosis and the result. Version 1.0 provides manual typed approval; version 1.1 adds opt-in automatic cleanup ([commands and limits](docs/automatic-cleanup.md)).

@@ -77,3 +77,25 @@ async fn mcp_exposes_read_only_status_and_no_policy_mutation() {
     service.cancel().await.unwrap();
     assert!(!sandbox.data.join("automatic").exists());
 }
+
+#[test]
+fn unattended_enable_validates_all_paths_without_writing_state() {
+    let sandbox = Sandbox::new("auto-invalid-batch");
+    for args in [
+        vec!["auto", "enable", "--yes", "/tmp", "/"],
+        vec!["auto", "enable", "--yes", "/tmp", "/agentdust-missing-project"],
+        vec!["auto", "enable", "--yes", "--projects", "/"],
+        vec!["auto", "enable", "--yes"],
+        vec!["auto", "pause", "--yes"],
+        vec!["auto", "unkeep", "--yes", "1"],
+    ] {
+        assert_eq!(code(&sandbox.run(&args)), 1);
+        assert!(!sandbox.data.exists());
+        assert!(
+            !sandbox
+                .home
+                .join("Library/LaunchAgents/com.agentdust.automatic.plist")
+                .exists()
+        );
+    }
+}

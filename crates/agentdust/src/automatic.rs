@@ -27,7 +27,7 @@ use agentdust_core::{clock, cwd, paths, safe_open, secret};
 use serde_json::{Value, json};
 
 const LABEL: &str = "com.agentdust.automatic";
-const USAGE: &str = "usage: agentdust auto enable PROJECT | disable [PROJECT] | pause | resume | keep PID | unkeep PID | status";
+const USAGE: &str = "usage: agentdust auto enable [--yes] PROJECT... | enable [--yes] --projects ROOT | disable [PROJECT] | pause | resume | keep PID | unkeep PID | status";
 
 pub fn run(args: &[&str]) -> ExitCode {
     match execute(args) {
@@ -43,6 +43,102 @@ fn error(error: impl std::fmt::Display) -> io::Error {
     io::Error::other(error.to_string())
 }
 
+struct EnableRequest {
+    projects: Vec<PathBuf>,
+    unattended: bool,
+}
+
+fn enable_request(args: &[&str]) -> io::Result<Option<EnableRequest>> {
+    if args.first() != Some(&"enable") {
+        return Ok(None);
+    }
+    let mut paths = &args[1..];
+    let unattended = paths.first() == Some(&"--yes");
+    if unattended {
+        paths = &paths[1..];
+    }
+    let mut projects = Vec::new();
+    match paths {
+        ["--projects", root] => {
+            let root = project_directory(root)?;
+            projects.push(root.clone());
+            for entry in fs::read_dir(&root)? {
+                let entry = entry?;
+                if !entry.file_type()?.is_dir() {
+                    continue;
+                }
+                let git = entry.path().join(".git");
+                if fs::symlink_metadata(git).is_ok_and(|meta| meta.is_dir() || meta.is_file()) {
+                    let project = project_directory(entry.path())?;
+                    if project.parent() != Some(root.as_path()) {
+                        return Err(error("discovered project escaped its parent directory"));
+                    }
+                    projects.push(project);
+                    if projects.len() > 128 {
+                        return Err(error("automatic policy limit reached: at most 128 directories"));
+                    }
+                }
+            }
+        }
+        [] => return Err(error(USAGE)),
+        paths => {
+            for path in paths {
+                if path.starts_with("--") {
+                    return Err(error(USAGE));
+                }
+                projects.push(project_directory(path)?);
+            }
+        }
+    }
+    projects.sort();
+    projects.dedup();
+    if projects.len() > 128 {
+        return Err(error("automatic policy limit reached: at most 128 directories"));
+    }
+    Ok(Some(EnableRequest { projects, unattended }))
+}
+
+fn project_directory(path: impl AsRef<Path>) -> io::Result<PathBuf> {
+    let project = fs::canonicalize(path)?;
+    if !project.is_dir() || project.parent().is_none() || project.to_str().is_none() {
+        return Err(error("select a UTF-8 project directory, not the filesystem root"));
+    }
+    Ok(project)
+}
+
+fn merged_projects(
+    existing: &[journal::CwdKey],
+    projects: &[PathBuf],
+    install_secret: &secret::Secret,
+) -> io::Result<Vec<journal::CwdKey>> {
+    let mut keys = existing.to_vec();
+    for project in projects {
+        let key = cwd::cwd_key(
+            install_secret,
+            project.to_str().ok_or_else(|| error("project is not UTF-8"))?,
+        )
+        .ok_or_else(|| error("project cannot be recorded"))?;
+        if !keys.contains(&key) {
+            keys.push(key);
+        }
+    }
+    if keys.len() > 128 {
+        return Err(error("automatic policy limit reached: at most 128 directories"));
+    }
+    Ok(keys)
+}
+
+fn add_projects(
+    guard: &mut PolicyGuard,
+    projects: &[PathBuf],
+    install_secret: &secret::Secret,
+) -> io::Result<()> {
+    let keys = merged_projects(&guard.policy.projects, projects, install_secret)?;
+    guard.policy.projects = keys;
+    guard.policy.enabled = true;
+    guard.write()
+}
+
 fn execute(args: &[&str]) -> io::Result<()> {
     let dir = paths::data_dir()?;
     if args == ["status"] {
@@ -52,44 +148,60 @@ fn execute(args: &[&str]) -> io::Result<()> {
     if args == ["worker"] {
         return worker(&dir);
     }
-    if !matches!(
-        args,
-        ["enable", _] | ["disable", _] | ["pause"] | ["resume"] | ["disable"] | ["keep", _] | ["unkeep", _]
-    ) {
+    let enable = enable_request(args)?;
+    if enable.is_none()
+        && !matches!(
+            args,
+            ["disable", _] | ["pause"] | ["resume"] | ["disable"] | ["keep", _] | ["unkeep", _]
+        )
+    {
         return Err(error(USAGE));
     }
+    if let Some(request) = &enable {
+        let existing = automatic::read(&dir)?;
+        if !existing.projects.is_empty() {
+            merged_projects(
+                &existing.projects,
+                &request.projects,
+                &secret::load_existing(&dir).map_err(error)?,
+            )?;
+        }
+    }
     let provider = DarwinProvider::new()?;
-    human_consent(&provider, args)?;
-    safe_open::ensure_dir(&dir).map_err(error)?;
-    let mut guard = PolicyGuard::acquire(&dir)?;
-    match args {
-        ["enable", project] => {
-            let project = fs::canonicalize(project)?;
-            if !project.is_dir() || project.parent().is_none() {
-                return Err(error("select a project directory, not the filesystem root"));
-            }
-            let install_secret = secret::load_or_create(&dir).map_err(error)?;
-            let key = cwd::cwd_key(
-                &install_secret,
-                project.to_str().ok_or_else(|| error("project is not UTF-8"))?,
-            )
-            .ok_or_else(|| error("project cannot be recorded"))?;
-            if !guard.policy.projects.contains(&key) {
-                guard.policy.projects.push(key);
-            }
-            guard.policy.enabled = true;
-            guard.write()?;
-            drop(guard);
-            if let Err(err) = install_worker(&dir) {
-                let mut guard = PolicyGuard::acquire(&dir)?;
-                guard.policy.enabled = false;
-                guard.write()?;
-                return Err(err);
-            }
+    if let Some(request) = &enable {
+        println!(
+            "Selected {} exact session-start directories:",
+            request.projects.len()
+        );
+        for project in &request.projects {
             println!(
-                "Automatic cleanup enabled. Only recorded session start directories explicitly enabled here are in scope."
+                "  {}",
+                agentdust_core::sanitize::escape(&project.to_string_lossy())
             );
         }
+    }
+    if !enable.as_ref().is_some_and(|request| request.unattended) {
+        human_consent(&provider, args)?;
+    }
+    safe_open::ensure_dir(&dir).map_err(error)?;
+    let mut guard = PolicyGuard::acquire(&dir)?;
+    if let Some(request) = enable {
+        let install_secret = secret::load_or_create(&dir).map_err(error)?;
+        add_projects(&mut guard, &request.projects, &install_secret)?;
+        drop(guard);
+        if let Err(err) = install_worker(&dir) {
+            let mut guard = PolicyGuard::acquire(&dir)?;
+            guard.policy.enabled = false;
+            guard.write()?;
+            return Err(err);
+        }
+        println!(
+            "Automatic cleanup enabled for {} selected directories. Scope is exact, not recursive.",
+            request.projects.len()
+        );
+        return Ok(());
+    }
+    match args {
         ["resume"] => {
             if guard.policy.projects.is_empty() {
                 return Err(error("enable a project directory first"));
@@ -536,6 +648,87 @@ mod launchd_tests {
         ));
         safe_open::ensure_dir(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn batch_enable_canonicalizes_and_deduplicates_before_consent() {
+        let dir = scratch("batch");
+        let alias = dir.join("alias");
+        std::os::unix::fs::symlink(&dir, &alias).unwrap();
+        let request = enable_request(&["enable", "--yes", dir.to_str().unwrap(), alias.to_str().unwrap()])
+            .unwrap()
+            .unwrap();
+        assert!(request.unattended);
+        assert_eq!(request.projects, vec![fs::canonicalize(&dir).unwrap()]);
+        assert!(
+            enable_request(&["enable", dir.to_str().unwrap()])
+                .unwrap()
+                .is_some_and(|r| !r.unattended)
+        );
+        assert!(enable_request(&["enable", "--yes", dir.to_str().unwrap(), "/"]).is_err());
+        assert!(enable_request(&["enable", "--yes"]).is_err());
+        assert!(enable_request(&["enable", "--unexpected", dir.to_str().unwrap()]).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn project_discovery_is_immediate_and_never_follows_git_metadata_or_symlinks() {
+        let dir = scratch("discovery");
+        let outside = scratch("outside");
+        fs::create_dir(outside.join(".git")).unwrap();
+        let repo = dir.join("repo");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        let worktree = dir.join("worktree");
+        fs::create_dir(&worktree).unwrap();
+        fs::write(worktree.join(".git"), format!("gitdir: {}", outside.display())).unwrap();
+        fs::create_dir_all(dir.join("plain/nested/.git")).unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("external-link")).unwrap();
+        let request = enable_request(&["enable", "--projects", dir.to_str().unwrap()])
+            .unwrap()
+            .unwrap();
+        let mut expected: Vec<_> = [dir.clone(), repo, worktree]
+            .iter()
+            .map(|p| fs::canonicalize(p).unwrap())
+            .collect();
+        expected.sort();
+        assert_eq!(request.projects, expected);
+        fs::remove_dir_all(dir).unwrap();
+        fs::remove_dir_all(outside).unwrap();
+    }
+
+    #[test]
+    fn discovery_rejects_more_than_128_scopes() {
+        let dir = scratch("discovery-limit");
+        for i in 0..128 {
+            fs::create_dir_all(dir.join(format!("repo-{i}/.git"))).unwrap();
+        }
+        assert!(enable_request(&["enable", "--projects", dir.to_str().unwrap()]).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn final_scope_limit_preserves_policy_and_deduplicates_existing_scopes() {
+        let dir = scratch("limit");
+        let install_secret = secret::load_or_create(&dir).unwrap();
+        let mut guard = PolicyGuard::acquire(&dir).unwrap();
+        let projects: Vec<_> = (0..128).map(|i| PathBuf::from(format!("/project/{i}"))).collect();
+        add_projects(&mut guard, &projects, &install_secret).unwrap();
+        let kept = KernelIdentity {
+            boot_session_uuid: "fixture-boot".into(),
+            pid: 12345,
+            start_time_us: 42,
+            uid: unsafe { libc::geteuid() },
+        };
+        guard.policy.keep.push(kept.clone());
+        guard.write().unwrap();
+        let before = fs::read(dir.join("automatic/policy.json")).unwrap();
+        add_projects(&mut guard, &projects, &install_secret).unwrap();
+        assert_eq!(guard.policy.projects.len(), 128);
+        assert_eq!(guard.policy.keep, vec![kept]);
+        assert!(add_projects(&mut guard, &[PathBuf::from("/another")], &install_secret).is_err());
+        assert_eq!(before, fs::read(dir.join("automatic/policy.json")).unwrap());
+        drop(guard);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

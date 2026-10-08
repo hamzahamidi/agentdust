@@ -76,9 +76,9 @@ Cleanup controls:
 
 Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
 
-## Using AgentDust 1.1.0
+## Using AgentDust 1.2.0
 
-Release 1.1.0 supports Apple silicon with Claude Code. Automatic cleanup passed isolated normal-exit, abrupt-exit and worker-restart checks. The 1.0.0 Homebrew installation, setup, live session discovery and controlled human cleanup acceptance passed on the maintainer's Mac. The listed M6 lifecycle and attribution scenarios are captured and replayed for Claude Code 2.1.292. Agent Teams remain outside the support claim. See the [M6 fixture matrix](docs/m6/fixtures.md) for the tested scenarios and their limits.
+Release 1.2.0 supports Apple silicon with Claude Code. Automatic cleanup passed isolated normal-exit, abrupt-exit and worker-restart checks. The 1.0.0 Homebrew installation, setup, live session discovery and controlled human cleanup acceptance passed on the maintainer's Mac. The listed M6 lifecycle and attribution scenarios are captured and replayed for Claude Code 2.1.292. Agent Teams remain outside the support claim. See the [M6 fixture matrix](docs/m6/fixtures.md) for the tested scenarios and their limits.
 
 ### Install and connect
 
@@ -128,17 +128,17 @@ Before each approved process is signalled, AgentDust classifies it again and com
 
 ### Automatically clean proven leftovers
 
-After installing `1.1.0` or newer, enable the exact directory where you start Claude Code from your own foreground terminal:
+Automatic cleanup requires `1.1.0` or newer. Enable exact directories where you start Claude Code from your own foreground terminal:
 
 ```bash
 agentdust version
-agentdust auto enable /absolute/path/to/project
+agentdust auto enable /absolute/path/to/project /absolute/path/to/another-project
 agentdust auto status
 ```
 
-Review the directory scope and type `ENABLE` yourself. The local worker continues after normal or abrupt Claude Code exit. It signals only freshly proven owned-ended helpers belonging exclusively to an ended session in enabled scope. Kept, live, shared across sessions and uncertain cases remain untouched. Uncertain cases use the manual approval flow above.
+Review the directory scopes and type `ENABLE` once for the batch (binary `1.2.0` or newer). The local worker continues after normal or abrupt Claude Code exit. It signals only freshly proven owned-ended helpers belonging exclusively to an ended session in enabled scope. Kept, live, shared across sessions and uncertain cases remain untouched. Uncertain cases use the manual approval flow above.
 
-`agentdust_auto_status` lets Claude explain worker state, recent outcomes and approval-required items. MCP cannot enable or broaden the policy. Use `agentdust auto keep PID` for an intentional helper, `agentdust auto pause` to pause, `agentdust auto resume` to resume, or `agentdust auto disable` to clear permissions and remove the worker. See [commands, restart behavior and limits](docs/automatic-cleanup.md).
+`agentdust_auto_status` lets Claude explain worker state, recent outcomes and approval-required items. MCP status is read-only. With binary `1.2.0` or newer, a local AI agent can enable a user-authorized batch through `agentdust auto enable --yes --projects /absolute/path/to/projects`. This selects the parent and its immediate Git project directories, without recursive permission. The flag does not approve uncertain processes or remove keeps. Use `agentdust auto keep PID` for an intentional helper, `agentdust auto pause` to pause, `agentdust auto resume` to resume, or `agentdust auto disable` to clear permissions and remove the worker. See [commands, restart behavior and limits](docs/automatic-cleanup.md).
 
 ### Check, pause and remove
 

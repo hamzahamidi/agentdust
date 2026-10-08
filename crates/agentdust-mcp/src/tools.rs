@@ -314,7 +314,7 @@ fn doctor_tool() -> Tool {
 fn auto_status_tool() -> Tool {
     tool::<EmptyArgs>(
         AUTO_STATUS,
-        "Read-only automatic cleanup policy status and recent results. Cannot enable, resume, broaden policy, or remove keeps. Uncertain processes require the existing plan/apply approval flow. The human configures policy using agentdust auto in their own terminal.",
+        "Read-only automatic cleanup policy status and recent results. Cannot enable, resume, broaden policy, or remove keeps. Uncertain processes require the existing plan/apply approval flow. Policy setup uses the local CLI. Binary 1.2.0 supports auto enable --yes for a user-authorized batch through local shell access; this MCP tool remains read-only.",
         true,
     )
 }
