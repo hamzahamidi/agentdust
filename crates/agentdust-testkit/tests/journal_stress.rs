@@ -119,8 +119,8 @@ fn rotator_stats(line: &str) -> Rotator {
     }
 }
 
-fn scratch_root() -> PathBuf {
-    let root = std::env::temp_dir().join(format!("agentdust-stress-{}", std::process::id()));
+fn scratch_root(label: &str) -> PathBuf {
+    let root = std::env::temp_dir().join(format!("agentdust-stress-{label}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
     DirBuilder::new().mode(0o700).create(&root).unwrap();
     root
@@ -152,8 +152,48 @@ fn copies_on_disk(dir: &Path) -> BTreeMap<String, usize> {
 }
 
 #[test]
+fn a_release_from_another_round_does_not_unblock_the_current_straggler() {
+    let root = scratch_root("stale-release");
+    let dir = root.join("data");
+    let sync = root.join("sync");
+    DirBuilder::new().mode(0o700).create(&sync).unwrap();
+    let dir_arg = dir.to_str().unwrap();
+    finish(spawn(&["write", dir_arg, "99", "1", "0"]));
+    fs::write(sync.join("release"), b"stale").unwrap();
+    fs::write(sync.join("release-99"), b"stale").unwrap();
+    let mut straggler = spawn(&["straggle", dir_arg, sync.to_str().unwrap(), "1"]);
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !sync.join("held-0").exists() {
+        assert!(
+            straggler.0.try_wait().unwrap().is_none(),
+            "stale release unblocked the fixture"
+        );
+        assert!(
+            std::time::Instant::now() < deadline,
+            "fixture did not hold its descriptor"
+        );
+        thread::sleep(Duration::from_millis(1));
+    }
+    assert!(straggler.0.try_wait().unwrap().is_none());
+    let report = journal::prune(
+        &dir,
+        &Default::default(),
+        agentdust_core::clock::wall_ms(),
+        "stress-boot",
+    )
+    .unwrap();
+    assert!(matches!(report.rotation, journal::Rotation::Rotated { .. }));
+    fs::write(sync.join("release-0"), b"").unwrap();
+    let stats = straggler_stats(&finish(straggler));
+    assert_eq!(stats.attempted, 1);
+    assert_eq!(stats.fewest_attempts, 2);
+    assert!(stats.failed.is_empty());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn three_writers_a_straggler_and_a_rotator_lose_tear_and_duplicate_nothing() {
-    let root = scratch_root();
+    let root = scratch_root("writers");
     let (dir, sync, stop) = (root.join("data"), root.join("sync"), root.join("stop"));
     DirBuilder::new().mode(0o700).create(&sync).unwrap();
     let facts = journal::status(&dir).unwrap();
