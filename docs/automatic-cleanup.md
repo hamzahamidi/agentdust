@@ -1,6 +1,6 @@
 # Automatic cleanup
 
-Automatic cleanup is an opt-in addition under development for Claude Code on Apple silicon. The published `1.0.0` binary provides manual cleanup only. The commands on this page require a build containing this feature.
+AgentDust `1.1.0` adds opt-in automatic cleanup for Claude Code on Apple silicon. Version `1.0.0` provides manual cleanup only. Check `agentdust version` before using these commands.
 
 A local worker survives Claude Code termination. It stops a helper only when the existing classifier freshly proves ownership by an ended Claude session, every recorded owner is gone, the human enabled the recorded directory, and the helper is not kept. Uncertain cases remain available through the manual approval flow.
 

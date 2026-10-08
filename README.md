@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/hamzahamidi/agentdust/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hamzahamidi/agentdust/actions/workflows/ci.yml) [![Latest release](https://img.shields.io/github/v/release/hamzahamidi/agentdust)](https://github.com/hamzahamidi/agentdust/releases/latest) [![License](https://img.shields.io/github/license/hamzahamidi/agentdust)](LICENSE) [![Homebrew custom tap](https://img.shields.io/badge/Homebrew-custom%20tap-FBB040?logo=homebrew&logoColor=black)](https://github.com/hamzahamidi/homebrew-agentdust)
 
-AgentDust is a macOS tool that finds processes left running after Claude Code sessions. Manual cleanup requires your typed approval. The next release adds opt-in automatic cleanup for proven leftovers in directories you enable. It also reports Claude Code disk usage without deleting files. Codex and Cursor support are deferred.
+AgentDust is a macOS tool that finds processes left running after Claude Code sessions. Manual cleanup requires your typed approval. Version 1.1.0 adds opt-in automatic cleanup for proven leftovers in directories you enable. It also reports Claude Code disk usage without deleting files. Codex and Cursor support are deferred.
 
-**AgentDust 1.0.0 supports Claude Code on Apple silicon. Captured fixtures cover the listed concurrent session, subagent and lifecycle scenarios on Claude Code 2.1.292, including an abrupt CLI exit. Agent Teams remain outside the support claim. The installed Homebrew binary passed controlled human decline and typed approval checks on the maintainer's Mac ([release evidence](docs/v1/readiness.md)).** See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
+**AgentDust 1.1.0 supports Claude Code on Apple silicon. Captured fixtures cover the listed concurrent session, subagent and lifecycle scenarios on Claude Code 2.1.292, including an abrupt CLI exit. Agent Teams remain outside the support claim. The installed 1.0.0 Homebrew binary passed controlled human decline and typed approval checks on the maintainer's Mac ([release evidence](docs/v1/readiness.md)).** See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
 
 Agents start dev servers, MCP servers and helpers. When a session ends or crashes, some of them keep running under `launchd`, holding memory, ports and sometimes CPU. The upstream reports are open: [anthropics/claude-code#1935](https://github.com/anthropics/claude-code/issues/1935) and [openai/codex#21008](https://github.com/openai/codex/issues/21008).
 
@@ -12,13 +12,13 @@ Security and privacy: [SECURITY.md](SECURITY.md), the [threat model](docs/threat
 
 ## Status
 
-AgentDust 1.0.0 provides process analysis, approved cleanup and a read-only disk report for Claude Code, with attribution across concurrent sessions and subagents. Codex and Cursor remain deferred. The milestones are in [ROADMAP.md](ROADMAP.md).
+AgentDust 1.1.0 provides process analysis, opt-in automatic cleanup, approved manual cleanup and a read-only disk report for Claude Code, with attribution across concurrent sessions and subagents. Codex and Cursor remain deferred. The milestones are in [ROADMAP.md](ROADMAP.md).
 
 Releases follow [Semantic Versioning](docs/release.md#semantic-versioning): compatible fixes increment the patch version, compatible features increment the minor version, and incompatible public API changes increment the major version.
 
 | Part | State |
 | --- | --- |
-| Opt-in automatic cleanup | Under development. Project policy, owner-exit worker and read-only agent results ([commands and limits](docs/automatic-cleanup.md)). Not in the published `1.0.0` binary |
+| Opt-in automatic cleanup | Built for `1.1.0`. Directory policy, owner-exit worker and read-only agent results ([commands and limits](docs/automatic-cleanup.md)). Not in the published `1.0.0` binary |
 | Process identity, one environment variable read from another process, `KERN_PROCARGS2` parser (fuzzed) | Built |
 | Claude Code hook that records session and shell events in a local journal | Built |
 | Journal rotation and retention, as library functions that nothing runs yet | Built |
@@ -76,9 +76,9 @@ Cleanup controls:
 
 Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
 
-## Using AgentDust 1.0.0
+## Using AgentDust 1.1.0
 
-Release 1.0.0 supports Apple silicon with Claude Code. Homebrew installation, setup, live session discovery and controlled human cleanup acceptance passed on the maintainer's Mac. The listed M6 lifecycle and attribution scenarios are captured and replayed for Claude Code 2.1.292. Agent Teams remain outside the support claim. See the [M6 fixture matrix](docs/m6/fixtures.md) for the tested scenarios and their limits.
+Release 1.1.0 supports Apple silicon with Claude Code. Automatic cleanup passed isolated normal-exit, abrupt-exit and worker-restart checks. The 1.0.0 Homebrew installation, setup, live session discovery and controlled human cleanup acceptance passed on the maintainer's Mac. The listed M6 lifecycle and attribution scenarios are captured and replayed for Claude Code 2.1.292. Agent Teams remain outside the support claim. See the [M6 fixture matrix](docs/m6/fixtures.md) for the tested scenarios and their limits.
 
 ### Install and connect
 
@@ -110,7 +110,7 @@ The plugin can also be reviewed or tested from a checkout of this repository wit
 
 | Class | Meaning | Can AgentDust signal it |
 | --- | --- | --- |
-| owned-ended | Started by an agent session that has ended | Yes, with one code for the batch |
+| owned-ended | Started by an agent session that has ended | Yes, with one code for the batch, or automatically within enabled directory policy |
 | suspect | Its parent is launchd or its launcher chain is dead, same user, old, idle and not managed | Yes, with one code per process |
 | owned-live | Started by a session that is still running | Never |
 | managed | A launchd job, a Homebrew service, a helper of a running app, or on the deny list | Never |
@@ -126,9 +126,23 @@ In a terminal: run `agentdust apply`. It runs the same steps in one process unde
 
 Before each approved process is signalled, AgentDust classifies it again and compares boot session, PID, start time, user and executable path. It then sends `SIGTERM` to that one PID. It sends no other signal and never signals a process group. It waits up to 5 seconds and reports the process as terminated, a survivor, gone before the signal, or failed revalidation.
 
+### Automatically clean proven leftovers
+
+After installing `1.1.0` or newer, enable the exact directory where you start Claude Code from your own foreground terminal:
+
+```bash
+agentdust version
+agentdust auto enable /absolute/path/to/project
+agentdust auto status
+```
+
+Review the directory scope and type `ENABLE` yourself. The local worker continues after normal or abrupt Claude Code exit. It signals only freshly proven owned-ended helpers belonging exclusively to an ended session in enabled scope. Kept, live, shared across sessions and uncertain cases remain untouched. Uncertain cases use the manual approval flow above.
+
+`agentdust_auto_status` lets Claude explain worker state, recent outcomes and approval-required items. MCP cannot enable or broaden the policy. Use `agentdust auto keep PID` for an intentional helper, `agentdust auto pause` to pause, `agentdust auto resume` to resume, or `agentdust auto disable` to clear permissions and remove the worker. See [commands, restart behavior and limits](docs/automatic-cleanup.md).
+
 ### Check, pause and remove
 
-`agentdust status` shows the version, the data directory, the journal counters, whether setup is installed and whether apply is enabled. To turn cleanup off and keep everything else, put `apply = false` in `config.toml` in the data directory (`~/Library/Application Support/agentdust`). To disconnect Claude Code run `agentdust setup --remove`, then `brew uninstall agentdust`. The data directory stays until you delete it. If a release is withdrawn, see [SECURITY.md](SECURITY.md) and [docs/release.md](docs/release.md#roll-back).
+`agentdust status` shows the version, the data directory, the journal counters, whether setup is installed and whether apply is enabled. To turn cleanup off and keep everything else, put `apply = false` in `config.toml` in the data directory (`~/Library/Application Support/agentdust`). Before disconnecting Claude Code, run `agentdust auto disable` to remove the separately installed worker, then `agentdust setup --remove` and `brew uninstall agentdust`. The data directory stays until you delete it. If a release is withdrawn, see [SECURITY.md](SECURITY.md) and [docs/release.md](docs/release.md#roll-back).
 
 ## Setting up Claude Code
 
