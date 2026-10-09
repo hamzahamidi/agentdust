@@ -115,14 +115,6 @@ pub fn shell_quote(text: &str) -> String {
 }
 
 pub fn stable_exe(path: &Path) -> PathBuf {
-    if path.ends_with("lib/node_modules/agentdust/bin/agentdust")
-        && let Some(prefix) = path.ancestors().nth(5)
-    {
-        let link = prefix.join("bin/agentdust");
-        if link.canonicalize().ok().as_deref() == Some(path) {
-            return link;
-        }
-    }
     let parts: Vec<Component> = path.components().collect();
     for (index, part) in parts.iter().enumerate() {
         let is_cellar = matches!(part, Component::Normal(name) if *name == "Cellar");

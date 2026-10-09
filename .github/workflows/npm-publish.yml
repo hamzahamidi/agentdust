@@ -38,18 +38,21 @@ jobs:
       - name: Validate the release tag
         run: |
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then test "$GITHUB_REF" = refs/heads/main; fi
-          version="$(python3 -c 'import os, sys; sys.path.insert(0, "scripts"); from check_release import tag_version; print(tag_version(os.environ["RELEASE_TAG"]))')"
-          echo "VERSION=$version" >> "$GITHUB_ENV"
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          echo "VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
       - name: Download and verify the published artifacts
         run: |
-          mkdir dist
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > dist/release.json
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir dist --pattern "agentdust-$VERSION-npm.tgz" --pattern "agentdust-$VERSION-darwin-arm64.tar.gz" --pattern SHA256SUMS
-          python3 scripts/npm_publish.py --directory dist --version "$VERSION" --verify-only
-          gh attestation verify "dist/agentdust-$VERSION-npm.tgz" --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-ref "refs/tags/$RELEASE_TAG"
+          tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq 'select(.draft == false and .prerelease == false).tag_name')"
+          test "$tag" = "$RELEASE_TAG"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir dist
+          (cd dist && sha256sum --check SHA256SUMS)
+          gh attestation verify "dist/agentdust-$VERSION.tgz" --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-ref "refs/tags/$RELEASE_TAG"
+          tar -xOf "dist/agentdust-$VERSION.tgz" package/bin/agentdust > npm-binary
+          tar -xOf "dist/agentdust-$VERSION-darwin-arm64.tar.gz" "agentdust-$VERSION-darwin-arm64/agentdust" | cmp - npm-binary
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
           package-manager-cache: false
+      - run: npm install --global npm@12.1.0 --ignore-scripts
       - name: Publish with npm trusted publishing
-        run: python3 scripts/npm_publish.py --directory dist --version "$VERSION"
+        run: npm publish "./dist/agentdust-$VERSION.tgz" --access=public --ignore-scripts --registry=https://registry.npmjs.org/

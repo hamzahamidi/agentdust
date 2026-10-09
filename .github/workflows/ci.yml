@@ -57,11 +57,18 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
-      - name: Check npm native installation and upgrade
+      - run: npm install --global npm@12.1.0 --ignore-scripts
+      - name: Check the npm global installation
         run: |
           version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
-          python3 scripts/npm_package.py --binary target/debug/agentdust --version "$version" --out-dir dist
-          python3 scripts/npm_smoke.py "dist/agentdust-$version-npm.tgz" "$version"
+          mkdir -p npm-build/bin dist
+          cp npm/package.json LICENSE README.md npm-build/
+          install -m 755 target/debug/agentdust npm-build/bin/agentdust
+          npm --prefix npm-build version "$version" --no-git-tag-version --ignore-scripts --allow-same-version
+          npm pack ./npm-build --pack-destination dist --ignore-scripts
+          npm install --global --prefix "$RUNNER_TEMP/npm-prefix" "./dist/agentdust-$version.tgz" --ignore-scripts --no-audit --no-fund
+          test "$("$RUNNER_TEMP/npm-prefix/bin/agentdust" version)" = "agentdust $version"
+          cmp target/debug/agentdust "$RUNNER_TEMP/npm-prefix/bin/agentdust"
       - name: Build the isolated automatic cleanup fixtures
         run: cargo build --locked -p agentdust -p agentdust-testkit --bins
       - name: Check automatic cleanup after owner exit and worker restart

@@ -8,10 +8,7 @@ from pathlib import Path
 
 
 def add_file(tar: tarfile.TarFile, path: Path, arcname: str, mode: int, mtime: int) -> None:
-    add_bytes(tar, path.read_bytes(), arcname, mode, mtime)
-
-
-def add_bytes(tar: tarfile.TarFile, data: bytes, arcname: str, mode: int, mtime: int) -> None:
+    data = path.read_bytes()
     info = tarfile.TarInfo(arcname)
     info.size = len(data)
     info.mode = mode

@@ -256,7 +256,7 @@ class PackageTest(unittest.TestCase):
         self.assertEqual(self.script.count("python3 scripts/package.py"), 2)
         self.assertIn("builds/build-b/target/release/agentdust", self.script)
         self.assertRegex(self.script, r'cmp "dist/[^"]+" "second/[^"]+"')
-        self.assertEqual(self.script.count('SOURCE_DATE_EPOCH="$epoch"'), 4)
+        self.assertEqual(self.script.count('SOURCE_DATE_EPOCH="$epoch"'), 2)
         self.assertIn('epoch="$(git log -1 --format=%ct)"', self.script)
 
     def test_the_checksum_lists_the_tarball_and_is_verified(self):
@@ -536,6 +536,52 @@ class DryRunTest(unittest.TestCase):
 
     def test_the_dry_run_still_builds_only_after_the_check_passed(self):
         self.assertLess(step_index(self.build, "toolchain.py check"), step_index(self.build, "cargo build"))
+
+
+class NpmDistributionTest(unittest.TestCase):
+    def test_the_manifest_contains_only_the_native_supported_platform_and_no_scripts(self):
+        package = json.loads((ROOT / "npm/package.json").read_text())
+        self.assertEqual(package["name"], "agentdust")
+        self.assertEqual(package["os"], ["darwin"])
+        self.assertEqual(package["cpu"], ["arm64"])
+        self.assertEqual(package["bin"], {"agentdust": "bin/agentdust"})
+        self.assertNotIn("scripts", package)
+        self.assertNotIn("dependencies", package)
+
+    def test_both_release_paths_compare_and_install_the_npm_archives(self):
+        for name in ("release.yml", "release-dry-run.yml"):
+            job = load(WORKFLOWS / name)["jobs"]["package"]
+            command = runs(job)
+            self.assertIn('for copy in a b', command)
+            self.assertIn('npm pack "./npm-build/$copy"', command)
+            self.assertIn('cmp "npm-dist/a/agentdust-$VERSION.tgz" "npm-dist/b/agentdust-$VERSION.tgz"', command)
+            self.assertIn('npm install --global --prefix "$RUNNER_TEMP/npm-prefix"', command)
+            self.assertIn('cmp builds/build-a/target/release/agentdust "$RUNNER_TEMP/npm-prefix/bin/agentdust"', command)
+            self.assertIn('*.tgz', step_with(job, "actions/attest-build-provenance")["with"]["subject-path"])
+
+    def test_publication_verifies_the_public_release_and_exact_tag_before_npm(self):
+        workflow = load(WORKFLOWS / "npm-publish.yml")
+        job = workflow["jobs"]["publish"]
+        command = runs(job)
+        self.assertEqual(job["environment"], "npm")
+        self.assertEqual(job["permissions"], {"attestations": "read", "contents": "read", "id-token": "write"})
+        self.assertIn('select(.draft == false and .prerelease == false)', command)
+        self.assertIn('test "$GITHUB_REF" = refs/heads/main', command)
+        self.assertIn('--source-ref "refs/tags/$RELEASE_TAG"', command)
+        self.assertLess(command.index('sha256sum --check'), command.index('gh attestation verify'))
+        self.assertLess(command.index('gh attestation verify'), command.index('npm publish'))
+        self.assertIn('--ignore-scripts --registry=https://registry.npmjs.org/', command)
+        self.assertNotIn("${{", command)
+        self.assertNotIn("NPM_TOKEN", json.dumps(workflow))
+        for step in steps(job):
+            if "uses" in step:
+                self.assertRegex(step["uses"], PIN)
+
+    def test_homebrew_recovery_downloads_every_asset_in_the_checksum_list(self):
+        command = runs(load(WORKFLOWS / "homebrew-tap-recovery.yml")["jobs"]["tap-pr"])
+        download = next(line for line in command.splitlines() if "gh release download" in line)
+        self.assertNotIn("--pattern", download)
+        self.assertIn("shasum -a 256 -c SHA256SUMS", command)
 
 
 if __name__ == "__main__":
