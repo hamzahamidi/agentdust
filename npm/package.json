@@ -1,6 +1,6 @@
 {
   "name": "agentdust",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "Find and clean leftover processes from AI coding agents on Apple silicon.",
   "license": "MIT",
   "repository": {

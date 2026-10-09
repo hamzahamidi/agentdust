@@ -21,7 +21,7 @@ THREAT_MODEL = ROOT / "docs" / "threat-model.md"
 REPOSITORY = "hamzahamidi/agentdust"
 SIGNER = f"{REPOSITORY}/.github/workflows/release.yml"
 VERSION = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
-RELEASE_COMMANDS = {"disk", "setup", "doctor", "apply", "status", "version", "mcp", "hook", "auto", "port"}
+RELEASE_COMMANDS = {"disk", "setup", "doctor", "apply", "status", "version", "mcp", "hook", "auto", "port", "metrics"}
 BANNED = (
     "ensure",
     "leverage",
@@ -81,6 +81,9 @@ class ReadmeUsageTest(unittest.TestCase):
             "agentdust_doctor",
             "agentdust_plan",
             "agentdust_apply",
+            "agentdust metrics",
+            "agentdust metrics --json",
+            "agentdust_metrics",
             "apply = false",
             "SIGTERM",
         ):
@@ -112,16 +115,11 @@ class ReadmeUsageTest(unittest.TestCase):
         self.assertIn("docs/release.md#verify-a-release", self.usage)
 
     def test_every_command_the_readme_shows_is_a_command_of_current_release(self):
-        upcoming = section(self.text, r"## Cleanup metrics planned for 1\.6\.0")
-        current_release = self.text.replace(upcoming, "")
-        shown = set(re.findall(r"\bagentdust ([a-z][a-z-]*)", current_release))
+        shown = set(re.findall(r"\bagentdust ([a-z][a-z-]*)", self.text))
         self.assertTrue(shown)
         self.assertLessEqual(shown, RELEASE_COMMANDS, shown - RELEASE_COMMANDS)
 
-    def test_upcoming_metrics_commands_are_supported_by_the_source(self):
-        upcoming = section(self.text, r"## Cleanup metrics planned for 1\.6\.0")
-        self.assertIn("agentdust metrics", upcoming)
-        self.assertIn("agentdust metrics --json", upcoming)
+    def test_current_release_metrics_commands_are_supported_by_the_source(self):
         self.assertTrue(binary_has("metrics"))
 
     def test_the_flags_the_readme_gives_setup_are_the_ones_the_binary_parses(self):
