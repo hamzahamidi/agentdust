@@ -166,9 +166,15 @@ fn check_exit(abrupt: bool, agent: Agent) {
             status["last_report"]["recent_results"]
                 .as_array()
                 .is_some_and(|items| {
-                    items
-                        .iter()
-                        .any(|item| item["pid"] == harness.pid(survivor) && item["result"] == "survivor")
+                    let has_recorded_result = |pid, result| {
+                        items.iter().any(|item| {
+                            item["pid"] == pid
+                                && item["result"] == result
+                                && item["recorded_wall_ms"].as_u64().is_some()
+                        })
+                    };
+                    has_recorded_result(harness.pid(target), "terminated")
+                        && has_recorded_result(harness.pid(survivor), "survivor")
                 })
         }),
         WAIT

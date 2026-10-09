@@ -87,7 +87,7 @@ The read-only `agentdust_auto_status` MCP tool returns enabled state, the apply 
 
 `terminated` means the exact target disappeared within the exit check. `survivor` means the signal was sent but the process remained alive. Neither triggers another automatic signal. `kept`, `skipped` and `approval_required` describe work that remains untouched. A background worker does not open an approval dialog after Claude exits. The next user interaction can review those items.
 
-Automatic audit records use an `auto-` plan-ID prefix. Manual plan IDs retain their existing format. The audit schema is unchanged. New results contain an explicit `authorization` field. Reports retain at most 100 recent results and 100 review items, with a truncation flag. The report timestamp describes the last reconciliation, not a continuous heartbeat; `worker_running` checks the recorded worker identity live.
+Automatic audit records use an `auto-` plan-ID prefix. Manual plan IDs retain their existing format. The audit schema is unchanged. New results contain an explicit `authorization` field and `recorded_wall_ms`, the Unix epoch time in milliseconds when AgentDust recorded that outcome. Older retained results may not have the timestamp. Reports retain at most 100 recent results and 100 review items, with a truncation flag. The top-level `wall_ms` describes the last reconciliation, not a continuous heartbeat; `worker_running` checks the recorded worker identity live.
 
 ## Local files and limits
 

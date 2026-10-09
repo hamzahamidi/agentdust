@@ -606,6 +606,8 @@ fn sweep(executor: &Executor, dir: &Path, history: &mut Vec<Value>) -> io::Resul
             pending = true;
             continue;
         };
+        let mut result = result;
+        result["recorded_wall_ms"] = json!(clock::wall_ms());
         if let Some(previous) = history
             .iter()
             .position(|previous| previous["item_id"] == result["item_id"])
