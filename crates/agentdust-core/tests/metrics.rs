@@ -1,7 +1,8 @@
 mod scratch;
 
 use std::collections::BTreeSet;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
 use agentdust_core::class::Class;
@@ -84,8 +85,46 @@ fn rotation_keeps_a_bounded_recent_history() {
     let summary = OutcomeLog::summary(&dir).unwrap();
     assert!(summary.event_count < 20);
     assert!(summary.event_count > 0);
+    assert!(summary.start_wall_ms.unwrap() > START);
+    assert_eq!(summary.end_wall_ms, Some(START + 19));
     assert!(fs::metadata(dir.join(OUTCOME_FILE)).unwrap().len() <= 220);
     assert!(fs::metadata(dir.join("outcomes.jsonl.1")).unwrap().len() <= 220);
+    let retained_lines = fs::read_to_string(dir.join(OUTCOME_FILE))
+        .unwrap()
+        .lines()
+        .count()
+        + fs::read_to_string(dir.join("outcomes.jsonl.1"))
+            .unwrap()
+            .lines()
+            .count();
+    assert_eq!(summary.event_count as usize, retained_lines);
+}
+
+#[test]
+fn summary_skips_malformed_and_newer_rows_across_both_generations() {
+    let dir = TempDir::absent("metrics-malformed");
+    let log = OutcomeLog::new(&dir);
+    log.append(Mode::Manual, Class::Suspect, "declined", START)
+        .unwrap();
+    let current = dir.join(OUTCOME_FILE);
+    let older = dir.join("outcomes.jsonl.1");
+    fs::copy(&current, &older).unwrap();
+    fs::set_permissions(&older, fs::Permissions::from_mode(0o600)).unwrap();
+    fs::write(&current, b"").unwrap();
+    log.append(Mode::Automatic, Class::OwnedEnded, "terminated", START + DAY_MS)
+        .unwrap();
+
+    let mut file = OpenOptions::new().append(true).open(current).unwrap();
+    file.write_all(b"not-json\n\xff\n").unwrap();
+    file.write_all(
+        br#"{"v":2,"wall_ms":1700000000000,"mode":"automatic","class":"owned-ended","result":"terminated"}"#,
+    )
+    .unwrap();
+    file.write_all(b"\n{\"v\":1").unwrap();
+
+    let summary = OutcomeLog::summary(&dir).unwrap();
+    assert_eq!(summary.event_count, 2);
+    assert_eq!(summary.skipped_lines, 4);
 }
 
 #[test]

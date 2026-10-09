@@ -285,18 +285,3 @@ impl Lock {
         }
     }
 }
-
-pub fn is_automatic_plan(plan_id: &str) -> bool {
-    plan_id.starts_with("auto-")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn automatic_plan_ids_are_recognized() {
-        assert!(is_automatic_plan("auto-123"));
-        assert!(!is_automatic_plan("manual-123"));
-    }
-}

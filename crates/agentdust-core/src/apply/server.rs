@@ -161,6 +161,12 @@ impl Server {
             return Err(ApplyError::ArgumentsChanged);
         }
         if let Err(reason) = self.executor.enabled() {
+            let verdict = Verdict::of(Outcome::Disabled);
+            for unit in &entry.units[entry.index..] {
+                for item in unit {
+                    self.executor.note(&entry.call.plan_id, item, verdict);
+                }
+            }
             self.release_rest(&entry);
             return Err(ApplyError::Disabled(reason));
         }
@@ -178,7 +184,7 @@ impl Server {
             return Ok(Step::Done(report_of(entry)));
         }
         if self.executor.enabled().is_err() {
-            return Ok(Step::Done(self.finish_rest(entry, Outcome::Disabled, false)));
+            return Ok(Step::Done(self.finish_rest(entry, Outcome::Disabled, true)));
         }
         self.ask(entry)
     }

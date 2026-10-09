@@ -3,7 +3,7 @@ mod scratch;
 
 use std::fs;
 use std::io;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{PermissionsExt, symlink};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -502,7 +502,7 @@ fn a_result_line_that_cannot_be_written_does_not_change_what_happened() {
 }
 
 #[test]
-fn apply_false_stops_the_item_before_any_file_or_read() {
+fn apply_false_stops_before_inspection_and_records_a_disabled_outcome() {
     let item = item(4242, Class::OwnedEnded);
     let rig = Rig::for_item(&item).build();
     write_config(rig.dir.path(), "apply = false\n", 0o600);
@@ -512,6 +512,8 @@ fn apply_false_stops_the_item_before_any_file_or_read() {
     assert!(rig.signals().is_empty());
     assert!(!rig.locks().exists());
     assert!(!rig.dir.join("audit.log").exists());
+    let metrics = OutcomeLog::summary(rig.dir.path()).unwrap();
+    assert_eq!(metrics.by_mode["manual"]["disabled"], 1);
 }
 
 #[test]
@@ -533,6 +535,23 @@ fn the_switch_is_read_each_time_an_item_runs() {
     write_config(rig.dir.path(), "apply = false\n", 0o600);
     assert_eq!(rig.executor.execute(PLAN, &item), verdict(Outcome::Disabled));
     assert_eq!(rig.signals().len(), 1);
+    let metrics = OutcomeLog::summary(rig.dir.path()).unwrap();
+    assert_eq!(metrics.event_count, 2);
+    assert_eq!(metrics.by_mode["manual"]["terminated"], 1);
+    assert_eq!(metrics.by_mode["manual"]["disabled"], 1);
+}
+
+#[test]
+fn an_unwritable_metrics_file_does_not_change_the_cleanup_result() {
+    let item = item(4242, Class::OwnedEnded);
+    let rig = Rig::for_item(&item).build();
+    let target = rig.dir.join("metrics-target");
+    fs::write(&target, b"preserve").unwrap();
+    symlink(&target, rig.dir.join("outcomes.jsonl")).unwrap();
+
+    assert_eq!(rig.executor.execute(PLAN, &item), verdict(Outcome::Terminated));
+    assert_eq!(rig.signals(), [4242]);
+    assert_eq!(fs::read(target).unwrap(), b"preserve");
 }
 
 #[test]
