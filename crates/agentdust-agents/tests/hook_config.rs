@@ -1,3 +1,5 @@
+mod support;
+
 use std::path::Path;
 
 use agentdust_agents::hook_config::{
@@ -220,6 +222,37 @@ fn a_cellar_path_is_mapped_to_the_stable_prefix() {
             Path::new(unchanged),
             "{unchanged}"
         );
+    }
+}
+
+#[test]
+fn a_global_npm_binary_uses_only_a_link_to_the_same_executable() {
+    use std::fs;
+    use std::os::unix::fs::symlink;
+
+    let dir = support::TempDir::new("npm-prefix");
+    let binary = dir.join("lib/node_modules/agentdust/bin/agentdust");
+    fs::create_dir_all(binary.parent().unwrap()).unwrap();
+    fs::write(&binary, "binary").unwrap();
+    let binary = binary.canonicalize().unwrap();
+    let prefix = binary.ancestors().nth(5).unwrap();
+    fs::create_dir(prefix.join("bin")).unwrap();
+    let link = prefix.join("bin/agentdust");
+    assert_eq!(stable_exe(&binary), binary);
+    symlink("../lib/node_modules/agentdust/bin/agentdust", &link).unwrap();
+    assert_eq!(stable_exe(&binary), link);
+    fs::remove_file(&link).unwrap();
+    fs::write(&link, "another executable").unwrap();
+    assert_eq!(stable_exe(&binary), binary);
+}
+
+#[test]
+fn local_and_npx_paths_are_not_mapped_to_a_global_npm_prefix() {
+    for path in [
+        "/project/node_modules/agentdust/bin/agentdust",
+        "/Users/u/.npm/_npx/abc/node_modules/agentdust/bin/agentdust",
+    ] {
+        assert_eq!(stable_exe(Path::new(path)), Path::new(path));
     }
 }
 

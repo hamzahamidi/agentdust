@@ -115,6 +115,19 @@ agentdust setup
 
 `brew install` installs the prebuilt binary. To verify the release artifacts, follow [these steps](docs/release.md#verify-a-release). `agentdust setup` shows a diff and asks before it changes anything ([details](#setting-up-claude-code)).
 
+For releases with an npm package, npm installs the same native binary on macOS ARM64:
+
+```bash
+npm install -g agentdust
+agentdust setup
+```
+
+The package contains the binary, README and license, with no JavaScript runtime dependency or install scripts. Installation does not register hooks or enable cleanup. Run `agentdust setup codex` to connect Codex, then review its hooks in Codex `/hooks`.
+
+Use a global installation for hooks, MCP registration and the background worker. `npx` cache paths and project-local installs are not supported for persistent setup. Upgrading with `npm install -g agentdust@latest` keeps registrations valid within the same npm prefix. If a Node version manager changes that prefix, first pause automatic cleanup and remove each agent's setup from the old installation. Install under the new prefix, run setup for each agent again, review Codex hook trust, and run `agentdust auto resume` if cleanup was enabled. Choose one installation channel so the command and registered binary resolve to the same installation.
+
+To uninstall an npm installation, run `agentdust auto disable`, remove setup for each connected agent (`agentdust setup --remove` and `agentdust setup codex --remove`), then run `npm uninstall -g agentdust`. The data directory stays until you delete it.
+
 ### Add the optional Claude Code skill
 
 The MCP server exposes the tools. The optional plugin adds `/agentdust:cleanup` for processes and `/agentdust:disk` for read-only disk usage. It does not install the server or start cleanup by itself.

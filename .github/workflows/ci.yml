@@ -53,6 +53,15 @@ jobs:
       - run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal -c clippy
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Check npm native installation and upgrade
+        run: |
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          python3 scripts/npm_package.py --binary target/debug/agentdust --version "$version" --out-dir dist
+          python3 scripts/npm_smoke.py "dist/agentdust-$version-npm.tgz" "$version"
       - name: Build the isolated automatic cleanup fixtures
         run: cargo build --locked -p agentdust -p agentdust-testkit --bins
       - name: Check automatic cleanup after owner exit and worker restart

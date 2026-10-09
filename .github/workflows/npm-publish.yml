@@ -1,0 +1,55 @@
+name: npm-publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable release tag (vMAJOR.MINOR.PATCH)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'hamzahamidi/agentdust' && (github.event_name == 'workflow_dispatch' || !github.event.release.prerelease)
+    runs-on: ubuntu-24.04
+    environment: npm
+    timeout-minutes: 10
+    permissions:
+      attestations: read
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Validate the release tag
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then test "$GITHUB_REF" = refs/heads/main; fi
+          version="$(python3 -c 'import os, sys; sys.path.insert(0, "scripts"); from check_release import tag_version; print(tag_version(os.environ["RELEASE_TAG"]))')"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: Download and verify the published artifacts
+        run: |
+          mkdir dist
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > dist/release.json
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir dist --pattern "agentdust-$VERSION-npm.tgz" --pattern "agentdust-$VERSION-darwin-arm64.tar.gz" --pattern SHA256SUMS
+          python3 scripts/npm_publish.py --directory dist --version "$VERSION" --verify-only
+          gh attestation verify "dist/agentdust-$VERSION-npm.tgz" --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-ref "refs/tags/$RELEASE_TAG"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Publish with npm trusted publishing
+        run: python3 scripts/npm_publish.py --directory dist --version "$VERSION"

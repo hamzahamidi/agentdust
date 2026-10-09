@@ -256,17 +256,17 @@ class PackageTest(unittest.TestCase):
         self.assertEqual(self.script.count("python3 scripts/package.py"), 2)
         self.assertIn("builds/build-b/target/release/agentdust", self.script)
         self.assertRegex(self.script, r'cmp "dist/[^"]+" "second/[^"]+"')
-        self.assertEqual(self.script.count('SOURCE_DATE_EPOCH="$epoch"'), 2)
+        self.assertEqual(self.script.count('SOURCE_DATE_EPOCH="$epoch"'), 4)
         self.assertIn('epoch="$(git log -1 --format=%ct)"', self.script)
 
     def test_the_checksum_lists_the_tarball_and_is_verified(self):
-        self.assertIn("shasum -a 256 *.tar.gz *-sbom.cdx.json > SHA256SUMS", self.script)
+        self.assertIn("shasum -a 256 *.tar.gz *.tgz *-sbom.cdx.json > SHA256SUMS", self.script)
         self.assertIn("shasum -a 256 -c SHA256SUMS", self.script)
 
     def test_the_binary_and_the_tarball_are_attested(self):
         attest = step_with(self.package, "actions/attest-build-provenance")
         subjects = attest["with"]["subject-path"].split()
-        self.assertEqual(subjects, ["builds/build-a/target/release/agentdust", "dist/*.tar.gz", "dist/*-sbom.cdx.json"])
+        self.assertEqual(subjects, ["builds/build-a/target/release/agentdust", "dist/*.tar.gz", "dist/*.tgz", "dist/*-sbom.cdx.json"])
 
     def test_the_attestation_comes_after_the_comparison_and_the_checksum(self):
         attest = step_index(self.package, "actions/attest-build-provenance")
