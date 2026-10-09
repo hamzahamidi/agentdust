@@ -131,9 +131,9 @@ For the maintainer: revert the tap commit that added the withdrawn release, whic
 
 These are the points this page and the workflow cannot settle by themselves. Each one is true of the branch where this page was written.
 
-- `version` under `[workspace.package]` is 1.5.0. The gate compares the tag with the version in `Cargo.toml`.
+- `version` under `[workspace.package]` is 1.5.1. The gate compares the tag with the version in `Cargo.toml`.
 - `release/toolchain.json` must match the `Cargo.lock` and the runner used by the release. Refresh it after the final lockfile change with the dry-run workflow.
-- The README describes 1.5.0 and gives the Homebrew install command for Claude Code and Codex on Apple silicon, with Codex cleanup gated on exact host exit. The [readiness record](v1/readiness.md) covers the exact Homebrew binary and controlled human acceptance.
+- The README describes 1.5.1 and gives the Homebrew install command for Claude Code and Codex on Apple silicon, with Codex cleanup gated on exact host exit. The [readiness record](v1/readiness.md) covers the exact Homebrew binary and controlled human acceptance.
 - `agentdust doctor`, `agentdust apply` and the MCP tools `agentdust_doctor`, `agentdust_plan` and `agentdust_apply` are implemented. M7 adds `agentdust disk [--json]`, `agentdust_disk` and `/agentdust:disk` with [scope and limits](m7/disk.md). The doctor and non-TTY apply refusal have local macOS smoke coverage. The typed approval form was exercised in Claude Code 2.1.289 and Codex CLI 0.156.1 ([client matrix](m0/client-matrix.md)). The release docs test compares the documented setup flags with the command parser.
 - The typed-code form in Cursor remains untested because Cursor is not installed on the test machine ([client matrix](m0/client-matrix.md)).
 - The rollback relies on `apply = false` (S21). The reader is `agentdust_core::config::apply_switch`. Confirm that the MCP and the terminal apply both call it and that the S21 tests exist.
