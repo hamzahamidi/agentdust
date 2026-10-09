@@ -153,7 +153,12 @@ impl ServerHandler for AgentDustServer {
                     return Err(ErrorData::invalid_params("metrics takes no arguments", None));
                 }
                 let dir = paths::data_dir().map_err(internal)?;
-                success(&agentdust_core::metrics::OutcomeLog::summary(&dir).map_err(internal)?)
+                let summary =
+                    tokio::task::spawn_blocking(move || agentdust_core::metrics::OutcomeLog::summary(&dir))
+                        .await
+                        .map_err(|_| internal("metrics summary unavailable"))?
+                        .map_err(internal)?;
+                success(&summary)
             }
             PORT => self.port(&request).await,
             DISK => self.disk(&request).await,
