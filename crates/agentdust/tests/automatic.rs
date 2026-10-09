@@ -56,8 +56,16 @@ async fn mcp_exposes_read_only_status_and_no_policy_mutation() {
         .iter()
         .find(|tool| tool.name == "agentdust_auto_status")
         .unwrap();
+    let metrics_tool = listed
+        .iter()
+        .find(|tool| tool.name == "agentdust_metrics")
+        .unwrap();
     assert_eq!(
         status_tool.annotations.as_ref().unwrap().read_only_hint,
+        Some(true)
+    );
+    assert_eq!(
+        metrics_tool.annotations.as_ref().unwrap().read_only_hint,
         Some(true)
     );
     assert!(listed.iter().all(|tool| {
@@ -74,6 +82,12 @@ async fn mcp_exposes_read_only_status_and_no_policy_mutation() {
         .unwrap();
     let value: Value = serde_json::from_str(&result.content[0].as_text().unwrap().text).unwrap();
     assert_eq!(value["enabled"], false);
+    let metrics = service
+        .call_tool(CallToolRequestParams::new("agentdust_metrics"))
+        .await
+        .unwrap();
+    let metrics: Value = serde_json::from_str(&metrics.content[0].as_text().unwrap().text).unwrap();
+    assert_eq!(metrics["event_count"], 0);
     service.cancel().await.unwrap();
     assert!(!sandbox.data.join("automatic").exists());
 }

@@ -241,6 +241,8 @@ The data directory is 0700 and every file in it is 0600.
 | `journal.jsonl`, `journal.<stamp>.jsonl`, `journal.compact.tmp`, `journal.jsonl.corrupt-<n>`, `journal.maint` | section 3.2 fields only. `journal.maint` is empty and only rotation and retention take it. A `corrupt` file is a copy of a generation that held a line that did not parse | section 3.2 |
 | `health.json` | per-agent hook health, no input snippets | overwritten |
 | `audit.log` | plan ID, item, identity, class, evidence kinds, result | rotates at 5 MB |
+| `outcomes.jsonl`, `outcomes.jsonl.1` | wall time, manual or automatic mode, class, result | 5 MB plus one rotated generation; private JSONL |
+| `outcomes.lock` | empty lock file for outcome append and snapshot reads | until purge |
 | `inspection/` | sanitised plan reports | deleted at plan expiry |
 | `locks/` | empty per-identity lock files | removed when unused |
 | `manifest.json` | versioned record of entries written by `setup` | until removal |

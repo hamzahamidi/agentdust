@@ -15,6 +15,7 @@ use agentdust_core::apply::timer::Timer;
 use agentdust_core::class::Class;
 use agentdust_core::classifier::Finding;
 use agentdust_core::identity::{KernelIdentity, ProcessIdentity};
+use agentdust_core::metrics::OutcomeLog;
 use agentdust_core::provider::ProcessRead;
 use apply_support::{PLAN, Rig, audit_len, finding, finding_at, item, kernel, present, write_config};
 
@@ -66,6 +67,9 @@ fn a_cooperative_process_is_signalled_once_and_reported_terminated() {
     assert_eq!(audit[1]["item"], item.model.item_id);
     assert_eq!(audit[1]["pid"], 4242);
     assert!(!rig.locks().join(lock_name(&item)).exists());
+    let metrics = OutcomeLog::summary(rig.dir.path()).unwrap();
+    assert_eq!(metrics.event_count, 1);
+    assert_eq!(metrics.by_mode["manual"]["terminated"], 1);
 }
 
 #[test]

@@ -13,6 +13,7 @@ use crate::automatic::{self, PolicyGuard};
 use crate::classifier::Finding;
 use crate::code;
 use crate::config::{self, ApplySwitch, Disabled};
+use crate::metrics::{self, Mode, OutcomeLog};
 use crate::plan::PlanItem;
 use crate::provider::ProcessProvider;
 use crate::revalidate::{Field, Revalidation, revalidate};
@@ -141,15 +142,18 @@ pub struct Executor {
     deps: Deps,
     settings: Settings,
     audit: AuditLog,
+    outcomes: OutcomeLog,
 }
 
 impl Executor {
     pub fn new(deps: Deps, settings: Settings) -> Self {
         let audit = AuditLog::new(&deps.data_dir, settings.audit_max_bytes);
+        let outcomes = OutcomeLog::new(&deps.data_dir);
         Self {
             deps,
             settings,
             audit,
+            outcomes,
         }
     }
 
@@ -209,7 +213,13 @@ impl Executor {
     }
 
     pub fn execute_automatic(&self, plan_id: &str, item: &PlanItem) -> Result<Verdict, String> {
-        let guard = PolicyGuard::acquire(&self.deps.data_dir).map_err(|_| "policy_unavailable".to_owned())?;
+        let guard = match PolicyGuard::acquire(&self.deps.data_dir) {
+            Ok(guard) => guard,
+            Err(_) => {
+                self.record_outcome(Mode::Automatic, item, "skipped");
+                return Err("policy_unavailable".to_owned());
+            }
+        };
         if let Err(error) = guard.authorize(item) {
             let message = error.to_string();
             let reason = match message.as_str() {
@@ -228,6 +238,7 @@ impl Executor {
                 "skipped",
                 Some(&reason),
             ));
+            self.record_outcome(Mode::Automatic, item, "skipped");
             return Err(reason);
         }
         Ok(self.execute_with_policy(plan_id, item, Some(&guard)))
@@ -264,7 +275,19 @@ impl Executor {
             verdict.reason.map(Reason::code),
         );
         let _ = self.audit.append(&entry);
+        let mode = if metrics::is_automatic_plan(plan_id) {
+            Mode::Automatic
+        } else {
+            Mode::Manual
+        };
+        self.record_outcome(mode, item, verdict.outcome.code());
         verdict
+    }
+
+    fn record_outcome(&self, mode: Mode, item: &PlanItem, result: &str) {
+        let _ = self
+            .outcomes
+            .append(mode, item.model.class, result, crate::clock::wall_ms());
     }
 
     fn locked(&self, plan_id: &str, item: &PlanItem, automatic: Option<&PolicyGuard>) -> Verdict {

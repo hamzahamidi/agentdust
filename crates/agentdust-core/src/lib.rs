@@ -18,6 +18,7 @@ pub mod identity;
 pub mod inventory;
 pub mod journal;
 pub mod manifest;
+pub mod metrics;
 pub mod paths;
 pub mod plan;
 pub mod port;

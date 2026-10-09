@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use agentdust_core::automatic::{self, PolicyGuard};
 use agentdust_core::class::Class;
+use agentdust_core::metrics::OutcomeLog;
 use agentdust_core::session::{Liveness, LivenessProbe};
 use apply_support::{item, kernel};
 use scratch::TempDir;
@@ -273,6 +274,9 @@ mod execution {
         );
         assert_eq!(rig.signals(), [4242]);
         assert!(rig.audit().iter().all(|line| line["plan"] == "auto-test"));
+        let metrics = OutcomeLog::summary(&rig.dir).unwrap();
+        assert_eq!(metrics.event_count, 1);
+        assert_eq!(metrics.by_mode["automatic"]["terminated"], 1);
     }
 
     #[test]

@@ -70,6 +70,17 @@ In Claude Code, ask â€œUse AgentDust to show where Claude Code uses disk spaceâ€
 2. A plan keeps only processes owned by an ended session and suspects, at most 10 per call. You approve by typing a 4-character code that AgentDust generates: one code for the whole batch of owned processes, and one code per suspect with its evidence. The form is in your agent, or in the terminal with `agentdust apply`.
 3. Before signalling each process, AgentDust classifies it again and compares boot session, PID, start time, user and executable path. It sends `SIGTERM` to that one PID and nothing else.
 
+## Cleanup metrics planned for 1.6.0
+
+```bash
+agentdust metrics
+agentdust metrics --json
+```
+
+AgentDust records manual and automatic cleanup results in a private local JSONL file. The JSON summary includes totals by result and cleanup mode, classifier counts, and daily buckets for charts. The read-only `agentdust_metrics` MCP tool returns the same summary to agents. Records contain only the time, mode, class and result. They do not contain PIDs, process names, paths, commands, session IDs or project names, and AgentDust sends no metrics over the network. The log keeps its current 5 MiB file and one rotated file. Metrics history starts with the first cleanup result recorded by a build that supports this feature. These commands are not available in the 1.5.0 release.
+
+`terminated` means the selected process disappeared during AgentDust's exit check. It does not estimate time, CPU or memory saved. See [metrics data and limits](docs/automatic-cleanup.md#cleanup-metrics).
+
 The design is in [docs/superpowers/specs](docs/superpowers/specs).
 
 ## Why I built AgentDust
