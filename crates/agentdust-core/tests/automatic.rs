@@ -219,6 +219,7 @@ mod execution {
     use super::*;
     use agentdust_core::apply::exec::{Outcome, Reason};
     use agentdust_core::journal::{self, Agent, AgentIdentity, Kind, Record, SCHEMA_VERSION};
+    use agentdust_core::metrics::OutcomeLog;
     use agentdust_core::plan::PlanItem;
     use apply_support::{Rig, finding, present};
 
@@ -266,13 +267,16 @@ mod execution {
         enable(&rig, &candidate);
         assert_eq!(
             rig.executor
-                .execute_automatic("auto-test", &candidate)
+                .execute_automatic("codex-test", &candidate)
                 .unwrap()
                 .outcome,
             Outcome::Terminated
         );
         assert_eq!(rig.signals(), [4242]);
-        assert!(rig.audit().iter().all(|line| line["plan"] == "auto-test"));
+        assert!(rig.audit().iter().all(|line| line["plan"] == "codex-test"));
+        let metrics = OutcomeLog::summary(&rig.dir).unwrap();
+        assert_eq!(metrics.event_count, 1);
+        assert_eq!(metrics.by_mode["automatic"]["terminated"], 1);
     }
 
     #[test]
@@ -315,6 +319,13 @@ mod execution {
                 assert_eq!(rig.signals(), [4242]);
             } else {
                 assert!(rig.signals().is_empty(), "{mode}");
+                let metrics = OutcomeLog::summary(&rig.dir).unwrap();
+                let outcome = if mode == "live" {
+                    "revalidation_failed"
+                } else {
+                    "skipped"
+                };
+                assert_eq!(metrics.by_mode["automatic"][outcome], 1, "{mode}");
             }
         }
     }

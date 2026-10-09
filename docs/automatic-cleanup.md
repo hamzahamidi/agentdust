@@ -89,9 +89,17 @@ The read-only `agentdust_auto_status` MCP tool returns enabled state, the apply 
 
 Automatic audit records use an `auto-` plan-ID prefix. Manual plan IDs retain their existing format. The audit schema is unchanged. New results contain an explicit `authorization` field and `recorded_wall_ms`, the Unix epoch time in milliseconds when AgentDust recorded that outcome. Older retained results may not have the timestamp. Reports retain at most 100 recent results and 100 review items, with a truncation flag. The top-level `wall_ms` describes the last reconciliation, not a continuous heartbeat; `worker_running` checks the recorded worker identity live.
 
+## Cleanup metrics
+
+The metrics commands and MCP tool described here are planned for 1.6.0. They are not available in the 1.5.1 release. `agentdust metrics` prints cleanup outcome totals. `agentdust metrics --json` adds daily UTC buckets that can be charted or read by scripts. The read-only `agentdust_metrics` MCP tool returns the same aggregate data to an agent. Metrics include manual and automatic executor outcomes and automatic policy skips. Calls rejected before an item reaches the executor are not included.
+
+Each recorded outcome is one private JSONL row with a schema version, Unix epoch milliseconds, manual or automatic mode, process class and result code. Counts are outcomes, not unique processes; repeated attempts may add rows. The log does not copy process identifiers, executable names, paths, commands, session IDs or project names. AgentDust does not upload metrics. An MCP host may include the returned summary in requests to its model service, and timestamps and counts can reveal activity patterns. The current file is limited to 5 MiB and one rotated generation is retained. Retention is size based only, with no age-based expiration or guaranteed history window. A summary covers only records present in those files. Its history begins when a build with metrics support first records a cleanup result. If a metrics write fails, AgentDust prints a sanitized warning to stderr and continues the cleanup result.
+
+`terminated` counts a target that disappeared during the existing exit check. `survivor` counts a process that remained alive after SIGTERM. Other outcomes count non-termination results. These are measured cleanup results; AgentDust does not estimate time, CPU or memory saved.
+
 ## Local files and limits
 
-`automatic/` in the AgentDust data directory is private (`0700`); policy, worker identity, receipts and reports are private regular files (`0600`). Keeps and receipts store kernel identity fields, including the boot ID, but no command, environment, executable path or project path. This is separate from the unchanged manual audit format, which holds no boot ID.
+`automatic/` in the AgentDust data directory is private (`0700`); policy, worker identity, receipts and reports are private regular files (`0600`). `outcomes.jsonl` and its lock are private files (`0600`), with only aggregate dimensions. Keeps and receipts store kernel identity fields, including the boot ID, but no command, environment, executable path or project path. This is separate from the unchanged manual audit format, which holds no boot ID.
 
 The policy allows at most 128 directories and 256 keeps. The worker refuses a journal watch with more than 4,096 recorded identities. Attempt storage holds at most 16,384 outstanding receipts. Policy and report files are limited to 64 KiB. Storage failure, unsupported journal data, or unavailable ownership prevents automatic action.
 

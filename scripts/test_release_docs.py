@@ -112,9 +112,17 @@ class ReadmeUsageTest(unittest.TestCase):
         self.assertIn("docs/release.md#verify-a-release", self.usage)
 
     def test_every_command_the_readme_shows_is_a_command_of_current_release(self):
-        shown = set(re.findall(r"\bagentdust ([a-z][a-z-]*)", self.text))
+        upcoming = section(self.text, r"## Cleanup metrics planned for 1\.6\.0")
+        current_release = self.text.replace(upcoming, "")
+        shown = set(re.findall(r"\bagentdust ([a-z][a-z-]*)", current_release))
         self.assertTrue(shown)
         self.assertLessEqual(shown, RELEASE_COMMANDS, shown - RELEASE_COMMANDS)
+
+    def test_upcoming_metrics_commands_are_supported_by_the_source(self):
+        upcoming = section(self.text, r"## Cleanup metrics planned for 1\.6\.0")
+        self.assertIn("agentdust metrics", upcoming)
+        self.assertIn("agentdust metrics --json", upcoming)
+        self.assertTrue(binary_has("metrics"))
 
     def test_the_flags_the_readme_gives_setup_are_the_ones_the_binary_parses(self):
         flags = set(re.findall(r"agentdust setup((?: --[a-z-]+)+)", self.text))

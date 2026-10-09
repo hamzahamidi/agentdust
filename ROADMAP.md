@@ -1,6 +1,6 @@
 # AgentDust roadmap
 
-AgentDust 1.5.0 provides process analysis, opt-in automatic cleanup, typed approval cleanup and a read-only disk report for Claude Code on Apple silicon, with Codex tracking and cleanup after exact host exit. Automatic cleanup results include their record time. M0 through M3, M6 and M7 are implemented for this scope. The Claude Code 2.1.292 fixture matrix covers concurrent sessions, subagents, resume, `/clear` and abrupt exit. The 1.0.0 Homebrew setup, live session discovery, idle measurement, human decline and approved apply passed on the maintainer's Mac using that exact release binary. See the [v1 readiness record](docs/v1/readiness.md), [fixture matrix](docs/m6/fixtures.md) and [design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
+AgentDust 1.5.1 provides process analysis, opt-in automatic cleanup, typed approval cleanup and a read-only disk report for Claude Code on Apple silicon, with Codex tracking and cleanup after exact host exit. Automatic cleanup results include their record time. M0 through M3, M6 and M7 are implemented for this scope. The Claude Code 2.1.292 fixture matrix covers concurrent sessions, subagents, resume, `/clear` and abrupt exit. The 1.0.0 Homebrew setup, live session discovery, idle measurement, human decline and approved apply passed on the maintainer's Mac using that exact release binary. See the [v1 readiness record](docs/v1/readiness.md), [fixture matrix](docs/m6/fixtures.md) and [design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
 
 ## Project setup
 
@@ -55,7 +55,7 @@ Multi-agent here means concurrent Claude Code sessions and foreground or backgro
 
 ## Current priority
 
-The current priority is using automatic cleanup and TCP port recovery on the available Mac, recording useful cleanups, kept helpers, incorrect proposals and whether the requested server start succeeds after recovery. The 1.0 Homebrew acceptance is complete for Claude Code on Apple silicon. Real false proposals, setup execution time and live concurrency latency remain follow-up observations. Immediate Codex desktop cleanup, Agent Teams, Cursor, other AI hosts and operating system expansion remain deferred.
+The current priority is using automatic cleanup and TCP port recovery on the available Mac, recording verified cleanup outcomes and whether the requested server start succeeds after recovery. Local outcome metrics summarize actions AgentDust actually records. Kept helpers and incorrect proposals still need field observations; a cleanup count does not measure time, CPU or memory saved. The 1.0 Homebrew acceptance is complete for Claude Code on Apple silicon. Real false proposals, setup execution time and live concurrency latency remain follow-up observations. Immediate Codex desktop cleanup, Agent Teams, Cursor, other AI hosts and operating system expansion remain deferred.
 
 ## Automatic cleanup in 1.1
 
@@ -82,6 +82,7 @@ Port-conflict diagnosis and recovery are implemented in `1.4.0`: identify curren
 | M9 controlled Homebrew acceptance | Complete; measurement limits remain in the [readiness record](docs/v1/readiness.md) |
 | Plugin/setup guidance | Guidance package `0.8.0` explains setup readiness, agent-guided port recovery and automatic results |
 | Automatic cleanup | Implemented for `1.1.0`; `1.5.0` adds per-result record times; measure value during normal use |
+| M13 local outcome metrics | Implemented in source; history begins when a metrics-enabled build records cleanup results |
 | Port-conflict recovery | Implemented in `1.4.0`; measure useful recovery during normal use |
 | M8 directory submission and upstream work | Optional |
 | Codex desktop cleanup while its server stays alive | Deferred until session revocation and live subagent protection have a separate proof |
@@ -177,6 +178,14 @@ Exit: optional. Directory acceptance and upstream response are not v1 gates.
 ### M9 1.0 readiness
 
 - The controlled 1.0 release acceptance is complete. Passed checks and measurement limits are recorded separately in the [readiness record](docs/v1/readiness.md). A release, merge or test pass closes only the criterion it directly verifies. Process-group signals and `SIGKILL` remain deferred.
+
+### M13 Local outcome metrics (S)
+
+- Record manual and automatic cleanup results in a private JSONL log with only time, mode, classifier and result.
+- Provide `agentdust metrics [--json]` and a read-only `agentdust_metrics` MCP tool with totals and daily chart buckets.
+- Bound history to a 5 MiB active file and one rotated generation. Do not upload metrics or estimate time, CPU or memory savings.
+
+Exit: privacy checks cover the stored fields and file permissions; CLI and MCP return the same aggregate contract; daily buckets cover every retained result and show an empty history before the first metrics event.
 
 ## Deferred MCP host distribution
 

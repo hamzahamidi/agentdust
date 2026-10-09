@@ -10,6 +10,7 @@ use agentdust_core::apply::server::{ApplyError, Call, Challenge, Report, Respons
 use agentdust_core::class::Class;
 use agentdust_core::config::Disabled;
 use agentdust_core::finding::HumanDisplay;
+use agentdust_core::metrics::OutcomeLog;
 use agentdust_core::plan::Created;
 use apply_support::{ServerRig, accept, call, code_of, describe, finding, finding_at, write_config};
 
@@ -813,6 +814,8 @@ fn apply_false_set_while_a_prompt_waits_refuses_the_answer_and_frees_the_items()
         Err(ApplyError::Disabled(Disabled::SwitchedOff))
     );
     assert!(rig.world.signals().is_empty());
+    let metrics = OutcomeLog::summary(&rig.dir).unwrap();
+    assert_eq!(metrics.by_mode["manual"]["disabled"], 1);
     write_config(rig.dir.path(), "apply = true\n", 0o600);
     assert!(matches!(rig.server.begin(&the_call), Ok(Step::Ask(_))));
 }
@@ -847,6 +850,9 @@ fn apply_false_set_during_a_batch_stops_the_items_after_it_and_the_units_after_t
         [Outcome::Terminated, Outcome::Disabled, Outcome::Disabled]
     );
     assert_eq!(rig.world.signals(), [10]);
+    let metrics = OutcomeLog::summary(&rig.dir).unwrap();
+    assert_eq!(metrics.by_mode["manual"]["terminated"], 1);
+    assert_eq!(metrics.by_mode["manual"]["disabled"], 2);
 }
 
 #[test]

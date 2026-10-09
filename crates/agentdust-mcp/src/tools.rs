@@ -33,6 +33,7 @@ const DOCTOR: &str = "agentdust_doctor";
 const PLAN: &str = "agentdust_plan";
 const APPLY: &str = "agentdust_apply";
 const AUTO_STATUS: &str = "agentdust_auto_status";
+const METRICS: &str = "agentdust_metrics";
 const INPUT_KEY: &str = "approval";
 const CODE_TTL: Duration = Duration::from_secs(120);
 
@@ -123,6 +124,7 @@ impl ServerHandler for AgentDustServer {
             apply_tool(),
             disk_tool(),
             auto_status_tool(),
+            metrics_tool(),
             port_tool(),
         ])
         .with_ttl_ms(0)
@@ -145,6 +147,18 @@ impl ServerHandler for AgentDustServer {
                 }
                 let dir = paths::data_dir().map_err(internal)?;
                 success(&agentdust_core::automatic::status(&dir).map_err(internal)?)
+            }
+            METRICS => {
+                if request.arguments.as_ref().is_some_and(|args| !args.is_empty()) {
+                    return Err(ErrorData::invalid_params("metrics takes no arguments", None));
+                }
+                let dir = paths::data_dir().map_err(internal)?;
+                let summary =
+                    tokio::task::spawn_blocking(move || agentdust_core::metrics::OutcomeLog::summary(&dir))
+                        .await
+                        .map_err(|_| internal("metrics summary unavailable"))?
+                        .map_err(internal)?;
+                success(&summary)
             }
             PORT => self.port(&request).await,
             DISK => self.disk(&request).await,
@@ -359,6 +373,13 @@ fn auto_status_tool() -> Tool {
     tool::<EmptyArgs>(
         AUTO_STATUS,
         "Read-only automatic cleanup policy status and recent results. Each new result includes recorded_wall_ms, its Unix epoch record time in milliseconds. Cannot enable, resume, broaden policy, or remove keeps. Uncertain processes require the existing plan/apply approval flow. Policy setup uses the local CLI. Binary 1.2.0 supports auto enable --yes for a user-authorized batch through local shell access; this MCP tool remains read-only.",
+        true,
+    )
+}
+fn metrics_tool() -> Tool {
+    tool::<EmptyArgs>(
+        METRICS,
+        "Read-only cleanup outcome counts and daily chart data. Records contain only timestamps, manual or automatic mode, classifier, and result. No process identifiers, paths, commands, session identifiers, or network reporting.",
         true,
     )
 }

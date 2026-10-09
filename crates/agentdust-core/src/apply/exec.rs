@@ -13,6 +13,7 @@ use crate::automatic::{self, PolicyGuard};
 use crate::classifier::Finding;
 use crate::code;
 use crate::config::{self, ApplySwitch, Disabled};
+use crate::metrics::{Mode, OutcomeLog};
 use crate::plan::PlanItem;
 use crate::provider::ProcessProvider;
 use crate::revalidate::{Field, Revalidation, revalidate};
@@ -141,15 +142,18 @@ pub struct Executor {
     deps: Deps,
     settings: Settings,
     audit: AuditLog,
+    outcomes: OutcomeLog,
 }
 
 impl Executor {
     pub fn new(deps: Deps, settings: Settings) -> Self {
         let audit = AuditLog::new(&deps.data_dir, settings.audit_max_bytes);
+        let outcomes = OutcomeLog::new(&deps.data_dir);
         Self {
             deps,
             settings,
             audit,
+            outcomes,
         }
     }
 
@@ -173,43 +177,54 @@ impl Executor {
     }
 
     pub fn note(&self, plan_id: &str, item: &PlanItem, verdict: Verdict) {
-        if verdict.outcome != Outcome::Disabled {
-            self.record(plan_id, item, verdict);
+        if verdict.outcome == Outcome::Disabled {
+            self.record_outcome(Mode::Manual, item, verdict.outcome.code());
+        } else {
+            self.record(Mode::Manual, plan_id, item, verdict);
         }
     }
 
     pub fn execute(&self, plan_id: &str, item: &PlanItem) -> Verdict {
         if self.enabled().is_err() {
+            self.record_outcome(Mode::Manual, item, Outcome::Disabled.code());
             return Verdict::of(Outcome::Disabled);
         }
-        let lock = match self.claim_identity(plan_id, item) {
+        let lock = match self.claim_identity(Mode::Manual, plan_id, item) {
             Ok(lock) => lock,
             Err(verdict) => return verdict,
         };
         let guard = match automatic::manual_guard(&self.deps.data_dir) {
             Ok(guard) => guard,
-            Err(_) => return self.record(plan_id, item, Verdict::of(Outcome::Disabled)),
+            Err(_) => {
+                return self.record(Mode::Manual, plan_id, item, Verdict::of(Outcome::Disabled));
+            }
         };
         if guard.policy.keep.contains(&item.identity.kernel) {
-            return self.record(plan_id, item, Verdict::of(Outcome::Disabled));
+            return self.record(Mode::Manual, plan_id, item, Verdict::of(Outcome::Disabled));
         }
         let verdict = self.locked(plan_id, item, None);
-        let verdict = self.record(plan_id, item, verdict);
+        let verdict = self.record(Mode::Manual, plan_id, item, verdict);
         drop(guard);
         drop(lock);
         verdict
     }
 
-    fn claim_identity(&self, plan_id: &str, item: &PlanItem) -> Result<IdentityLock, Verdict> {
+    fn claim_identity(&self, mode: Mode, plan_id: &str, item: &PlanItem) -> Result<IdentityLock, Verdict> {
         match IdentityLock::try_acquire(&self.deps.data_dir.join(LOCKS_DIR), &item.model.item_id) {
             Ok(Some(lock)) => Ok(lock),
-            Ok(None) => Err(self.record(plan_id, item, Verdict::of(Outcome::HandledElsewhere))),
-            Err(_) => Err(self.record(plan_id, item, Verdict::of(Outcome::LockUnavailable))),
+            Ok(None) => Err(self.record(mode, plan_id, item, Verdict::of(Outcome::HandledElsewhere))),
+            Err(_) => Err(self.record(mode, plan_id, item, Verdict::of(Outcome::LockUnavailable))),
         }
     }
 
     pub fn execute_automatic(&self, plan_id: &str, item: &PlanItem) -> Result<Verdict, String> {
-        let guard = PolicyGuard::acquire(&self.deps.data_dir).map_err(|_| "policy_unavailable".to_owned())?;
+        let guard = match PolicyGuard::acquire(&self.deps.data_dir) {
+            Ok(guard) => guard,
+            Err(_) => {
+                self.record_outcome(Mode::Automatic, item, "skipped");
+                return Err("policy_unavailable".to_owned());
+            }
+        };
         if let Err(error) = guard.authorize(item) {
             let message = error.to_string();
             let reason = match message.as_str() {
@@ -228,13 +243,15 @@ impl Executor {
                 "skipped",
                 Some(&reason),
             ));
+            self.record_outcome(Mode::Automatic, item, "skipped");
             return Err(reason);
         }
-        Ok(self.execute_with_policy(plan_id, item, Some(&guard)))
+        Ok(self.execute_with_policy(Mode::Automatic, plan_id, item, Some(&guard)))
     }
 
     fn execute_with_policy(
         &self,
+        mode: Mode,
         plan_id: &str,
         item: &PlanItem,
         automatic: Option<&PolicyGuard>,
@@ -243,19 +260,20 @@ impl Executor {
             config::apply_switch(&self.deps.data_dir),
             ApplySwitch::Disabled(_)
         ) {
+            self.record_outcome(mode, item, Outcome::Disabled.code());
             return Verdict::of(Outcome::Disabled);
         }
-        let lock = match self.claim_identity(plan_id, item) {
+        let lock = match self.claim_identity(mode, plan_id, item) {
             Ok(lock) => lock,
             Err(verdict) => return verdict,
         };
         let verdict = self.locked(plan_id, item, automatic);
-        let verdict = self.record(plan_id, item, verdict);
+        let verdict = self.record(mode, plan_id, item, verdict);
         drop(lock);
         verdict
     }
 
-    fn record(&self, plan_id: &str, item: &PlanItem, verdict: Verdict) -> Verdict {
+    fn record(&self, mode: Mode, plan_id: &str, item: &PlanItem, verdict: Verdict) -> Verdict {
         let entry = Entry::result(
             plan_id,
             &item.model,
@@ -264,7 +282,22 @@ impl Executor {
             verdict.reason.map(Reason::code),
         );
         let _ = self.audit.append(&entry);
+        self.record_outcome(mode, item, verdict.outcome.code());
         verdict
+    }
+
+    fn record_outcome(&self, mode: Mode, item: &PlanItem, result: &str) {
+        if let Err(error) = self
+            .outcomes
+            .append(mode, item.model.class, result, crate::clock::wall_ms())
+        {
+            use std::io::Write as _;
+            let _ = writeln!(
+                std::io::stderr().lock(),
+                "agentdust: cleanup outcome metrics unavailable ({})",
+                error.kind()
+            );
+        }
     }
 
     fn locked(&self, plan_id: &str, item: &PlanItem, automatic: Option<&PolicyGuard>) -> Verdict {

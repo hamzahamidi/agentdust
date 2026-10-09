@@ -97,9 +97,18 @@ fn every_file_and_directory_the_apply_path_writes_is_private_and_known() {
             accept(challenge)
         })
         .unwrap();
-    let known: BTreeSet<&str> = ["audit.log", "audit.lock", "inspection", "locks", "automatic"]
-        .into_iter()
-        .collect();
+    let known: BTreeSet<&str> = [
+        "audit.log",
+        "audit.lock",
+        "outcomes.jsonl",
+        "outcomes.jsonl.1",
+        "outcomes.lock",
+        "inspection",
+        "locks",
+        "automatic",
+    ]
+    .into_iter()
+    .collect();
     let top: BTreeSet<String> = fs::read_dir(rig.dir.path())
         .unwrap()
         .map(|entry| entry.unwrap().file_name().into_string().unwrap())
