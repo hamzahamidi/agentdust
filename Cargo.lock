@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "agentdust"
-version = "1.6.0"
+version = "1.6.1"
 dependencies = [
  "agentdust-agents",
  "agentdust-core",
@@ -18,7 +18,7 @@ dependencies = [
 
 [[package]]
 name = "agentdust-agents"
-version = "1.6.0"
+version = "1.6.1"
 dependencies = [
  "agentdust-core",
  "libc",
@@ -31,7 +31,7 @@ dependencies = [
 
 [[package]]
 name = "agentdust-bench"
-version = "1.6.0"
+version = "1.6.1"
 dependencies = [
  "agentdust-core",
  "libc",
@@ -42,7 +42,7 @@ dependencies = [
 
 [[package]]
 name = "agentdust-core"
-version = "1.6.0"
+version = "1.6.1"
 dependencies = [
  "hmac",
  "libc",
@@ -56,7 +56,7 @@ dependencies = [
 
 [[package]]
 name = "agentdust-mcp"
-version = "1.6.0"
+version = "1.6.1"
 dependencies = [
  "agentdust-core",
  "rmcp",
@@ -67,7 +67,7 @@ dependencies = [
 
 [[package]]
 name = "agentdust-testkit"
-version = "1.6.0"
+version = "1.6.1"
 dependencies = [
  "agentdust-core",
  "libc",
