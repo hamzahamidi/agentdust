@@ -102,7 +102,7 @@ Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
 
 ## Using AgentDust 1.5.1
 
-Release 1.5.1 supports Apple silicon through Homebrew and npm. Automatic cleanup status includes per-result record times. Codex process tracking and automatic cleanup wait for every recorded host to exit. Codex desktop cleanup waits while a shared server remains alive. Automatic cleanup passed isolated normal-exit, abrupt-exit and worker-restart checks. The 1.0.0 Homebrew installation, setup, live session discovery and controlled human cleanup acceptance passed on the maintainer's Mac. The listed M6 lifecycle and attribution scenarios are captured and replayed for Claude Code 2.1.292. Agent Teams remain outside the support claim. See the [M6 fixture matrix](docs/m6/fixtures.md) for the tested scenarios and their limits.
+Release 1.5.1 supports Apple silicon with Claude Code. Homebrew and npm distribute the native binary. Automatic cleanup status includes per-result record times. Codex process tracking and automatic cleanup wait for every recorded host to exit. Codex desktop cleanup waits while a shared server remains alive. Automatic cleanup passed isolated normal-exit, abrupt-exit and worker-restart checks. The 1.0.0 Homebrew installation, setup, live session discovery and controlled human cleanup acceptance passed on the maintainer's Mac. The listed M6 lifecycle and attribution scenarios are captured and replayed for Claude Code 2.1.292. Agent Teams remain outside the support claim. See the [M6 fixture matrix](docs/m6/fixtures.md) for the tested scenarios and their limits.
 
 ### Install and connect
 
