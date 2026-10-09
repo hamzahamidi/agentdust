@@ -1,0 +1,25 @@
+{
+  "name": "agentdust",
+  "version": "1.5.0",
+  "description": "Find and clean leftover processes from AI coding agents on Apple silicon.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hamzahamidi/agentdust.git"
+  },
+  "homepage": "https://github.com/hamzahamidi/agentdust#readme",
+  "bugs": {
+    "url": "https://github.com/hamzahamidi/agentdust/issues"
+  },
+  "keywords": ["claude-code", "codex", "mcp", "process-cleanup", "macos"],
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "bin": {
+    "agentdust": "bin/agentdust"
+  },
+  "files": ["bin/agentdust", "LICENSE", "README.md"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

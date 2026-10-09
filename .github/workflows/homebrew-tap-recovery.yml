@@ -44,7 +44,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p dist
-          gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" --pattern "agentdust-$VERSION-darwin-arm64.tar.gz" --pattern "agentdust-$VERSION-sbom.cdx.json" --pattern SHA256SUMS --dir dist
+          gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" --dir dist
           (cd dist && shasum -a 256 -c SHA256SUMS)
           gh attestation verify "dist/agentdust-$VERSION-darwin-arm64.tar.gz" --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-ref "refs/tags/v$VERSION"
           gh attestation verify "dist/agentdust-$VERSION-sbom.cdx.json" --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-ref "refs/tags/v$VERSION"

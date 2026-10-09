@@ -5,3 +5,5 @@
 /fuzz/artifacts
 .DS_Store
 __pycache__/
+/npm-build
+/npm-dist
