@@ -4,7 +4,7 @@
 
 AgentDust is a macOS tool that finds processes left running after Claude Code and Codex sessions. Manual cleanup requires your typed approval. Version 1.1.0 adds opt-in automatic cleanup for proven leftovers in directories you enable. It also reports Claude Code disk usage without deleting files. Codex tracking uses native hooks and the shell session marker. Automatic cleanup waits for every recorded Codex host process to exit, including a shared desktop server. Cursor support is deferred.
 
-**AgentDust 1.5.0 supports Claude Code and Codex process tracking on Apple silicon. Automatic cleanup results include their record time. Codex desktop cleanup waits for its shared host to exit. Captured fixtures cover the listed concurrent session, subagent and lifecycle scenarios on Claude Code 2.1.292, including an abrupt CLI exit. Agent Teams remain outside the support claim. The installed 1.0.0 Homebrew binary passed controlled human decline and typed approval checks on the maintainer's Mac ([release evidence](docs/v1/readiness.md)).** See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
+**AgentDust 1.5.1 supports Claude Code and Codex process tracking on Apple silicon. Automatic cleanup results include their record time. Codex desktop cleanup waits for its shared host to exit. Captured fixtures cover the listed concurrent session, subagent and lifecycle scenarios on Claude Code 2.1.292, including an abrupt CLI exit. Agent Teams remain outside the support claim. The installed 1.0.0 Homebrew binary passed controlled human decline and typed approval checks on the maintainer's Mac ([release evidence](docs/v1/readiness.md)).** See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
 
 Agents start dev servers, MCP servers and helpers. When a session ends or crashes, some of them keep running under `launchd`, holding memory, ports and sometimes CPU. The upstream reports are open: [anthropics/claude-code#1935](https://github.com/anthropics/claude-code/issues/1935) and [openai/codex#21008](https://github.com/openai/codex/issues/21008).
 
@@ -12,7 +12,7 @@ Security and privacy: [SECURITY.md](SECURITY.md), the [threat model](docs/threat
 
 ## Status
 
-AgentDust 1.5.0 provides process analysis, opt-in automatic cleanup and approved manual cleanup for Claude Code and Codex, plus a read-only Claude Code disk report. Automatic cleanup results include the time they were recorded. Codex support retains the exact host-exit requirement; it does not stop helpers immediately when a desktop chat ends. Cursor remains deferred. The milestones are in [ROADMAP.md](ROADMAP.md).
+AgentDust 1.5.1 provides process analysis, opt-in automatic cleanup and approved manual cleanup for Claude Code and Codex, plus a read-only Claude Code disk report. Automatic cleanup results include the time they were recorded. Codex support retains the exact host-exit requirement; it does not stop helpers immediately when a desktop chat ends. Cursor remains deferred. The milestones are in [ROADMAP.md](ROADMAP.md).
 
 Releases follow [Semantic Versioning](docs/release.md#semantic-versioning): compatible fixes increment the patch version, compatible features increment the minor version, and incompatible public API changes increment the major version.
 
@@ -100,9 +100,9 @@ Cleanup controls:
 
 Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
 
-## Using AgentDust 1.5.0
+## Using AgentDust 1.5.1
 
-Release 1.5.0 supports Apple silicon with Claude Code. It adds per-result record times to automatic cleanup status. It retains Codex process tracking and automatic cleanup after every recorded host exits. Codex desktop cleanup waits while a shared server remains alive. Automatic cleanup passed isolated normal-exit, abrupt-exit and worker-restart checks. The 1.0.0 Homebrew installation, setup, live session discovery and controlled human cleanup acceptance passed on the maintainer's Mac. The listed M6 lifecycle and attribution scenarios are captured and replayed for Claude Code 2.1.292. Agent Teams remain outside the support claim. See the [M6 fixture matrix](docs/m6/fixtures.md) for the tested scenarios and their limits.
+Release 1.5.1 supports Apple silicon with Claude Code. Homebrew and npm distribute the native binary. Automatic cleanup status includes per-result record times. Codex process tracking and automatic cleanup wait for every recorded host to exit. Codex desktop cleanup waits while a shared server remains alive. Automatic cleanup passed isolated normal-exit, abrupt-exit and worker-restart checks. The 1.0.0 Homebrew installation, setup, live session discovery and controlled human cleanup acceptance passed on the maintainer's Mac. The listed M6 lifecycle and attribution scenarios are captured and replayed for Claude Code 2.1.292. Agent Teams remain outside the support claim. See the [M6 fixture matrix](docs/m6/fixtures.md) for the tested scenarios and their limits.
 
 ### Install and connect
 
