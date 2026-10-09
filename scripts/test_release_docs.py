@@ -66,8 +66,9 @@ class ReadmeUsageTest(unittest.TestCase):
         cls.text = read(README)
         cls.usage = section(cls.text, r"## Using AgentDust " + re.escape(VERSION))
 
-    def test_the_section_names_the_supported_release_platform_and_agent(self):
-        self.assertIn(f"Release {VERSION} supports Apple silicon with Claude Code.", self.usage)
+    def test_the_section_names_the_supported_release_platform_and_agents(self):
+        self.assertIn("Prebuilt Homebrew and npm binaries target macOS on Apple silicon.", self.usage)
+        self.assertIn("AgentDust supports Claude Code and Codex process tracking", self.usage)
 
     def test_the_section_covers_the_commands_of_current_release(self):
         for needle in (
