@@ -100,7 +100,8 @@ jobs:
           export XDG_CONFIG_HOME="$HOME/.config"
           automatic_data="$mount_point/agentdust-automatic-service-data"
           automatic_project="$RUNNER_TEMP/agentdust-automatic-service-project"
-          mkdir -p "$automatic_data" "$automatic_project"
+          mkdir -m 700 -p "$automatic_data"
+          mkdir -p "$automatic_project"
           AGENTDUST_DATA_DIR="$automatic_data" target/debug/agentdust auto enable --yes "$automatic_project"
           systemctl --user is-active --quiet agentdust-automatic.service
           ready=0
