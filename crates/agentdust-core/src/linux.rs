@@ -713,6 +713,12 @@ fn signal_error(error: io::Error) -> SignalResult {
 
 type SdPidfdGetText = unsafe extern "C" fn(c_int, *mut *mut c_char) -> c_int;
 
+#[derive(Clone, Copy)]
+enum SystemdUnitKind {
+    User,
+    System,
+}
+
 fn systemd_unit_for_pidfd(pidfd: c_int) -> io::Result<()> {
     const USER_UNIT: &CStr = c"sd_pidfd_get_user_unit";
     const SYSTEM_UNIT: &CStr = c"sd_pidfd_get_unit";
@@ -720,13 +726,24 @@ fn systemd_unit_for_pidfd(pidfd: c_int) -> io::Result<()> {
     let mut last_error = None;
     let mut found_symbol = false;
     let mut found_unit = false;
-    for symbol in [&USER_UNIT, &SYSTEM_UNIT] {
+    for (symbol, kind) in [
+        (&USER_UNIT, SystemdUnitKind::User),
+        (&SYSTEM_UNIT, SystemdUnitKind::System),
+    ] {
         let Some(get_unit) = systemd_function(symbol) else {
             continue;
         };
         found_symbol = true;
         match unsafe { call_systemd_unit(get_unit, pidfd) } {
-            Ok(()) => found_unit = true,
+            Ok(unit) => {
+                found_unit = true;
+                if systemd_unit_is_managed(kind, &unit)? {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "process belongs to a managed systemd service",
+                    ));
+                }
+            }
             Err(error) => last_error = Some(error),
         }
     }
@@ -764,6 +781,19 @@ fn systemd_unit_for_pidfd(pidfd: c_int) -> io::Result<()> {
     Ok(())
 }
 
+fn systemd_unit_is_managed(kind: SystemdUnitKind, unit: &[u8]) -> io::Result<bool> {
+    if unit.ends_with(b".service") {
+        return Ok(!(matches!(kind, SystemdUnitKind::System) && unit.starts_with(b"user@")));
+    }
+    if unit.ends_with(b".scope") {
+        return Ok(false);
+    }
+    Err(io::Error::new(
+        io::ErrorKind::InvalidData,
+        "systemd returned an unsupported unit name",
+    ))
+}
+
 fn systemd_function(symbol: &CStr) -> Option<SdPidfdGetText> {
     static USER: OnceLock<Option<SdPidfdGetText>> = OnceLock::new();
     static SYSTEM: OnceLock<Option<SdPidfdGetText>> = OnceLock::new();
@@ -791,8 +821,8 @@ fn systemd_function(symbol: &CStr) -> Option<SdPidfdGetText> {
     })
 }
 
-unsafe fn call_systemd_unit(get_unit: SdPidfdGetText, pidfd: c_int) -> io::Result<()> {
-    unsafe { call_systemd_text(get_unit, pidfd) }.map(|_| ())
+unsafe fn call_systemd_unit(get_unit: SdPidfdGetText, pidfd: c_int) -> io::Result<Vec<u8>> {
+    unsafe { call_systemd_text(get_unit, pidfd) }
 }
 
 unsafe fn call_systemd_text(get_text: SdPidfdGetText, pidfd: c_int) -> io::Result<Vec<u8>> {
@@ -1132,8 +1162,9 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::{
-        LinuxProvider, PidfdOps, ProcStat, cgroup_unit_component, cgroup_unit_evidence, parse_environment,
-        parse_stat, parse_uid_status, pidfd_signal, process_info, require_current_network_namespace,
+        LinuxProvider, PidfdOps, ProcStat, SystemdUnitKind, cgroup_unit_component, cgroup_unit_evidence,
+        parse_environment, parse_stat, parse_uid_status, pidfd_signal, process_info,
+        require_current_network_namespace, systemd_unit_is_managed,
     };
     use crate::ancestry::AncestryProvider;
     use crate::apply::signal::SignalResult;
@@ -1246,6 +1277,21 @@ mod tests {
         let (result, events) = scripted_action(true, false, true);
         assert_eq!(result, SignalResult::Refused);
         assert_eq!(events, ["open", "read", "unit", "read"]);
+    }
+
+    #[test]
+    fn authoritative_service_units_block_signals_even_when_cgroup_evidence_is_unmanaged() {
+        assert!(systemd_unit_is_managed(SystemdUnitKind::System, b"ssh.service").unwrap());
+        assert!(systemd_unit_is_managed(SystemdUnitKind::User, b"agentdust-automatic.service").unwrap());
+        assert!(!systemd_unit_is_managed(SystemdUnitKind::System, b"user@1000.service").unwrap());
+        assert!(!systemd_unit_is_managed(SystemdUnitKind::System, b"session-2.scope").unwrap());
+        assert!(!cgroup_unit_evidence(b"0::/user.slice/session-2.scope\n").unwrap());
+        assert_eq!(
+            systemd_unit_is_managed(SystemdUnitKind::System, b"unexpected.target")
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
     }
 
     #[test]
