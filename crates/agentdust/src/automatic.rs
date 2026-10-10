@@ -9,7 +9,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use agentdust_core::ancestry::find_agent;
 use agentdust_core::apply::exec::{Deps, Executor, Settings};
@@ -695,6 +695,7 @@ fn worker(dir: &Path) -> io::Result<()> {
     let mut owners: Vec<(KernelIdentity, Liveness)> = Vec::new();
     let gone = RefCell::new(HashSet::new());
     let mut reconcile = 1_u32;
+    let mut next_maintenance_check = Instant::now();
     let mut previous_policy = automatic::read(dir)?;
     let mut history: Vec<Value> = automatic::status(dir)
         .ok()
@@ -708,6 +709,16 @@ fn worker(dir: &Path) -> io::Result<()> {
         if policy != previous_policy {
             reconcile = 16;
             previous_policy = policy;
+        }
+        if Instant::now() >= next_maintenance_check {
+            journal::maintain_if_due(
+                dir,
+                &journal::retention::Policy::default(),
+                clock::wall_ms(),
+                &agentdust_core::platform::boot_identity()?,
+            )
+            .map_err(error)?;
+            next_maintenance_check = Instant::now() + Duration::from_secs(60);
         }
         let fresh_stamp = journal_stamp(dir)?;
         if fresh_stamp != stamp {

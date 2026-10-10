@@ -174,3 +174,38 @@ jobs:
           AGENTDUST_FIXTURE_LISTENER: ${{ github.workspace }}/target/debug/fixture-listener
         run: cargo test --locked -p agentdust --test port -- --ignored --test-threads=1
       - run: cargo test --release -p agentdust --test hook_latency --locked -- --ignored --nocapture --test-threads=1
+
+  wsl2:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Ubuntu 24.04 under WSL2
+        shell: pwsh
+        run: |
+          wsl.exe --version
+          wsl.exe --install --distribution Ubuntu-24.04 --no-launch --web-download
+          if ($LASTEXITCODE -ne 0) { throw 'Ubuntu 24.04 WSL installation failed' }
+      - name: Prepare the ext4 workspace and systemd
+        shell: pwsh
+        run: |
+          $workspace = (& wsl.exe --distribution Ubuntu-24.04 --user root -- wslpath -u $env:GITHUB_WORKSPACE).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Could not locate the repository from WSL' }
+          wsl.exe --distribution Ubuntu-24.04 --user root -- bash -lc "bash '$workspace/scripts/wsl2_bootstrap.sh' '$workspace'"
+          if ($LASTEXITCODE -ne 0) { throw 'WSL bootstrap failed' }
+          wsl.exe --shutdown
+          wsl.exe --distribution Ubuntu-24.04 --user root -- bash -lc "bash '$workspace/scripts/wsl2_systemd_bootstrap.sh'"
+          if ($LASTEXITCODE -ne 0) { throw 'WSL systemd user manager did not start' }
+      - name: Run the WSL2 Linux acceptance matrix
+        shell: pwsh
+        run: |
+          $hostFixture = Start-Process -FilePath "$PSHOME\pwsh.exe" -ArgumentList @('-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Seconds 900') -WindowStyle Hidden -PassThru
+          try {
+            wsl.exe --distribution Ubuntu-24.04 --user agentdust -- env "AGENTDUST_WINDOWS_HOST_PID=$($hostFixture.Id)" bash -lc 'cd /home/agentdust/work/agentdust && bash scripts/wsl2_acceptance.sh'
+            if ($LASTEXITCODE -ne 0) { throw 'WSL2 acceptance failed' }
+          }
+          finally {
+            Stop-Process -Id $hostFixture.Id -Force -ErrorAction SilentlyContinue
+          }

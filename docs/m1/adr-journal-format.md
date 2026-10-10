@@ -56,7 +56,7 @@ Its price is that a record can exist twice. When a rotation lands between the wr
 ## The append
 
 1. Encode the record as compact JSON and frame it. A frame longer than 65,536 bytes is dropped and counted, and nothing is opened or created for it.
-2. Check the volume of the journal directory (section "Local APFS only"). When it is not supported, write nothing, count it and stop.
+2. Check the journal directory's filesystem. macOS requires local APFS and Linux requires writable ext4. When it is not supported, write nothing, count it and stop.
 3. Open `journal.jsonl` with `O_APPEND`, `O_CREAT`, `O_NOFOLLOW` and mode 0600, in a directory of mode 0700.
 4. Write the frame with one `write(2)`. A call that returns `EINTR` before it transferred anything is restarted. A call that returns fewer bytes than the frame, zero included, is an error and is never completed by a second call, because a second call would not be atomic with respect to other appenders.
 5. Compare `fstat` of the descriptor with `lstat` of the path. They match when `st_dev` and `st_ino` are equal and `st_nlink` is not 0. If they do not match, close the descriptor and go to step 3. After 3 attempts the append fails with `Stale`.
@@ -80,9 +80,11 @@ The short write cases of the write itself (`EINTR` before any transfer, a zero b
 
 A line of a newer schema version is counted apart from a malformed line, and that includes a line longer than the cap. The decoder never buffers more than 65,536 bytes of one segment, and it recognises the version of a longer segment from its start, `{"v":` and the digits. Writers therefore write `v` as the first key, and every future schema keeps it first. Retention never shrinks a generation that holds such a line.
 
-## Local APFS only
+## Supported journal filesystems
 
-The writer supports one place for the journal: a local APFS volume. `statfs(2)` on the journal directory must report `f_fstypename` equal to `apfs` and `MNT_LOCAL` set in `f_flags`. On any other volume the writer opens nothing, writes nothing and records the reason in hook health: a network volume breaks the premise of an atomic append, SMB is unproven, and a local volume that is not APFS was not tested.
+The macOS writer supports a local APFS volume. `statfs(2)` on the journal directory must report `f_fstypename` equal to `apfs` and `MNT_LOCAL` set in `f_flags`. The Linux writer supports writable ext4. Other filesystems are rejected because their append and rename behavior has not passed AgentDust's journal acceptance checks. Network volumes remain unsupported.
+
+The append measurements in this ADR are from macOS. Linux support is covered by the ext4 integration suite and the Ubuntu 24.04 release acceptance.
 
 What `journal-bench fs` reported on the benchmark machine:
 
@@ -118,7 +120,7 @@ Rotation and retention do sync, because they run off the hook path and a replace
 
 One algorithm, stated here once and implemented once, in [retain.rs](../../crates/agentdust-core/src/journal/retain.rs). The benchmark keeps a frozen copy of its own ([maintenance.rs](../../crates/agentdust-bench/src/maintenance.rs)), so a later change to the shipped code cannot change what was measured. [journal_retain_adr.rs](../../crates/agentdust-core/tests/journal_retain_adr.rs) runs every row of the table below against the code, so a change to one without the other fails a test.
 
-A run takes the exclusive lock on `journal.maint` without blocking and reports `Busy` when another run holds it. Only rotation and retention take that lock. Then it:
+A run takes the exclusive lock on `journal.maint` without blocking and reports `Busy` when another run holds it. Explicit rotation, retention and scheduled maintenance use that lock. Appenders and readers do not. Then it:
 
 1. Opens the active file and every generation with the safe open rules. When any of them is refused, the run changes nothing, except that `journal.maint` may have been created.
 2. Removes a stale `journal.compact.tmp`.
@@ -222,7 +224,7 @@ The cap says nothing about a real `sample` record. The `procs` list of spec 3.2 
 ### Neutral
 
 - **One `statfs` call per append** costs 0.0015 to 0.0038 ms at p50 in three runs, and `append` with the system probe is 0.0422 to 0.0430 ms at p50 ([cost](journal-schema.md#cost)).
-- **`journal.maint` is empty.** Only rotation and retention take it.
+- **`journal.maint` stays empty.** Its modification time records the last successful scheduled maintenance run. Rotation, retention and scheduled maintenance take it; appenders and readers do not.
 
 ## What this does not establish
 
@@ -254,7 +256,7 @@ Storage: `journal.jsonl` and closed generations `journal.<stamp>.jsonl`, in a di
 Section 3.2, retention paragraph. After "records of active sessions are pinned." add:
 
 ```text
-Retention visits each closed generation, oldest first, and never the active file. A generation that holds a line of a newer schema version is left as it is. A record whose bytes repeat those of a record read earlier in the run is dropped, and so are the records the rules above drop. A generation with nothing to drop is left as it is, and one with no line left is deleted. In any other case the lines that stay are written, with their original bytes, to `journal.compact.tmp`, which is synced and renamed over the generation, and the directory is synced. Before a rewrite or a delete drops a line that does not parse, the generation is copied byte for byte to `journal.jsonl.corrupt-<n>`. A line of an unknown kind stays. A record is never moved to another file and never appended again. No step depends on elapsed time. Only rotation and retention take `journal.maint`, and the hook never runs either.
+Retention visits each closed generation, oldest first, and never the active file. A generation that holds a line of a newer schema version is left as it is. A record whose bytes repeat those of a record read earlier in the run is dropped, and so are the records the rules above drop. A generation with nothing to drop is left as it is, and one with no line left is deleted. In any other case the lines that stay are written, with their original bytes, to `journal.compact.tmp`, which is synced and renamed over the generation, and the directory is synced. Before a rewrite or a delete drops a line that does not parse, the generation is copied byte for byte to `journal.jsonl.corrupt-<n>`. A line of an unknown kind stays. A record is never moved to another file and never appended again. Retention decisions use record time and boot identity, not how long a maintenance run takes. Rotation, retention and scheduled maintenance use `journal.maint`; the hook never runs maintenance.
 ```
 
 Section 4.4, journal write budget. Replace:
@@ -280,7 +282,7 @@ Section 7.2, table row. Replace:
 with:
 
 ```text
-| `journal.jsonl`, `journal.<stamp>.jsonl`, `journal.compact.tmp`, `journal.jsonl.corrupt-<n>`, `journal.maint` | section 3.2 fields only. `journal.maint` is empty and only rotation and retention take it. A `corrupt` file is a copy of a generation that held a line that did not parse | section 3.2 |
+| `journal.jsonl`, `journal.<stamp>.jsonl`, `journal.compact.tmp`, `journal.jsonl.corrupt-<n>`, `journal.maint` | section 3.2 fields only. `journal.maint` stays empty and its modification time records the last scheduled run. A `corrupt` file is a copy of a generation that held a line that did not parse | section 3.2 |
 ```
 
 Section 7.3, after the paragraph on the data directory. Add:
@@ -317,10 +319,9 @@ Grouped by concern.
 
 - Point the benchmark's C2 at `Journal::append`, so that the 16 writer test (S22) runs against the shipped append. The benchmark keeps its own frozen copy of the append until then.
 
-**Rotation, retention and recovery** is built: `Journal::rotate`, `retain` and `prune` in `agentdust_core::journal` follow "Retention" as stated, with the spec's keep rules in `journal::retention` and `journal.maint` for exclusion. [journal-retention.md](journal-retention.md) describes it. Two items are left:
+**Rotation, retention and recovery** is built: `Journal::rotate`, `retain` and `prune` in `agentdust_core::journal` follow "Retention" as stated, with the spec's keep rules in `journal::retention` and `journal.maint` for exclusion. `maintain_if_due` now runs during cleanup surveys and automatic worker refreshes, outside hooks. It performs retention on first use and every 24 hours, and rotates the active file when it reaches 1 MB. The worker checks once per minute. Hooks, doctor and status stay read only. [journal-retention.md](journal-retention.md) describes the runtime behavior. One item is left:
 
 - Persist or carry `RetainReport.degraded`, the sessions whose pinned evidence was dropped. It is returned and not stored.
-- Call `prune` from the CLI and the server. Nothing calls it, and the hook never does.
 
 **Hook write path and health** (spec 4.4):
 
