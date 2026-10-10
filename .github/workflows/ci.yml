@@ -191,8 +191,11 @@ jobs:
       - name: Prepare the ext4 workspace and systemd
         shell: pwsh
         run: |
-          $workspace = (& wsl.exe --distribution Ubuntu-24.04 --user root -- wslpath -u $env:GITHUB_WORKSPACE).Trim()
+          $windowsWorkspace = $env:GITHUB_WORKSPACE.Replace('\', '/')
+          $workspaceOutput = & wsl.exe --distribution Ubuntu-24.04 --user root -- wslpath -u $windowsWorkspace
           if ($LASTEXITCODE -ne 0) { throw 'Could not locate the repository from WSL' }
+          $workspace = ($workspaceOutput -join '').Trim()
+          if ([string]::IsNullOrWhiteSpace($workspace)) { throw 'WSL returned an empty repository path' }
           wsl.exe --distribution Ubuntu-24.04 --user root -- bash -lc "bash '$workspace/scripts/wsl2_bootstrap.sh' '$workspace'"
           if ($LASTEXITCODE -ne 0) { throw 'WSL bootstrap failed' }
           wsl.exe --shutdown
