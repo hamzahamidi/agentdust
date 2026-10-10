@@ -1,6 +1,7 @@
 #![cfg(target_os = "linux")]
 
 use std::fs;
+use std::net::TcpListener;
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -83,9 +84,19 @@ fn linux_rejects_unavailable_commands_and_gates_hooks_only_setup() {
     assert!(String::from_utf8_lossy(&apply.stderr).contains("terminal"));
     assert!(!sandbox.root.join("xdg-data/agentdust").exists());
 
-    let port = sandbox.run(&["port", "1", "--json"]);
-    assert!(port.status.success(), "{}", String::from_utf8_lossy(&port.stderr));
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port_number = listener.local_addr().unwrap().port();
+    let port_arg = port_number.to_string();
+    let port = sandbox.run(&["port", &port_arg, "--json"]);
+    assert!(
+        port.status.success(),
+        "status: {:?}\nstdout: {}\nstderr: {}",
+        port.status.code(),
+        String::from_utf8_lossy(&port.stdout),
+        String::from_utf8_lossy(&port.stderr)
+    );
     let report: serde_json::Value = serde_json::from_slice(&port.stdout).unwrap();
+    assert_eq!(report["state"], "listening");
     assert_eq!(report["protocol"], "tcp");
     assert_eq!(report["visibility"], "current_user_visible");
     assert!(!sandbox.root.join("xdg-data/agentdust").exists());
