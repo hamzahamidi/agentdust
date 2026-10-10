@@ -636,7 +636,7 @@ trait PidfdOps {
     type Handle;
 
     fn open(&self, pid: i32) -> io::Result<Self::Handle>;
-    fn verify_unmanaged_unit(&self, handle: &Self::Handle) -> io::Result<()>;
+    fn verify_unmanaged_unit(&self, handle: &Self::Handle, expected_uid: u32) -> io::Result<()>;
     fn sigterm(&self, handle: &Self::Handle) -> SignalResult;
 }
 
@@ -656,8 +656,8 @@ impl PidfdOps for SystemPidfdOps {
         Ok(unsafe { OwnedFd::from_raw_fd(fd) })
     }
 
-    fn verify_unmanaged_unit(&self, handle: &Self::Handle) -> io::Result<()> {
-        systemd_unit_for_pidfd(handle.as_raw_fd())
+    fn verify_unmanaged_unit(&self, handle: &Self::Handle, expected_uid: u32) -> io::Result<()> {
+        systemd_unit_for_pidfd(handle.as_raw_fd(), expected_uid)
     }
 
     fn sigterm(&self, handle: &Self::Handle) -> SignalResult {
@@ -694,7 +694,7 @@ fn pidfd_signal<P: ProcessProvider, O: PidfdOps>(
     if revalidate(expected, provider) != Revalidation::Match {
         return SignalResult::Refused;
     }
-    if ops.verify_unmanaged_unit(&handle).is_err() {
+    if ops.verify_unmanaged_unit(&handle, expected.kernel.uid).is_err() {
         return SignalResult::Refused;
     }
     if revalidate(expected, provider) != Revalidation::Match {
@@ -719,7 +719,7 @@ enum SystemdUnitKind {
     System,
 }
 
-fn systemd_unit_for_pidfd(pidfd: c_int) -> io::Result<()> {
+fn systemd_unit_for_pidfd(pidfd: c_int, expected_uid: u32) -> io::Result<()> {
     const USER_UNIT: &CStr = c"sd_pidfd_get_user_unit";
     const SYSTEM_UNIT: &CStr = c"sd_pidfd_get_unit";
     const CGROUP: &CStr = c"sd_pidfd_get_cgroup";
@@ -735,9 +735,6 @@ fn systemd_unit_for_pidfd(pidfd: c_int) -> io::Result<()> {
             "libsystemd system pidfd unit lookup is unavailable",
         )
     })?;
-    verify_systemd_unit_lookups(unsafe { call_systemd_unit(get_user_unit, pidfd) }, unsafe {
-        call_systemd_unit(get_system_unit, pidfd)
-    })?;
     let get_cgroup = systemd_function(CGROUP).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::Unsupported,
@@ -745,6 +742,12 @@ fn systemd_unit_for_pidfd(pidfd: c_int) -> io::Result<()> {
         )
     })?;
     let cgroup = unsafe { call_systemd_text(get_cgroup, pidfd) }?;
+    verify_systemd_unit_lookups(
+        unsafe { call_systemd_unit(get_user_unit, pidfd) },
+        unsafe { call_systemd_unit(get_system_unit, pidfd) },
+        &cgroup,
+        expected_uid,
+    )?;
     let mut record = b"0::".to_vec();
     record.extend_from_slice(&cgroup);
     record.push(b'\n');
@@ -760,6 +763,8 @@ fn systemd_unit_for_pidfd(pidfd: c_int) -> io::Result<()> {
 fn verify_systemd_unit_lookups(
     user_unit: io::Result<Vec<u8>>,
     system_unit: io::Result<Vec<u8>>,
+    cgroup: &[u8],
+    expected_uid: u32,
 ) -> io::Result<()> {
     let mut found_unit = false;
     for (kind, result) in [
@@ -769,10 +774,10 @@ fn verify_systemd_unit_lookups(
         match result {
             Ok(unit) => {
                 found_unit = true;
-                if systemd_unit_is_managed(kind, &unit)? {
+                if systemd_unit_is_managed(kind, &unit, cgroup, expected_uid)? {
                     return Err(io::Error::new(
                         io::ErrorKind::PermissionDenied,
-                        "process belongs to a managed systemd service",
+                        "process belongs to a managed systemd unit",
                     ));
                 }
             }
@@ -790,12 +795,32 @@ fn verify_systemd_unit_lookups(
     }
 }
 
-fn systemd_unit_is_managed(kind: SystemdUnitKind, unit: &[u8]) -> io::Result<bool> {
+fn unit_matches_user_slice_cgroup(unit: &[u8], cgroup: &[u8], uid: u32) -> bool {
+    let prefix = format!("/user.slice/user-{uid}.slice/");
+    cgroup.starts_with(prefix.as_bytes())
+        && cgroup
+            .split(|byte| *byte == b'/')
+            .any(|component| component == unit)
+}
+
+fn systemd_unit_is_managed(
+    kind: SystemdUnitKind,
+    unit: &[u8],
+    cgroup: &[u8],
+    expected_uid: u32,
+) -> io::Result<bool> {
     if unit.ends_with(b".service") {
-        return Ok(!(matches!(kind, SystemdUnitKind::System) && unit.starts_with(b"user@")));
+        let user_manager = format!("user@{expected_uid}.service");
+        if matches!(kind, SystemdUnitKind::System)
+            && unit == user_manager.as_bytes()
+            && unit_matches_user_slice_cgroup(unit, cgroup, expected_uid)
+        {
+            return Ok(false);
+        }
+        return Ok(true);
     }
     if unit.ends_with(b".scope") {
-        return Ok(false);
+        return Ok(!unit_matches_user_slice_cgroup(unit, cgroup, expected_uid));
     }
     Err(io::Error::new(
         io::ErrorKind::InvalidData,
@@ -1215,7 +1240,7 @@ mod tests {
             Ok(())
         }
 
-        fn verify_unmanaged_unit(&self, _handle: &Self::Handle) -> io::Result<()> {
+        fn verify_unmanaged_unit(&self, _handle: &Self::Handle, _expected_uid: u32) -> io::Result<()> {
             self.events.lock().unwrap().push("unit");
             match (self.has_unit, self.managed_unit) {
                 (true, false) => Ok(()),
@@ -1289,16 +1314,89 @@ mod tests {
     }
 
     #[test]
-    fn authoritative_service_units_block_signals_even_when_cgroup_evidence_is_unmanaged() {
-        assert!(systemd_unit_is_managed(SystemdUnitKind::System, b"ssh.service").unwrap());
-        assert!(systemd_unit_is_managed(SystemdUnitKind::User, b"agentdust-automatic.service").unwrap());
-        assert!(!systemd_unit_is_managed(SystemdUnitKind::System, b"user@1000.service").unwrap());
-        assert!(!systemd_unit_is_managed(SystemdUnitKind::System, b"session-2.scope").unwrap());
-        assert!(!cgroup_unit_evidence(b"0::/user.slice/session-2.scope\n").unwrap());
+    fn authoritative_unit_exceptions_match_the_target_users_cgroup() {
+        assert!(
+            systemd_unit_is_managed(
+                SystemdUnitKind::System,
+                b"ssh.service",
+                b"/system.slice/ssh.service",
+                1000
+            )
+            .unwrap()
+        );
+        assert!(
+            systemd_unit_is_managed(
+                SystemdUnitKind::User,
+                b"agentdust-automatic.service",
+                b"/user.slice/user-1000.slice/agentdust-automatic.service",
+                1000
+            )
+            .unwrap()
+        );
+        assert!(
+            !systemd_unit_is_managed(
+                SystemdUnitKind::System,
+                b"user@1000.service",
+                b"/user.slice/user-1000.slice/user@1000.service",
+                1000
+            )
+            .unwrap()
+        );
+        assert!(
+            !systemd_unit_is_managed(
+                SystemdUnitKind::System,
+                b"session-2.scope",
+                b"/user.slice/user-1000.slice/session-2.scope",
+                1000
+            )
+            .unwrap()
+        );
+        assert!(
+            systemd_unit_is_managed(
+                SystemdUnitKind::System,
+                b"build.scope",
+                b"/machine.slice/build.scope",
+                1000
+            )
+            .unwrap()
+        );
+        assert!(
+            systemd_unit_is_managed(
+                SystemdUnitKind::System,
+                b"user@1000.service",
+                b"/user.slice/user-1001.slice/user@1000.service",
+                1001
+            )
+            .unwrap()
+        );
+        assert!(
+            systemd_unit_is_managed(
+                SystemdUnitKind::System,
+                b"user@1001.service",
+                b"/user.slice/user-1000.slice/user@1001.service",
+                1000
+            )
+            .unwrap()
+        );
+        assert!(
+            systemd_unit_is_managed(
+                SystemdUnitKind::System,
+                b"user@1000.service",
+                b"/user.slice/user-1000.slice/session-2.scope",
+                1000
+            )
+            .unwrap()
+        );
+        assert!(!cgroup_unit_evidence(b"0::/user.slice/user-1000.slice/session-2.scope\n").unwrap());
         assert_eq!(
-            systemd_unit_is_managed(SystemdUnitKind::System, b"unexpected.target")
-                .unwrap_err()
-                .kind(),
+            systemd_unit_is_managed(
+                SystemdUnitKind::System,
+                b"unexpected.target",
+                b"/system.slice/unexpected.target",
+                1000
+            )
+            .unwrap_err()
+            .kind(),
             io::ErrorKind::InvalidData
         );
     }
@@ -1309,6 +1407,8 @@ mod tests {
             verify_systemd_unit_lookups(
                 Ok(b"session-2.scope".to_vec()),
                 Err(io::Error::from_raw_os_error(libc::ENODATA)),
+                b"/user.slice/user-1000.slice/session-2.scope",
+                1000,
             )
             .is_ok()
         );
@@ -1324,9 +1424,14 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                verify_systemd_unit_lookups(results.0, results.1)
-                    .unwrap_err()
-                    .raw_os_error(),
+                verify_systemd_unit_lookups(
+                    results.0,
+                    results.1,
+                    b"/user.slice/user-1000.slice/session-2.scope",
+                    1000,
+                )
+                .unwrap_err()
+                .raw_os_error(),
                 Some(libc::EIO)
             );
         }
@@ -1335,6 +1440,8 @@ mod tests {
             verify_systemd_unit_lookups(
                 Err(io::Error::from_raw_os_error(libc::ENODATA)),
                 Err(io::Error::from_raw_os_error(libc::ENODATA)),
+                b"/user.slice/user-1000.slice/session-2.scope",
+                1000,
             )
             .unwrap_err()
             .kind(),
@@ -1344,11 +1451,31 @@ mod tests {
             verify_systemd_unit_lookups(
                 Ok(b"agentdust.service".to_vec()),
                 Err(io::Error::from_raw_os_error(libc::ENODATA)),
+                b"/user.slice/user-1000.slice/agentdust.service",
+                1000,
             )
             .unwrap_err()
             .kind(),
             io::ErrorKind::PermissionDenied
         );
+
+        for cgroup in [
+            &b"/machine.slice/session-2.scope"[..],
+            &b"/user.slice/user-1001.slice/session-2.scope"[..],
+            &b"/user.slice/user-1000.slice/other.scope"[..],
+        ] {
+            assert_eq!(
+                verify_systemd_unit_lookups(
+                    Ok(b"session-2.scope".to_vec()),
+                    Err(io::Error::from_raw_os_error(libc::ENODATA)),
+                    cgroup,
+                    1000,
+                )
+                .unwrap_err()
+                .kind(),
+                io::ErrorKind::PermissionDenied
+            );
+        }
     }
 
     #[test]
