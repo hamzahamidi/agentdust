@@ -1,6 +1,7 @@
 #![cfg(target_os = "linux")]
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -41,6 +42,7 @@ fn check(agent: Agent) {
     let home = root.join("home");
     let project = home.join("project");
     fs::create_dir_all(&data).unwrap();
+    fs::set_permissions(&data, fs::Permissions::from_mode(0o700)).unwrap();
     fs::create_dir_all(&project).unwrap();
     assert!(SystemVolume.probe(&data).unwrap().supported);
 
