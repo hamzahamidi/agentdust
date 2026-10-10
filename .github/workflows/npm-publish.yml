@@ -47,8 +47,10 @@ jobs:
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir dist
           (cd dist && sha256sum --check SHA256SUMS)
           gh attestation verify "dist/agentdust-$VERSION.tgz" --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-ref "refs/tags/$RELEASE_TAG"
-          tar -xOf "dist/agentdust-$VERSION.tgz" package/bin/agentdust > npm-binary
-          tar -xOf "dist/agentdust-$VERSION-darwin-arm64.tar.gz" "agentdust-$VERSION-darwin-arm64/agentdust" | cmp - npm-binary
+          tar -xOf "dist/agentdust-$VERSION.tgz" package/vendor/darwin-arm64/agentdust > npm-darwin-binary
+          tar -xOf "dist/agentdust-$VERSION-darwin-arm64.tar.gz" "agentdust-$VERSION-darwin-arm64/agentdust" | cmp - npm-darwin-binary
+          tar -xOf "dist/agentdust-$VERSION.tgz" package/vendor/linux-x64/agentdust > npm-linux-binary
+          tar -xOf "dist/agentdust-$VERSION-linux-x64.tar.gz" "agentdust-$VERSION-linux-x64/agentdust" | cmp - npm-linux-binary
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'

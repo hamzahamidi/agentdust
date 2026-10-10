@@ -24,7 +24,7 @@ class PackageTest(unittest.TestCase):
         self.binary.write_bytes(b"\xcf\xfa\xed\xfe binary \x00\x01\x02")
         self.binary.chmod(0o755)
 
-    def package(self, out="dist", epoch="1700000000", version="0.1.0", binary=None, cwd=None):
+    def package(self, out="dist", epoch="1700000000", version="0.1.0", binary=None, cwd=None, target="darwin-arm64"):
         env = {**os.environ, "SOURCE_DATE_EPOCH": epoch}
         result = subprocess.run(
             [
@@ -32,6 +32,7 @@ class PackageTest(unittest.TestCase):
                 str(SCRIPT),
                 "--binary", str(binary or self.binary),
                 "--version", version,
+                "--target", target,
                 "--out-dir", str(self.path / out),
             ],
             cwd=cwd or self.path,
@@ -40,7 +41,7 @@ class PackageTest(unittest.TestCase):
             text=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        return self.path / out / f"agentdust-{version}-darwin-arm64.tar.gz", result.stdout
+        return self.path / out / f"agentdust-{version}-{target}.tar.gz", result.stdout
 
     def members(self, tarball):
         with tarfile.open(tarball) as tar:
@@ -113,6 +114,15 @@ class PackageTest(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.path / "dist" / f"{NAME}.tar.gz").exists())
+
+    def test_linux_archive_uses_its_platform_name_and_the_native_binary(self):
+        tarball, _ = self.package(target="linux-x64")
+        self.assertEqual(tarball.name, "agentdust-0.1.0-linux-x64.tar.gz")
+        with tarfile.open(tarball) as tar:
+            self.assertEqual(
+                tar.extractfile("agentdust-0.1.0-linux-x64/agentdust").read(),
+                self.binary.read_bytes(),
+            )
 
 
 if __name__ == "__main__":

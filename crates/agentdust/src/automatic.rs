@@ -3,7 +3,9 @@ use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, BufReader, IsTerminal, Write};
 use std::os::fd::AsRawFd;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+use std::os::unix::fs::MetadataExt;
+#[cfg(target_os = "macos")]
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::sync::Arc;
@@ -12,20 +14,25 @@ use std::time::Duration;
 use agentdust_core::ancestry::find_agent;
 use agentdust_core::apply::exec::{Deps, Executor, Settings};
 use agentdust_core::apply::lock::IdentityLock;
+#[cfg(target_os = "macos")]
 use agentdust_core::apply::signal::KillSignaller;
+use agentdust_core::apply::signal::Signaller;
 use agentdust_core::apply::timer::SystemTimer;
 use agentdust_core::automatic::{self, PolicyGuard};
 use agentdust_core::class::Class;
-use agentdust_core::darwin::DarwinProvider;
 use agentdust_core::identity::KernelIdentity;
 use agentdust_core::journal::{self, Journal};
+#[cfg(target_os = "linux")]
+use agentdust_core::linux::LinuxPidfdSignaller;
 use agentdust_core::live::LiveSurveyor;
 use agentdust_core::plan::PlanItem;
+use agentdust_core::platform::Provider;
 use agentdust_core::provider::{ProcessProvider, ProcessRead};
 use agentdust_core::session::{self, Liveness, LivenessProbe, ProviderLiveness};
 use agentdust_core::{clock, cwd, paths, safe_open, secret};
 use serde_json::{Value, json};
 
+#[cfg(target_os = "macos")]
 const LABEL: &str = "com.agentdust.automatic";
 const USAGE: &str = "usage: agentdust auto enable [--yes] PROJECT... | enable [--yes] --projects ROOT | disable [PROJECT] | pause | resume | keep PID | unkeep PID | status";
 
@@ -157,6 +164,10 @@ fn execute(args: &[&str]) -> io::Result<()> {
     {
         return Err(error(USAGE));
     }
+    #[cfg(target_os = "linux")]
+    if enable.is_some() || args == ["resume"] {
+        require_supported_data_volume(&dir)?;
+    }
     if let Some(request) = &enable {
         let existing = automatic::read(&dir)?;
         if !existing.projects.is_empty() {
@@ -167,7 +178,7 @@ fn execute(args: &[&str]) -> io::Result<()> {
             )?;
         }
     }
-    let provider = DarwinProvider::new()?;
+    let provider = Provider::new()?;
     if let Some(request) = &enable {
         println!(
             "Selected {} exact session-start directories:",
@@ -276,7 +287,7 @@ fn execute(args: &[&str]) -> io::Result<()> {
     Ok(())
 }
 
-fn human_consent(provider: &DarwinProvider, args: &[&str]) -> io::Result<()> {
+fn human_consent(provider: &Provider, args: &[&str]) -> io::Result<()> {
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return Err(error("policy changes require a human foreground terminal"));
     }
@@ -318,6 +329,7 @@ fn human_consent(provider: &DarwinProvider, args: &[&str]) -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
 fn plist_path() -> io::Result<PathBuf> {
     let home = std::env::var_os("HOME").ok_or_else(|| error("HOME is not set"))?;
     let home = PathBuf::from(home);
@@ -327,6 +339,7 @@ fn plist_path() -> io::Result<PathBuf> {
     Ok(home.join("Library/LaunchAgents").join(format!("{LABEL}.plist")))
 }
 
+#[cfg(target_os = "macos")]
 fn xml(value: &str) -> String {
     value
         .replace('&', "&amp;")
@@ -336,6 +349,7 @@ fn xml(value: &str) -> String {
         .replace('\'', "&apos;")
 }
 
+#[cfg(target_os = "macos")]
 fn launchctl(args: &[&str]) -> io::Result<()> {
     let output = Command::new("/bin/launchctl").args(args).output()?;
     if !output.status.success() {
@@ -347,10 +361,12 @@ fn launchctl(args: &[&str]) -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
 fn domain() -> String {
     format!("gui/{}", unsafe { libc::geteuid() })
 }
 
+#[cfg(target_os = "macos")]
 fn render_plist(label: &str, exe: &Path, dir: &Path) -> io::Result<String> {
     let plist = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>Label</key><string>{label}</string><key>ProgramArguments</key><array><string>{}</string><string>auto</string><string>worker</string></array><key>EnvironmentVariables</key><dict><key>AGENTDUST_DATA_DIR</key><string>{}</string></dict><key>RunAtLoad</key><true/><key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict><key>ThrottleInterval</key><integer>10</integer></dict></plist>",
@@ -360,6 +376,7 @@ fn render_plist(label: &str, exe: &Path, dir: &Path) -> io::Result<String> {
     Ok(plist)
 }
 
+#[cfg(target_os = "macos")]
 fn install_worker(dir: &Path) -> io::Result<()> {
     let path = plist_path()?;
     let parent = path
@@ -403,6 +420,7 @@ fn install_worker(dir: &Path) -> io::Result<()> {
     ])
 }
 
+#[cfg(target_os = "macos")]
 fn remove_worker() -> io::Result<()> {
     let service = format!("{}/{LABEL}", domain());
     if Command::new("/bin/launchctl")
@@ -421,10 +439,194 @@ fn remove_worker() -> io::Result<()> {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn require_supported_data_volume(dir: &Path) -> io::Result<()> {
+    use agentdust_core::journal::volume::{self, SystemVolume};
+
+    match volume::locate(&SystemVolume, dir)? {
+        facts if facts.supported => Ok(()),
+        facts => Err(error(format!(
+            "automatic cleanup requires writable ext4; found {}",
+            facts.describe()
+        ))),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn systemd_user_directory(create: bool) -> io::Result<PathBuf> {
+    use std::os::unix::fs::MetadataExt;
+
+    let config_home = match std::env::var_os("XDG_CONFIG_HOME") {
+        Some(path) if !path.is_empty() => PathBuf::from(path),
+        _ => PathBuf::from(std::env::var_os("HOME").ok_or_else(|| error("HOME is not set"))?).join(".config"),
+    };
+    if !config_home.is_absolute() {
+        return Err(error("XDG_CONFIG_HOME must be absolute"));
+    }
+    if create {
+        fs::create_dir_all(&config_home)?;
+    }
+    let config_home = match fs::canonicalize(&config_home) {
+        Ok(path) => path,
+        Err(err) if !create && err.kind() == io::ErrorKind::NotFound => {
+            return Ok(config_home.join("systemd/user"));
+        }
+        Err(err) => return Err(err),
+    };
+    let systemd_dir = config_home.join("systemd");
+    let user_dir = systemd_dir.join("user");
+    if create {
+        fs::create_dir_all(&user_dir)?;
+    }
+    let user_dir = match fs::canonicalize(&user_dir) {
+        Ok(path) => path,
+        Err(err) if !create && err.kind() == io::ErrorKind::NotFound => {
+            return Ok(user_dir);
+        }
+        Err(err) => return Err(err),
+    };
+    if !user_dir.starts_with(&config_home) {
+        return Err(error("systemd user unit directory escapes XDG_CONFIG_HOME"));
+    }
+    for path in [config_home.as_path(), systemd_dir.as_path(), user_dir.as_path()] {
+        let metadata = fs::metadata(path)?;
+        if !metadata.is_dir() || metadata.uid() != unsafe { libc::geteuid() } || metadata.mode() & 0o022 != 0
+        {
+            return Err(error(
+                "systemd user unit directories must be user owned and not writable by others",
+            ));
+        }
+    }
+    Ok(user_dir)
+}
+
+#[cfg(target_os = "linux")]
+fn systemd_quote(value: &str) -> String {
+    let mut quoted = String::from("\"");
+    for character in value.chars() {
+        match character {
+            '\\' => quoted.push_str("\\\\"),
+            '"' => quoted.push_str("\\\""),
+            '%' => quoted.push_str("%%"),
+            '\n' => quoted.push_str("\\n"),
+            '\r' => quoted.push_str("\\r"),
+            '\t' => quoted.push_str("\\t"),
+            other => quoted.push(other),
+        }
+    }
+    quoted.push('"');
+    quoted
+}
+
+#[cfg(target_os = "linux")]
+fn render_systemd_unit(exe: &Path, dir: &Path) -> io::Result<String> {
+    let exe = exe.to_str().ok_or_else(|| error("binary path is not UTF-8"))?;
+    let dir = dir.to_str().ok_or_else(|| error("data directory is not UTF-8"))?;
+    Ok(format!(
+        "# Managed by AgentDust\n[Unit]\nDescription=AgentDust automatic cleanup\nAfter=default.target\n\n[Service]\nType=simple\nExecStart={} auto worker\nEnvironment=AGENTDUST_DATA_DIR={}\nRestart=on-failure\nRestartSec=10\n\n[Install]\nWantedBy=default.target\n",
+        systemd_quote(exe),
+        systemd_quote(dir)
+    ))
+}
+
+#[cfg(target_os = "linux")]
+const SYSTEMD_UNIT: &str = "agentdust-automatic.service";
+
+#[cfg(target_os = "linux")]
+fn systemd_user(args: &[&str]) -> io::Result<()> {
+    let output = Command::new("systemctl").arg("--user").args(args).output()?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(error(format!(
+            "systemctl --user {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        )))
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn read_agentdust_unit(path: &Path) -> io::Result<Option<String>> {
+    match safe_open::open_file(path, safe_open::Access::Read) {
+        Ok(mut file) => {
+            let mut text = String::new();
+            use std::io::Read;
+            file.read_to_string(&mut text)?;
+            Ok(Some(text))
+        }
+        Err(safe_open::SafeOpenError::Io(err)) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(error(err)),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn write_agentdust_unit(path: &Path, contents: &str) -> io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    if let Some(existing) = read_agentdust_unit(path)? {
+        if !existing.lines().any(|line| line == "# Managed by AgentDust") {
+            return Err(error(
+                "an unowned systemd unit already uses the AgentDust service path",
+            ));
+        }
+        fs::remove_file(path)?;
+    }
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)?;
+    file.write_all(contents.as_bytes())?;
+    file.sync_all()
+}
+
+#[cfg(target_os = "linux")]
+fn remove_agentdust_unit(path: &Path) -> io::Result<()> {
+    if let Some(existing) = read_agentdust_unit(path)? {
+        if !existing.lines().any(|line| line == "# Managed by AgentDust") {
+            return Err(error(
+                "an unowned systemd unit at the AgentDust service path was preserved",
+            ));
+        }
+        fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn install_worker(dir: &Path) -> io::Result<()> {
+    let unit_dir = systemd_user_directory(true)?;
+    let path = unit_dir.join(SYSTEMD_UNIT);
+    let exe = agentdust_agents::hook_config::stable_exe(&std::env::current_exe()?);
+    write_agentdust_unit(&path, &render_systemd_unit(&exe, dir)?)?;
+    systemd_user(&["daemon-reload"])?;
+    if let Err(err) = systemd_user(&["enable", "--now", SYSTEMD_UNIT]) {
+        let _ = systemd_user(&["disable", "--now", SYSTEMD_UNIT]);
+        let _ = remove_agentdust_unit(&path);
+        let _ = systemd_user(&["daemon-reload"]);
+        return Err(err);
+    }
+    systemd_user(&["restart", SYSTEMD_UNIT])
+}
+
+#[cfg(target_os = "linux")]
+fn remove_worker() -> io::Result<()> {
+    let path = systemd_user_directory(false)?.join(SYSTEMD_UNIT);
+    if read_agentdust_unit(&path)?.is_none() {
+        return Ok(());
+    }
+    let stopped = systemd_user(&["disable", "--now", SYSTEMD_UNIT]);
+    remove_agentdust_unit(&path)?;
+    let reloaded = systemd_user(&["daemon-reload"]);
+    stopped.and(reloaded)
+}
+
 type JournalStamp = Vec<(String, u64, u64, i64, i64)>;
 
 struct OwnerProbe<'a> {
-    provider: &'a DarwinProvider,
+    provider: &'a Provider,
     gone: &'a RefCell<HashSet<KernelIdentity>>,
 }
 
@@ -459,25 +661,31 @@ fn worker(dir: &Path) -> io::Result<()> {
     if !automatic::read(dir)?.enabled {
         return Ok(());
     }
+    #[cfg(target_os = "linux")]
+    require_supported_data_volume(dir)?;
     let Some(_worker) =
         IdentityLock::try_acquire(&dir.join(automatic::DIRECTORY).join("worker-lock"), "worker")
             .map_err(error)?
     else {
         return Ok(());
     };
-    let provider = DarwinProvider::new()?;
+    let provider = Provider::new()?;
     if let ProcessRead::Present(process) = provider.read(std::process::id() as i32)? {
         automatic::write_worker_identity(dir, &process.kernel)?;
     } else {
         return Err(error("worker identity unavailable"));
     }
     let surveyor = Arc::new(LiveSurveyor::new(dir));
+    #[cfg(target_os = "macos")]
+    let signaller: Box<dyn Signaller> = Box::new(KillSignaller);
+    #[cfg(target_os = "linux")]
+    let signaller: Box<dyn Signaller> = Box::new(LinuxPidfdSignaller::new()?);
     let executor = Executor::new(
         Deps {
             data_dir: dir.to_path_buf(),
             surveyor,
-            provider: Box::new(DarwinProvider::new()?),
-            signaller: Box::new(KillSignaller),
+            provider: Box::new(Provider::new()?),
+            signaller,
             timer: Arc::new(SystemTimer::new()),
         },
         Settings::default(),
@@ -626,7 +834,7 @@ fn sweep(executor: &Executor, dir: &Path, history: &mut Vec<Value>) -> io::Resul
     Ok(pending)
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 mod launchd_tests {
     use super::*;
 
@@ -810,5 +1018,61 @@ mod launchd_tests {
         );
         assert!(!dir.join("audit.log").exists());
         drop(registration);
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod systemd_tests {
+    use super::{
+        read_agentdust_unit, remove_agentdust_unit, render_systemd_unit, systemd_quote, write_agentdust_unit,
+    };
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("agentdust-systemd-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+        dir
+    }
+
+    #[test]
+    fn systemd_arguments_escape_unit_syntax() {
+        assert_eq!(systemd_quote("a % b\\c\"d\ne"), "\"a %% b\\\\c\\\"d\\ne\"");
+        let unit = render_systemd_unit(
+            Path::new("/home/user/Agent Dust/%agentdust"),
+            Path::new("/home/user/data dir"),
+        )
+        .unwrap();
+        assert!(unit.contains("# Managed by AgentDust\n"));
+        assert!(unit.contains("ExecStart=\"/home/user/Agent Dust/%%agentdust\" auto worker\n"));
+        assert!(unit.contains("Environment=AGENTDUST_DATA_DIR=\"/home/user/data dir\"\n"));
+        assert!(unit.contains("Restart=on-failure\n"));
+    }
+
+    #[test]
+    fn systemd_unit_updates_only_agentdust_owned_files() {
+        let dir = scratch("owned");
+        let path = dir.join("agentdust-automatic.service");
+        let first = "# Managed by AgentDust\n[Service]\nExecStart=/old/agentdust auto worker\n";
+        let second = "# Managed by AgentDust\n[Service]\nExecStart=/new/agentdust auto worker\n";
+        write_agentdust_unit(&path, first).unwrap();
+        assert_eq!(read_agentdust_unit(&path).unwrap().as_deref(), Some(first));
+        write_agentdust_unit(&path, second).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), second);
+        remove_agentdust_unit(&path).unwrap();
+        assert!(!path.exists());
+
+        fs::write(&path, "[Service]\nExecStart=/user/service\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(write_agentdust_unit(&path, first).is_err());
+        assert!(remove_agentdust_unit(&path).is_err());
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "[Service]\nExecStart=/user/service\n"
+        );
+        fs::remove_dir_all(dir).unwrap();
     }
 }

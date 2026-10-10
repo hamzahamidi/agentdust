@@ -15,7 +15,7 @@ TAG_GLOB = "v[0-9]+.[0-9]+.[0-9]+"
 VERIFIED_COMMIT = "${{ needs.verify.outputs.commit }}"
 TAP_ON = "env.TAP_ENABLED == 'true'"
 TAP_OFF = "env.TAP_ENABLED != 'true'"
-JOBS = ("verify", "audit", "build", "package", "release", "tap-pr")
+JOBS = ("verify", "audit", "build", "package", "linux-acceptance", "release", "tap-pr")
 
 
 def load(path):
@@ -118,8 +118,15 @@ class ReleaseWorkflowTest(unittest.TestCase):
     def test_runners_are_named_images_and_never_latest(self):
         for name, job in self.jobs.items():
             with self.subTest(job=name):
-                self.assertIn(job["runs-on"], ("ubuntu-24.04", "macos-15"))
-        self.assertEqual(self.jobs["build"]["runs-on"], "macos-15")
+                if name == "build":
+                    self.assertEqual(job["runs-on"], "${{ matrix.runner }}")
+                    self.assertEqual(
+                        {entry["runner"] for entry in job["strategy"]["matrix"]["include"]},
+                        {"ubuntu-24.04", "macos-15"},
+                    )
+                else:
+                    self.assertIn(job["runs-on"], ("ubuntu-24.04", "macos-15"))
+        self.assertEqual(self.jobs["linux-acceptance"]["runs-on"], "ubuntu-24.04")
         self.assertEqual(self.jobs["package"]["runs-on"], "macos-15")
 
     def test_every_job_has_a_timeout(self):
@@ -182,18 +189,18 @@ class GateTest(unittest.TestCase):
         self.assertEqual(step_with(self.verify, "check_release.py reachable")["id"], "main")
 
     def test_nothing_runs_before_the_gate_has_passed(self):
-        for name in ("audit", "build", "package", "release", "tap-pr"):
+        for name in ("audit", "build", "package", "linux-acceptance", "release", "tap-pr"):
             with self.subTest(job=name):
                 self.assertIn("verify", needs(self.jobs[name]))
 
     def test_every_later_job_builds_the_commit_the_gate_verified(self):
-        for name in ("audit", "build", "package", "tap-pr"):
+        for name in ("audit", "build", "package", "linux-acceptance", "tap-pr"):
             with self.subTest(job=name):
                 checkout = step_with(self.jobs[name], "actions/checkout")
                 self.assertEqual(checkout["with"]["ref"], VERIFIED_COMMIT)
 
     def test_the_release_waits_for_the_audit_the_build_and_the_package(self):
-        self.assertLessEqual({"verify", "audit", "package"}, needs(self.jobs["release"]))
+        self.assertLessEqual({"verify", "audit", "package", "linux-acceptance"}, needs(self.jobs["release"]))
         self.assertLessEqual({"verify", "build"}, needs(self.jobs["package"]))
         self.assertLessEqual({"verify", "package", "release"}, needs(self.jobs["tap-pr"]))
 
@@ -205,9 +212,17 @@ class BuildTest(unittest.TestCase):
         cls.build = load(RELEASE)["jobs"]["build"]
 
     def test_the_binary_is_built_twice_in_two_separate_jobs(self):
-        self.assertEqual(self.build["strategy"]["matrix"], {"copy": ["a", "b"]})
+        self.assertEqual(
+            {(item["target"], item["copy"], item["runner"]) for item in self.build["strategy"]["matrix"]["include"]},
+            {
+                ("darwin-arm64", "a", "macos-15"),
+                ("darwin-arm64", "b", "macos-15"),
+                ("linux-x64", "a", "ubuntu-24.04"),
+                ("linux-x64", "b", "ubuntu-24.04"),
+            },
+        )
         upload = step_with(self.build, "actions/upload-artifact")
-        self.assertEqual(upload["with"]["name"], "build-${{ matrix.copy }}")
+        self.assertEqual(upload["with"]["name"], "build-${{ matrix.target }}-${{ matrix.copy }}")
 
     def test_the_toolchain_is_checked_against_the_record_with_the_lock_hash_before_compiling(self):
         check = step_with(self.build, "toolchain.py check")
@@ -228,8 +243,11 @@ class BuildTest(unittest.TestCase):
 
     def test_the_build_selects_the_xcode_and_sdk_of_the_record(self):
         record = toolchain_record()
-        self.assertEqual(self.build["env"]["DEVELOPER_DIR"], record["developer_dir"])
-        self.assertEqual(self.build["env"]["SDKROOT"], record["sdk_path"])
+        mac_steps = [step for step in steps(self.build) if step.get("env", {}).get("DEVELOPER_DIR")]
+        self.assertTrue(mac_steps)
+        for step in mac_steps:
+            self.assertEqual(step["env"]["DEVELOPER_DIR"], record["developer_dir"])
+            self.assertEqual(step["env"]["SDKROOT"], record["sdk_path"])
 
     def test_the_rust_version_is_the_pinned_one(self):
         pinned = re.search(r'channel = "([^"]+)"', (ROOT / "rust-toolchain.toml").read_text(encoding="utf-8")).group(1)
@@ -244,17 +262,25 @@ class PackageTest(unittest.TestCase):
         cls.script = runs(cls.package)
 
     def test_the_binaries_are_compared_before_anything_is_packaged(self):
-        self.assertIn("python3 scripts/compare_builds.py builds/build-a builds/build-b", self.script)
+        self.assertIn('python3 scripts/compare_builds.py "builds/build-$target-a" "builds/build-$target-b"', self.script)
         self.assertLess(step_index(self.package, "compare_builds.py"), step_index(self.package, "package.py"))
 
     def test_the_binary_reports_the_version_of_the_tag(self):
-        self.assertIn('"$(builds/build-a/target/release/agentdust version)" = "agentdust $VERSION"', self.script)
-        self.assertIn("chmod +x builds/build-a/target/release/agentdust", self.script)
+        self.assertIn('"$(builds/build-darwin-arm64-a/target/release/agentdust version)" = "agentdust $VERSION"', self.script)
+        self.assertIn("chmod +x builds/build-darwin-arm64-a/target/release/agentdust", self.script)
         self.assertEqual(self.package["env"]["VERSION"], "${{ needs.verify.outputs.version }}")
+
+    def test_linux_acceptance_executes_the_linux_binary(self):
+        job = self.jobs["linux-acceptance"]
+        command = runs(job)
+        self.assertIn('"$RUNNER_TEMP/agentdust-linux" version', command)
+        self.assertIn("agentdust-$VERSION-linux-x64.tar.gz", command)
+        self.assertIn("vendor/linux-x64/agentdust", command)
 
     def test_both_binaries_are_packaged_and_the_tarballs_must_be_identical(self):
         self.assertEqual(self.script.count("python3 scripts/package.py"), 2)
-        self.assertIn("builds/build-b/target/release/agentdust", self.script)
+        self.assertIn('"builds/build-$target-b/target/release/agentdust"', self.script)
+        self.assertIn('--target "$target"', self.script)
         self.assertRegex(self.script, r'cmp "dist/[^"]+" "second/[^"]+"')
         self.assertEqual(self.script.count('SOURCE_DATE_EPOCH="$epoch"'), 2)
         self.assertIn('epoch="$(git log -1 --format=%ct)"', self.script)
@@ -266,7 +292,7 @@ class PackageTest(unittest.TestCase):
     def test_the_binary_and_the_tarball_are_attested(self):
         attest = step_with(self.package, "actions/attest-build-provenance")
         subjects = attest["with"]["subject-path"].split()
-        self.assertEqual(subjects, ["builds/build-a/target/release/agentdust", "dist/*.tar.gz", "dist/*.tgz", "dist/*-sbom.cdx.json"])
+        self.assertEqual(subjects, ["builds/build-darwin-arm64-a/target/release/agentdust", "builds/build-linux-x64-a/target/release/agentdust", "dist/*.tar.gz", "dist/*.tgz", "dist/*-sbom.cdx.json"])
 
     def test_the_attestation_comes_after_the_comparison_and_the_checksum(self):
         attest = step_index(self.package, "actions/attest-build-provenance")
@@ -539,12 +565,13 @@ class DryRunTest(unittest.TestCase):
 
 
 class NpmDistributionTest(unittest.TestCase):
-    def test_the_manifest_contains_only_the_native_supported_platform_and_no_scripts(self):
+    def test_the_manifest_selects_supported_platforms_through_the_native_launcher(self):
         package = json.loads((ROOT / "npm/package.json").read_text())
         self.assertEqual(package["name"], "agentdust")
-        self.assertEqual(package["os"], ["darwin"])
-        self.assertEqual(package["cpu"], ["arm64"])
-        self.assertEqual(package["bin"], {"agentdust": "bin/agentdust"})
+        self.assertNotIn("os", package)
+        self.assertNotIn("cpu", package)
+        self.assertEqual(package["bin"], {"agentdust": "bin/agentdust.js"})
+        self.assertEqual(package["files"], ["bin/agentdust.js", "vendor", "LICENSE", "README.md"])
         self.assertNotIn("scripts", package)
         self.assertNotIn("dependencies", package)
 
@@ -556,7 +583,8 @@ class NpmDistributionTest(unittest.TestCase):
             self.assertIn('npm pack "./npm-build/$copy"', command)
             self.assertIn('cmp "npm-dist/a/agentdust-$VERSION.tgz" "npm-dist/b/agentdust-$VERSION.tgz"', command)
             self.assertIn('npm install --global --prefix "$RUNNER_TEMP/npm-prefix"', command)
-            self.assertIn('cmp builds/build-a/target/release/agentdust "$RUNNER_TEMP/npm-prefix/bin/agentdust"', command)
+            self.assertIn('npm-build/$copy/vendor/linux-x64/agentdust', command)
+            self.assertIn('vendor/darwin-arm64/agentdust', command)
             self.assertIn('*.tgz', step_with(job, "actions/attest-build-provenance")["with"]["subject-path"])
 
     def test_publication_verifies_the_public_release_and_exact_tag_before_npm(self):

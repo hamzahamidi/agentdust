@@ -17,8 +17,16 @@ pub fn run(args: &[&str]) -> ExitCode {
         eprintln!("usage: agentdust port PORT [--resolve] [--json]");
         return ExitCode::from(2);
     }
-    let result = agentdust_core::paths::data_dir()
-        .and_then(|dir| agentdust_core::port_live::run(&dir, port, flags.contains(&"--resolve")));
+    let result = agentdust_core::paths::data_dir().and_then(|dir| {
+        #[cfg(target_os = "macos")]
+        {
+            agentdust_core::port_live::run(&dir, port, flags.contains(&"--resolve"))
+        }
+        #[cfg(target_os = "linux")]
+        {
+            agentdust_core::linux_port_live::run(&dir, port, flags.contains(&"--resolve"))
+        }
+    });
     match result {
         Ok(report) => {
             if flags.contains(&"--json") {

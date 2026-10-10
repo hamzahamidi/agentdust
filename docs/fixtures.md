@@ -198,9 +198,9 @@ What the corpus cannot do yet:
 - Children inherit the parent's flags, so a fixture cannot mix a cooperative stand-in agent with SIGTERM-ignoring children, or a plain leftover with a detached one in the same tree. Two stand-ins in one fixture (as in `resumed_session_leftovers`) start two trees.
 - `session_ended` is one value per fixture. The resumed session fixture has both agents ended.
 - The corpus is Claude Code only (`agent` is `claude` in every fixture). Codex and Cursor fixtures come with their adapters.
-- Tests that start processes run on macOS only. The schema, loader, plan and corpus tests are portable and belong to the Linux CI job.
+- Corpus fixtures that depend on launchd run on macOS. Linux CI runs the portable schema and corpus tests plus separate live process, pidfd, port and automatic-cleanup gates.
 - A process of a fixture that is still running when its test process is killed with SIGKILL runs out its lifetime (120 s, or 5 s for the one that exits by itself), because no teardown runs.
 
 ## Tests
 
-`cargo test -p agentdust-testkit --test fixture_schema --test fixture_validate --test fixture_plan --test fixture_corpus --test fixture_materialise --test classify_fixtures` runs all of them, and `cargo test -p agentdust-core --test class` runs the class table. `fixture_materialise` and `classify_fixtures` are macOS only.
+`cargo test -p agentdust-testkit --test fixture_schema --test fixture_validate --test fixture_plan --test fixture_corpus --test fixture_materialise --test classify_fixtures` runs the fixture tests, and `cargo test -p agentdust-core --test class` runs the class table. The live materialisation cases that depend on launchd run on macOS.

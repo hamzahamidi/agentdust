@@ -7,8 +7,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use agentdust_core::darwin::{self, DarwinProvider};
+use agentdust_core::ancestry::AncestryProvider;
 use agentdust_core::identity::ProcessIdentity;
+use agentdust_core::platform::Provider;
 use agentdust_core::provider::{ProcessProvider, ProcessRead};
 use agentdust_core::revalidate::{Revalidation, revalidate};
 
@@ -88,7 +89,7 @@ pub enum Error {
     },
     #[error("pid {0} was not started by this harness as its own child, so it cannot be orphaned")]
     NotADirectChild(i32),
-    #[error("the children of pid {0} were not reparented to launchd in time")]
+    #[error("the children of pid {0} were not detached in time")]
     NotReparented(i32),
     #[error("processes survived teardown: {0:?}")]
     Survivors(Vec<i32>),
@@ -153,7 +154,7 @@ pub struct Harness {
     id: u64,
     fixture: PathBuf,
     scratch: PathBuf,
-    provider: DarwinProvider,
+    provider: Provider,
     entries: Vec<Entry>,
     log: Vec<SignalEvent>,
     launched: u32,
@@ -164,7 +165,7 @@ pub struct Harness {
 impl Harness {
     pub fn new(fixture: impl AsRef<Path>) -> Result<Self, Error> {
         let fixture = fixture.as_ref().canonicalize()?;
-        let provider = DarwinProvider::new()?;
+        let provider = Provider::new()?;
         let id = NEXT_HARNESS.fetch_add(1, Ordering::Relaxed);
         let scratch = std::env::temp_dir().join(format!("agentdust-harness-{}-{id}", std::process::id()));
         let _ = fs::remove_dir_all(&scratch);
@@ -229,14 +230,13 @@ impl Harness {
             .collect();
         let reparented = wait_until(
             || {
-                orphans.iter().all(|entry| {
-                    let boot = &entry.identity.kernel.boot_session_uuid;
-                    match darwin::process_info(entry.pid, boot) {
-                        Ok(Some(info)) => info.ppid == 1,
+                orphans
+                    .iter()
+                    .all(|entry| match self.provider.parent(&entry.identity.kernel) {
+                        Ok(Some(parent)) => parent != pid,
                         Ok(None) => true,
                         Err(_) => false,
-                    }
-                })
+                    })
             },
             REPARENTED,
         );
@@ -268,7 +268,7 @@ impl Harness {
         &self.known(handle).report
     }
 
-    pub fn provider(&self) -> &DarwinProvider {
+    pub fn provider(&self) -> &Provider {
         &self.provider
     }
 
@@ -283,11 +283,9 @@ impl Harness {
     pub fn ppid(&self, handle: ProcHandle) -> Result<i32, Error> {
         let entry = self.entry(handle)?;
         self.require_same_process(entry.pid, &entry.identity)?;
-        let boot = &entry.identity.kernel.boot_session_uuid;
-        match darwin::process_info(entry.pid, boot)? {
-            Some(info) => Ok(info.ppid),
-            None => Err(Error::NotRunning(entry.pid)),
-        }
+        self.provider
+            .parent(&entry.identity.kernel)?
+            .ok_or(Error::NotRunning(entry.pid))
     }
 
     pub fn shutdown(mut self) -> Result<(), Error> {
@@ -382,9 +380,8 @@ impl Harness {
         if identity.evidence.exe_path.canonicalize().ok().as_deref() != Some(self.fixture.as_path()) {
             return Err(unexpected("it is not running the fixture binary"));
         }
-        let boot = &identity.kernel.boot_session_uuid;
-        match darwin::process_info(pid, boot)? {
-            Some(info) if info.ppid == parent_pid => {}
+        match self.provider.parent(&identity.kernel)? {
+            Some(parent) if parent == parent_pid => {}
             _ => return Err(unexpected("its live parent is not the registered parent")),
         }
         self.entries.push(Entry::adopted(pid, identity, report, parent));
@@ -477,5 +474,5 @@ impl Drop for Harness {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 mod tests;

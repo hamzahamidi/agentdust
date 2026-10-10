@@ -50,6 +50,7 @@ pub enum SetupError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum McpState {
+    NotApplicable,
     Installed,
     PreExisting,
     Absent,
@@ -64,7 +65,10 @@ pub enum McpState {
 
 impl McpState {
     fn is_ok(&self) -> bool {
-        matches!(self, Self::Installed | Self::PreExisting | Self::Recorded)
+        matches!(
+            self,
+            Self::NotApplicable | Self::Installed | Self::PreExisting | Self::Recorded
+        )
     }
 
     fn is_drift(&self) -> bool {
@@ -73,6 +77,7 @@ impl McpState {
 
     fn label(&self) -> String {
         match self {
+            Self::NotApplicable => "not configured by hooks-only setup".to_owned(),
             Self::Installed => "registered".to_owned(),
             Self::PreExisting => "registered (not created by setup)".to_owned(),
             Self::Absent => "not registered".to_owned(),
@@ -144,8 +149,11 @@ impl CheckReport {
         {
             return Overall::Modified;
         }
-        let good = hooks.iter().filter(|hook| hook_ok(hook.state)).count() + usize::from(self.mcp.is_ok());
-        if good == hooks.len() + 1 {
+        let mcp_applies = self.mcp != McpState::NotApplicable;
+        let good = hooks.iter().filter(|hook| hook_ok(hook.state)).count()
+            + usize::from(mcp_applies && self.mcp.is_ok());
+        let expected = hooks.len() + usize::from(mcp_applies);
+        if good == expected {
             Overall::Installed
         } else if good == 0 {
             Overall::NotInstalled
@@ -173,12 +181,13 @@ impl CheckReport {
         if let Some(problem) = &self.manifest_problem {
             out.push_str(&format!("Manifest: {problem}\n"));
         }
-        out.push_str(match self.overall() {
-            Overall::Installed => "Setup is installed.\n",
-            Overall::NotInstalled => "Setup is not installed.\n",
-            Overall::Partial => "Setup is only partly installed.\n",
-            Overall::Modified => "Setup entries were modified or belong to another agentdust binary.\n",
-            Overall::Unknown => "The state of setup could not be determined.\n",
+        out.push_str(match (self.overall(), self.mcp == McpState::NotApplicable) {
+            (Overall::Installed, true) => "Hooks-only setup is installed.\n",
+            (Overall::Installed, false) => "Setup is installed.\n",
+            (Overall::NotInstalled, _) => "Setup is not installed.\n",
+            (Overall::Partial, _) => "Setup is only partly installed.\n",
+            (Overall::Modified, _) => "Setup entries were modified or belong to another agentdust binary.\n",
+            (Overall::Unknown, _) => "The state of setup could not be determined.\n",
         });
         out
     }
@@ -275,6 +284,14 @@ fn classify_mcp(owned: Option<&Entry>, found: McpLookup, exe: &str) -> McpState 
 }
 
 pub fn check(env: &SetupEnv, verify_mcp: bool) -> CheckReport {
+    check_with_policy(env, verify_mcp, true)
+}
+
+pub fn check_hooks_only(env: &SetupEnv) -> CheckReport {
+    check_with_policy(env, false, false)
+}
+
+fn check_with_policy(env: &SetupEnv, verify_mcp: bool, include_mcp: bool) -> CheckReport {
     let settings_path = env.settings_path();
     let (entries, manifest_problem) = match manifest::load(&env.data_dir) {
         Ok(found) => (found.map(|manifest| manifest.entries).unwrap_or_default(), None),
@@ -290,7 +307,9 @@ pub fn check(env: &SetupEnv, verify_mcp: bool) -> CheckReport {
         Err(reason) => (Err(reason), false),
     };
     let owned = owned_mcp(&entries, &env.config_target());
-    let mcp = if manifest_problem.is_some() {
+    let mcp = if !include_mcp {
+        McpState::NotApplicable
+    } else if manifest_problem.is_some() {
         McpState::Unknown("the manifest could not be read".to_owned())
     } else if !verify_mcp {
         if owned.is_some() {
@@ -419,12 +438,20 @@ fn plan_mcp(env: &SetupEnv, exe: &str, entries: &[Entry]) -> McpPlan {
 }
 
 impl Plan {
-    fn build(env: &SetupEnv) -> Result<Self, SetupError> {
+    fn build(env: &SetupEnv, include_mcp: bool) -> Result<Self, SetupError> {
         let exe = env.exe_text()?;
         let manifest_old = manifest::load(&env.data_dir)?;
         let base = manifest_old.clone().unwrap_or_default();
         let command = hook_command(&env.exe);
-        let mcp = plan_mcp(env, &exe, &base.entries);
+        let mcp = if include_mcp {
+            plan_mcp(env, &exe, &base.entries)
+        } else {
+            McpPlan {
+                state: McpState::NotApplicable,
+                action: McpAction::Nothing,
+                entry: None,
+            }
+        };
         let hooks = plan_hooks(env, &base.entries, &command);
         let target = env.target();
         let config_target = env.config_target();
@@ -433,7 +460,7 @@ impl Plan {
             .iter()
             .filter(|entry| match entry.resource {
                 Resource::Hook => entry.target != target,
-                Resource::McpServer => entry.target != config_target,
+                Resource::McpServer => !include_mcp || entry.target != config_target,
             })
             .cloned()
             .collect();
@@ -572,14 +599,18 @@ impl Plan {
                 out.push_str(&format!("  {reason}. Setup does not edit it.\n"));
             }
         }
-        out.push_str("\nMCP server\n");
-        match &self.mcp.action {
-            McpAction::Register => {
-                out.push_str(&format!("  Run: {}\n", manual_mcp_command(&self.exe)));
-            }
-            McpAction::Nothing => out.push_str(&format!("  No change ({}).\n", self.mcp.state.label())),
-            McpAction::Manual(reason) => {
-                out.push_str(&format!("  Setup cannot register it ({reason}).\n"));
+        if self.mcp.state == McpState::NotApplicable {
+            out.push_str("\nMCP server\n  Not configured by hooks-only setup.\n");
+        } else {
+            out.push_str("\nMCP server\n");
+            match &self.mcp.action {
+                McpAction::Register => {
+                    out.push_str(&format!("  Run: {}\n", manual_mcp_command(&self.exe)));
+                }
+                McpAction::Nothing => out.push_str(&format!("  No change ({}).\n", self.mcp.state.label())),
+                McpAction::Manual(reason) => {
+                    out.push_str(&format!("  Setup cannot register it ({reason}).\n"));
+                }
             }
         }
         if self.manifest_changed() {
@@ -774,7 +805,22 @@ pub enum InstallOutcome {
 }
 
 pub fn install(env: &SetupEnv, ask: &mut dyn FnMut(&str) -> bool) -> Result<InstallOutcome, SetupError> {
-    let plan = Plan::build(env)?;
+    install_with_policy(env, ask, true)
+}
+
+pub fn install_hooks_only(
+    env: &SetupEnv,
+    ask: &mut dyn FnMut(&str) -> bool,
+) -> Result<InstallOutcome, SetupError> {
+    install_with_policy(env, ask, false)
+}
+
+fn install_with_policy(
+    env: &SetupEnv,
+    ask: &mut dyn FnMut(&str) -> bool,
+    include_mcp: bool,
+) -> Result<InstallOutcome, SetupError> {
+    let plan = Plan::build(env, include_mcp)?;
     if plan.is_noop() {
         let mut text = String::from("Nothing to change.\n");
         for problem in &plan.problems {
@@ -808,6 +854,7 @@ enum HooksRemoval {
 }
 
 enum McpRemoval {
+    NotApplicable,
     None,
     Release,
     Gone,
@@ -885,8 +932,12 @@ fn plan_mcp_removal(env: &SetupEnv, manifest: &Manifest) -> McpRemoval {
 }
 
 impl RemovePlan {
-    fn build(env: &SetupEnv, manifest_old: Manifest) -> Self {
-        let mcp = plan_mcp_removal(env, &manifest_old);
+    fn build(env: &SetupEnv, manifest_old: Manifest, include_mcp: bool) -> Self {
+        let mcp = if include_mcp {
+            plan_mcp_removal(env, &manifest_old)
+        } else {
+            McpRemoval::NotApplicable
+        };
         let hooks = plan_hook_removal(env, &manifest_old);
         let target = env.target();
         let config_target = env.config_target();
@@ -896,7 +947,7 @@ impl RemovePlan {
             .iter()
             .filter(|entry| match entry.resource {
                 Resource::Hook => entry.target != target,
-                Resource::McpServer => entry.target != config_target,
+                Resource::McpServer => !include_mcp || entry.target != config_target,
             })
             .cloned()
             .collect();
@@ -928,7 +979,11 @@ impl RemovePlan {
                 problems.push(format!("MCP server {SERVER_NAME} was left alone: {reason}."));
                 entries.extend(owned_mcp(&manifest_old.entries, &config_target).cloned());
             }
-            McpRemoval::None | McpRemoval::Release | McpRemoval::Gone | McpRemoval::Unregister { .. } => {}
+            McpRemoval::None
+            | McpRemoval::NotApplicable
+            | McpRemoval::Release
+            | McpRemoval::Gone
+            | McpRemoval::Unregister { .. } => {}
         }
         let manifest_new = Manifest {
             version: manifest_old.version,
@@ -950,8 +1005,10 @@ impl RemovePlan {
         matches!(
             self.hooks,
             HooksRemoval::None | HooksRemoval::Blocked(_) | HooksRemoval::NoEdit { .. }
-        ) && matches!(self.mcp, McpRemoval::None | McpRemoval::Left(_))
-            && self.manifest_old == self.manifest_new
+        ) && matches!(
+            self.mcp,
+            McpRemoval::None | McpRemoval::NotApplicable | McpRemoval::Left(_)
+        ) && self.manifest_old == self.manifest_new
     }
 
     fn render(&self) -> String {
@@ -980,7 +1037,7 @@ impl RemovePlan {
             McpRemoval::Release | McpRemoval::Gone => {
                 out.push_str("MCP server\n  Forget the registration. The server itself is not touched.\n\n");
             }
-            McpRemoval::None | McpRemoval::Left(_) => {}
+            McpRemoval::None | McpRemoval::NotApplicable | McpRemoval::Left(_) => {}
         }
         let manifest_path = self.data_dir.join(MANIFEST_FILE);
         if self.manifest_new.entries.is_empty() {
@@ -1064,12 +1121,27 @@ pub enum RemoveOutcome {
 }
 
 pub fn remove(env: &SetupEnv, ask: &mut dyn FnMut(&str) -> bool) -> Result<RemoveOutcome, SetupError> {
+    remove_with_policy(env, ask, true)
+}
+
+pub fn remove_hooks_only(
+    env: &SetupEnv,
+    ask: &mut dyn FnMut(&str) -> bool,
+) -> Result<RemoveOutcome, SetupError> {
+    remove_with_policy(env, ask, false)
+}
+
+fn remove_with_policy(
+    env: &SetupEnv,
+    ask: &mut dyn FnMut(&str) -> bool,
+    include_mcp: bool,
+) -> Result<RemoveOutcome, SetupError> {
     let Some(manifest) = manifest::load(&env.data_dir)? else {
         return Ok(RemoveOutcome::Nothing {
             text: "Nothing to remove: setup has not recorded anything.\n".to_owned(),
         });
     };
-    let plan = RemovePlan::build(env, manifest);
+    let plan = RemovePlan::build(env, manifest, include_mcp);
     if plan.is_noop() {
         let mut text = String::from("Nothing to remove.\n");
         for problem in &plan.problems {

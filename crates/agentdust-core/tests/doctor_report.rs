@@ -408,7 +408,7 @@ fn the_terminal_text_has_a_fixed_layout() {
     let live = live();
     let diagnosis = diagnose(&world(), &sessions(), &policy(), &live, &nowhere());
     let mode = if cfg!(target_os = "linux") {
-        "mode: read only, cleanup is unavailable on Linux\n"
+        "mode: manual cleanup requires explicit approval, automatic cleanup is opt in\n"
     } else {
         ""
     };

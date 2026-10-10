@@ -122,9 +122,9 @@ This is a presentation order and not a causal one. `mono_ts` is read before the 
 
 ## Volume policy
 
-The journal supports a local APFS volume: `statfs` reports `f_fstypename` equal to `apfs` and `MNT_LOCAL` set in `f_flags`. On any other volume `append` returns `UnsupportedFilesystem` and writes nothing. A network volume breaks the premise of an atomic append, SMB is unproven, and a local volume that is not APFS was not tested.
+The journal supports local APFS on macOS and writable local ext4 on Linux. Other filesystems return `UnsupportedFilesystem` and receive no journal writes. A network volume breaks the premise of an atomic append, and SMB is unproven.
 
-`Journal::status()` returns the facts for a later `agentdust status`, and `describe()` prints them as `apfs, local, supported` or `nfs, not local, not supported`. The probe is the `VolumeProbe` trait. `SystemVolume` calls `statfs` on macOS and answers `unknown, not local, not supported` elsewhere, and `FixedVolume` answers a fixed value, which is how the tests and the Linux job write a journal. `crates/agentdust-core/tests/journal_volume.rs` runs the decision on the volumes of S24 and, on macOS, on the real temporary directory and on `/dev`.
+`Journal::status()` returns the filesystem facts, and `describe()` prints values such as `apfs, local, supported`, `ext4, local, supported` or `nfs, not local, not supported`. The probe is the `VolumeProbe` trait. `SystemVolume` uses `statfs` on macOS and combines `statfs` with mount options on Linux. It accepts local APFS on macOS and writable ext4 on Linux, and answers unsupported on other platforms. `FixedVolume` supplies test facts. `crates/agentdust-core/tests/journal_volume.rs` tests the policy; the Linux ext4 integration tests use a mounted filesystem.
 
 On this machine `$TMPDIR` is `apfs, local, supported` and `/dev` is `devfs, local, not supported`. No network volume was available, so the refusal of NFS and SMB rests on the flag and was not observed.
 

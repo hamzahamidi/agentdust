@@ -255,7 +255,7 @@ pub fn write_worker_identity(dir: &Path, identity: &KernelIdentity) -> io::Resul
     .map_err(error)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn worker_running(dir: &Path) -> bool {
     use crate::session::{Liveness, LivenessProbe, ProviderLiveness};
     let Ok(file) = safe_open::open_file(&dir.join(DIRECTORY).join("worker.json"), Access::Read) else {
@@ -268,13 +268,13 @@ fn worker_running(dir: &Path) -> bool {
     let Ok(identity) = serde_json::from_slice::<KernelIdentity>(&bytes) else {
         return false;
     };
-    let Ok(provider) = crate::darwin::DarwinProvider::new() else {
+    let Ok(provider) = crate::platform::Provider::new() else {
         return false;
     };
     ProviderLiveness(&provider).probe(&identity) == Liveness::Alive
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn worker_running(_dir: &Path) -> bool {
     false
 }

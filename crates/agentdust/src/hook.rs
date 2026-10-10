@@ -7,14 +7,14 @@ use std::panic;
 use std::path::{Path, PathBuf};
 
 use agentdust_agents::claude::{self, ENV_FILE_VAR, HookEvent};
-use agentdust_core::darwin::DarwinProvider;
 use agentdust_core::digest::{Domain, keyed_digest};
 use agentdust_core::journal::{
     self, Agent, AgentIdentity, CwdKey, Kind, Record, SCHEMA_VERSION, SessionTagKey,
 };
+use agentdust_core::platform::{self, Provider};
 use agentdust_core::secret::Secret;
 use agentdust_core::tag::{self, SessionTag};
-use agentdust_core::{ancestry, clock, cwd, darwin, paths, secret};
+use agentdust_core::{ancestry, clock, cwd, paths, secret};
 
 pub fn run() {
     panic::set_hook(Box::new(|_| {}));
@@ -47,6 +47,7 @@ fn record(event: &HookEvent, agent: Agent) -> Result<(), Box<dyn Error>> {
         return Ok(());
     };
     let dir = paths::data_dir()?;
+    require_supported_journal_volume(&dir)?;
     if let Some(parent) = dir.parent() {
         match fs::symlink_metadata(parent) {
             Ok(metadata) if metadata.file_type().is_dir() => {}
@@ -80,7 +81,7 @@ fn record(event: &HookEvent, agent: Agent) -> Result<(), Box<dyn Error>> {
         tool_use_id: event.tool_use_id.clone(),
         wall_ts: clock::wall_ms(),
         mono_ts: clock::monotonic_ns(),
-        boot: darwin::boot_session_uuid()?,
+        boot: platform::boot_identity()?,
         session_tag_key: if agent == Agent::Codex {
             secret
                 .get()
@@ -95,6 +96,26 @@ fn record(event: &HookEvent, agent: Agent) -> Result<(), Box<dyn Error>> {
     if let Some((tag, _)) = handed_out {
         hand_over(&tag);
     }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn require_supported_journal_volume(dir: &Path) -> io::Result<()> {
+    use agentdust_core::journal::volume::{self, SystemVolume};
+
+    let facts = volume::locate(&SystemVolume, dir)?;
+    if facts.supported {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "the data directory requires writable ext4; found {}",
+            facts.describe()
+        )))
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn require_supported_journal_volume(_dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
@@ -137,7 +158,7 @@ fn hand_over(tag: &SessionTag) {
 }
 
 fn agent_identity(agent: Agent) -> Option<AgentIdentity> {
-    let provider = DarwinProvider::new().ok()?;
+    let provider = Provider::new().ok()?;
     let found = ancestry::find_agent_for(&provider, parent_id() as i32, agent)?;
     AgentIdentity::from_process(&found.identity).ok()
 }

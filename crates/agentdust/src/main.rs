@@ -1,17 +1,11 @@
-#[cfg(not(target_os = "linux"))]
 mod apply;
-#[cfg(not(target_os = "linux"))]
 mod automatic;
 #[cfg(not(target_os = "linux"))]
 mod disk;
 mod doctor;
-#[cfg(not(target_os = "linux"))]
 mod hook;
-#[cfg(not(target_os = "linux"))]
 mod metrics;
-#[cfg(not(target_os = "linux"))]
 mod port;
-#[cfg(not(target_os = "linux"))]
 mod setup;
 #[cfg(not(target_os = "linux"))]
 mod status;
@@ -21,7 +15,18 @@ use std::process::ExitCode;
 #[cfg(target_os = "linux")]
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|arg| arg == "hook") {
+        hook::run();
+        return ExitCode::SUCCESS;
+    }
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+        ["setup", rest @ ..] => setup::run(rest),
+        ["apply"] => apply::run(),
+        ["auto", rest @ ..] => automatic::run(rest),
+        ["port", rest @ ..] => port::run(rest),
+        ["metrics"] => metrics::run(false),
+        ["metrics", "--json"] => metrics::run(true),
+        ["mcp"] => mcp(),
         ["doctor"] => doctor::run(false),
         ["doctor", "--json"] => doctor::run(true),
         ["version"] => {
@@ -29,7 +34,9 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         _ => {
-            eprintln!("Linux currently supports read-only process diagnosis and version reporting.");
+            eprintln!(
+                "Linux enables diagnosis, Claude Code and Codex setup, MCP tools, foreground apply, opt-in automatic cleanup, metrics, and current-user TCP port diagnosis on writable ext4. Disk reports are unavailable."
+            );
             ExitCode::from(2)
         }
     }
@@ -73,7 +80,6 @@ fn main() -> ExitCode {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
 fn mcp() -> ExitCode {
     let runtime = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
         Ok(runtime) => runtime,

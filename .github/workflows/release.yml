@@ -69,24 +69,49 @@ jobs:
     needs: verify
     strategy:
       matrix:
-        copy: [a, b]
-    runs-on: macos-15
+        include:
+          - copy: a
+            target: darwin-arm64
+            runner: macos-15
+          - copy: b
+            target: darwin-arm64
+            runner: macos-15
+          - copy: a
+            target: linux-x64
+            runner: ubuntu-24.04
+          - copy: b
+            target: linux-x64
+            runner: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
-      SDKROOT: /Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.verify.outputs.commit }}
           persist-credentials: false
       - run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
-      - run: python3 scripts/toolchain.py check --include-lock
-      - run: python3 scripts/toolchain.py record > toolchain.json
-      - run: cargo build --release --locked -p agentdust
+      - if: matrix.target == 'darwin-arm64'
+        run: python3 scripts/toolchain.py check --include-lock
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+          SDKROOT: /Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
+      - if: matrix.target == 'darwin-arm64'
+        run: python3 scripts/toolchain.py record > toolchain.json
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+          SDKROOT: /Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
+      - if: matrix.target == 'linux-x64'
+        run: python3 scripts/toolchain.py record > toolchain.json
+      - if: matrix.target == 'darwin-arm64'
+        run: cargo build --release --locked -p agentdust
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+          SDKROOT: /Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk
+      - if: matrix.target == 'linux-x64'
+        run: cargo build --release --locked -p agentdust
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: build-${{ matrix.copy }}
+          name: build-${{ matrix.target }}-${{ matrix.copy }}
           path: |
             target/release/agentdust
             toolchain.json
@@ -110,15 +135,21 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: builds
-      - run: python3 scripts/compare_builds.py builds/build-a builds/build-b
       - run: |
-          chmod +x builds/build-a/target/release/agentdust builds/build-b/target/release/agentdust
-          test "$(builds/build-a/target/release/agentdust version)" = "agentdust $VERSION"
+          for target in darwin-arm64 linux-x64; do
+            python3 scripts/compare_builds.py "builds/build-$target-a" "builds/build-$target-b"
+          done
+      - run: |
+          chmod +x builds/build-darwin-arm64-a/target/release/agentdust builds/build-darwin-arm64-b/target/release/agentdust
+          chmod +x builds/build-linux-x64-a/target/release/agentdust builds/build-linux-x64-b/target/release/agentdust
+          test "$(builds/build-darwin-arm64-a/target/release/agentdust version)" = "agentdust $VERSION"
       - run: |
           epoch="$(git log -1 --format=%ct)"
-          SOURCE_DATE_EPOCH="$epoch" python3 scripts/package.py --binary builds/build-a/target/release/agentdust --version "$VERSION" --out-dir dist
-          SOURCE_DATE_EPOCH="$epoch" python3 scripts/package.py --binary builds/build-b/target/release/agentdust --version "$VERSION" --out-dir second
-          cmp "dist/agentdust-$VERSION-darwin-arm64.tar.gz" "second/agentdust-$VERSION-darwin-arm64.tar.gz"
+          for target in darwin-arm64 linux-x64; do
+            SOURCE_DATE_EPOCH="$epoch" python3 scripts/package.py --binary "builds/build-$target-a/target/release/agentdust" --version "$VERSION" --target "$target" --out-dir dist
+            SOURCE_DATE_EPOCH="$epoch" python3 scripts/package.py --binary "builds/build-$target-b/target/release/agentdust" --version "$VERSION" --target "$target" --out-dir second
+            cmp "dist/agentdust-$VERSION-$target.tar.gz" "second/agentdust-$VERSION-$target.tar.gz"
+          done
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
@@ -127,9 +158,11 @@ jobs:
       - name: Pack both native binaries with npm
         run: |
           for copy in a b; do
-            mkdir -p "npm-build/$copy/bin" "npm-dist/$copy"
+            mkdir -p "npm-build/$copy/bin" "npm-build/$copy/vendor/darwin-arm64" "npm-build/$copy/vendor/linux-x64" "npm-dist/$copy"
             cp npm/package.json LICENSE README.md "npm-build/$copy/"
-            install -m 755 "builds/build-$copy/target/release/agentdust" "npm-build/$copy/bin/agentdust"
+            install -m 755 npm/bin/agentdust.js "npm-build/$copy/bin/agentdust.js"
+            install -m 755 "builds/build-darwin-arm64-$copy/target/release/agentdust" "npm-build/$copy/vendor/darwin-arm64/agentdust"
+            install -m 755 "builds/build-linux-x64-$copy/target/release/agentdust" "npm-build/$copy/vendor/linux-x64/agentdust"
             npm --prefix "npm-build/$copy" version "$VERSION" --no-git-tag-version --ignore-scripts --allow-same-version
             npm pack "./npm-build/$copy" --pack-destination "npm-dist/$copy" --ignore-scripts
           done
@@ -139,7 +172,8 @@ jobs:
         run: |
           npm install --global --prefix "$RUNNER_TEMP/npm-prefix" "./dist/agentdust-$VERSION.tgz" --ignore-scripts --no-audit --no-fund
           test "$("$RUNNER_TEMP/npm-prefix/bin/agentdust" version)" = "agentdust $VERSION"
-          cmp builds/build-a/target/release/agentdust "$RUNNER_TEMP/npm-prefix/bin/agentdust"
+          cmp builds/build-darwin-arm64-a/target/release/agentdust "npm-build/a/vendor/darwin-arm64/agentdust"
+          cmp builds/build-darwin-arm64-a/target/release/agentdust "$RUNNER_TEMP/npm-prefix/lib/node_modules/agentdust/vendor/darwin-arm64/agentdust"
       - uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: .
@@ -155,7 +189,8 @@ jobs:
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
-            builds/build-a/target/release/agentdust
+            builds/build-darwin-arm64-a/target/release/agentdust
+            builds/build-linux-x64-a/target/release/agentdust
             dist/*.tar.gz
             dist/*.tgz
             dist/*-sbom.cdx.json
@@ -176,8 +211,42 @@ jobs:
           path: formula/agentdust.rb
           retention-days: 3
 
+  linux-acceptance:
+    needs: [verify, build, package]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: build-linux-x64-a
+          path: build
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-files
+          path: dist
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Verify the Linux archive and npm install
+        run: |
+          install -m 755 build/target/release/agentdust "$RUNNER_TEMP/agentdust-linux"
+          test "$("$RUNNER_TEMP/agentdust-linux" version)" = "agentdust $VERSION"
+          mkdir -p "$RUNNER_TEMP/archive"
+          tar -xzf "dist/agentdust-$VERSION-linux-x64.tar.gz" -C "$RUNNER_TEMP/archive"
+          cmp "$RUNNER_TEMP/agentdust-linux" "$RUNNER_TEMP/archive/agentdust-$VERSION-linux-x64/agentdust"
+          npm install --global --prefix "$RUNNER_TEMP/npm-prefix" "./dist/agentdust-$VERSION.tgz" --ignore-scripts --no-audit --no-fund
+          test "$("$RUNNER_TEMP/npm-prefix/bin/agentdust" version)" = "agentdust $VERSION"
+          cmp "$RUNNER_TEMP/agentdust-linux" "$RUNNER_TEMP/npm-prefix/lib/node_modules/agentdust/vendor/linux-x64/agentdust"
+
   release:
-    needs: [verify, audit, package]
+    needs: [verify, audit, package, linux-acceptance]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

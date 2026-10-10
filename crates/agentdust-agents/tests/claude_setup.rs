@@ -6,7 +6,8 @@ use std::os::unix::fs::{DirBuilderExt, PermissionsExt, symlink};
 use std::path::PathBuf;
 
 use agentdust_agents::claude_setup::{
-    InstallOutcome, McpState, Overall, RemoveOutcome, SetupEnv, SetupError, check, install, remove,
+    InstallOutcome, McpState, Overall, RemoveOutcome, SetupEnv, SetupError, check, check_hooks_only, install,
+    install_hooks_only, remove, remove_hooks_only,
 };
 use agentdust_agents::hook_config::{HOOK_SPECS, HookState};
 use agentdust_agents::native_cli::{CliRunner, mcp_hash};
@@ -783,6 +784,44 @@ fn entries_for_another_config_directory_are_left_alone() {
     assert!(world.manifest().unwrap().entries.contains(&other));
     remove(&world.env(Some(&fake)), &mut approve).unwrap();
     assert_eq!(world.manifest().unwrap().entries, vec![other]);
+}
+
+#[test]
+fn hooks_only_setup_preserves_mcp_manifest_entries_and_never_checks_the_cli() {
+    let world = world("cs-hooks-only");
+    let mcp = Entry {
+        resource: Resource::McpServer,
+        target: world.config.to_string_lossy().into_owned(),
+        key: "agentdust".to_owned(),
+        origin: Origin::PreExisting,
+        command: "/opt/agentdust".to_owned(),
+        args: vec!["mcp".to_owned()],
+        hash: "00".repeat(32),
+        created_hooks_key: false,
+        created_event_key: false,
+    };
+    manifest::store(
+        &world.data,
+        &Manifest {
+            entries: vec![mcp.clone()],
+            ..Manifest::new()
+        },
+    )
+    .unwrap();
+
+    let report = applied(install_hooks_only(&world.env(None), &mut approve).unwrap());
+    assert!(report.succeeded(), "{}", report.render());
+    assert!(report.plan_text.contains("Not configured by hooks-only setup"));
+    assert!(world.manifest().unwrap().entries.contains(&mcp));
+
+    let check = check_hooks_only(&world.env(None));
+    assert!(check.ok(), "{}", check.render());
+    assert_eq!(check.mcp, McpState::NotApplicable);
+    assert!(matches!(
+        remove_hooks_only(&world.env(None), &mut approve).unwrap(),
+        RemoveOutcome::Applied(_)
+    ));
+    assert_eq!(world.manifest().unwrap().entries, vec![mcp]);
 }
 
 #[test]

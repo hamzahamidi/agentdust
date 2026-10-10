@@ -348,7 +348,7 @@ Spec 7.1 points this threat at section 8.3. The release controls are in 8.4, and
 - A same-user program that holds `journal.maint` for ever denies rotation and retention, and one that stops a hook stops only that hook. Neither changes the journal. Spec 7.4 puts both out of scope.
 - Retention reads the whole journal into memory, about 20 MB of frames and the same again for their records at the default limit. A journal of that size was not measured.
 - Nothing calls `rotate`, `retain` or `prune`. The CLI and the server set the cadence (M3), and each run that finds bytes in the active file adds one generation.
-- The interleaving and stress tests were run on macOS. The platform independent ones compile for `x86_64-unknown-linux-gnu` and were not run there.
+- The recorded benchmark and stress measurements are from macOS. Linux CI runs the core correctness suite, including interleaving tests, and runs ext4 journal integration tests separately.
 
 ## 12. Durability limits
 

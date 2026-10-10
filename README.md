@@ -2,17 +2,17 @@
 
 [![CI](https://github.com/hamzahamidi/agentdust/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hamzahamidi/agentdust/actions/workflows/ci.yml) [![Latest release](https://img.shields.io/github/v/release/hamzahamidi/agentdust)](https://github.com/hamzahamidi/agentdust/releases/latest) [![npm version](https://img.shields.io/npm/v/agentdust)](https://www.npmjs.com/package/agentdust) [![License](https://img.shields.io/github/license/hamzahamidi/agentdust)](LICENSE) [![Homebrew custom tap](https://img.shields.io/badge/Homebrew-custom%20tap-FBB040?logo=homebrew&logoColor=black)](https://github.com/hamzahamidi/homebrew-agentdust)
 
-AgentDust is a local companion for AI coding agents. It helps Claude Code and Codex diagnose and clean up leftover processes, recover busy TCP ports, report cleanup outcomes, and inspect Claude Code disk usage without deleting files. Manual cleanup requires your typed approval. Automatic cleanup is opt-in and limited to processes proven to belong exclusively to ended sessions in directories you enable. Prebuilt Homebrew and npm binaries currently target macOS on Apple silicon.
+AgentDust is a local companion for AI coding agents. It helps Claude Code and Codex diagnose and clean up leftover processes, recover busy TCP ports, and report cleanup outcomes. Claude Code disk usage is available on macOS. Manual cleanup requires your typed approval. Automatic cleanup is opt-in and limited to processes proven to belong exclusively to ended sessions in directories you enable. Homebrew provides macOS arm64 binaries. npm and release archives support macOS arm64 and Linux x86_64 on Ubuntu 24.04.
 
-**AgentDust 1.6.1 supports Claude Code and Codex process tracking and cleanup, with local outcome metrics. Automatic cleanup outcomes include their recording time. Codex desktop cleanup waits until every recorded host process exits. Agent Teams remain outside the support claim.** Claude Code fixture coverage includes the documented concurrent session, subagent and lifecycle scenarios through 2.1.292, including abrupt exit ([M6 fixture matrix](docs/m6/fixtures.md)). Historical acceptance evidence: the installed 1.0.0 Homebrew binary passed controlled human decline and typed approval checks on the maintainer's Mac ([release evidence](docs/v1/readiness.md)). See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
+**AgentDust 1.7.0 supports Claude Code and Codex process tracking and cleanup on macOS arm64 and Linux x86_64, with local outcome metrics. Automatic cleanup outcomes include their recording time. Codex desktop cleanup waits until every recorded host process exits. Agent Teams remain outside the support claim.** Linux support targets Ubuntu 24.04 with a writable ext4 data directory and systemd user services for automatic cleanup. Claude Code disk usage remains macOS only. Claude Code fixture coverage includes the documented concurrent session, subagent and lifecycle scenarios through 2.1.292, including abrupt exit ([M6 fixture matrix](docs/m6/fixtures.md)). Historical acceptance evidence: the installed 1.0.0 Homebrew binary passed controlled human decline and typed approval checks on the maintainer's Mac ([release evidence](docs/v1/readiness.md)). See [install and connect](#install-and-connect). To try the non-destructive approval flow, run the [development probe](#running-the-development-probe).
 
-Agents start dev servers, MCP servers and helpers. When a session ends or crashes, some of them keep running under `launchd`, holding memory, ports and sometimes CPU. The upstream reports are open: [anthropics/claude-code#1935](https://github.com/anthropics/claude-code/issues/1935) and [openai/codex#21008](https://github.com/openai/codex/issues/21008).
+Agents start dev servers, MCP servers and helpers. When a session ends or crashes, some of them keep running under `launchd` or `systemd`, holding memory, ports and sometimes CPU. The upstream reports are open: [anthropics/claude-code#1935](https://github.com/anthropics/claude-code/issues/1935) and [openai/codex#21008](https://github.com/openai/codex/issues/21008).
 
 Security and privacy: [SECURITY.md](SECURITY.md), the [threat model](docs/threat-model.md) and the [section below](#security-and-privacy).
 
 ## Status
 
-AgentDust 1.6.1 provides process analysis, opt-in automatic cleanup, approved manual cleanup and local cleanup outcome metrics for Claude Code and Codex, plus a read-only Claude Code disk report. Automatic cleanup results include the time they were recorded. Codex support retains the exact host-exit requirement; it does not stop helpers immediately when a desktop chat ends. Cursor remains deferred. The milestones are in [ROADMAP.md](ROADMAP.md).
+AgentDust 1.7.0 provides process analysis, opt-in automatic cleanup, approved manual cleanup and local cleanup outcome metrics for Claude Code and Codex on macOS arm64 and Linux x86_64, plus a read-only Claude Code disk report on macOS. Automatic cleanup results include the time they were recorded. Codex support retains the exact host-exit requirement; it does not stop helpers immediately when a desktop chat ends. Cursor remains deferred. The milestones are in [ROADMAP.md](ROADMAP.md).
 
 Releases follow [Semantic Versioning](docs/release.md#semantic-versioning): compatible fixes increment the patch version, compatible features increment the minor version, and incompatible public API changes increment the major version.
 
@@ -28,6 +28,8 @@ Releases follow [Semantic Versioning](docs/release.md#semantic-versioning): comp
 | MCP approval probe: a typed-code form that changes nothing | Built |
 | Reproducible release pipeline | The GitHub Actions dry run built two identical binaries, packaged a deterministic tarball, and verified the binary, tarball and SBOM attestations ([M0 report](docs/m0/report.md), [0.1.0 run](https://github.com/hamzahamidi/agentdust/actions/runs/37249711505)) |
 | Homebrew distribution | Available from the [AgentDust tap](https://github.com/hamzahamidi/homebrew-agentdust) for macOS on Apple silicon |
+| Linux support | Ubuntu 24.04 x86_64 with Claude Code and Codex; writable ext4 data directory |
+| npm distribution | macOS arm64 and Linux x86_64; npm selects the matching native binary |
 | Release workflow: tag gate, audit, two builds, tarball, SBOM, attestation, draft release, formula | Built ([release process](docs/release.md)) |
 | `agentdust setup` for Claude Code (hooks in `settings.json`, the MCP server through the `claude` CLI, a diff and consent, `--check`, `--remove`) and `agentdust status` | Built ([setup](docs/m3/setup.md)) |
 | `agentdust doctor`, the MCP doctor and plan tools, and cleanup through the MCP form or terminal approval | Built for release 0.1.0 ([apply design and limits](docs/m3/apply.md)) |
@@ -99,10 +101,10 @@ True of the code today:
 - The release binary imports no socket calls, and the dependency tree has no networking crates.
 - The journal keeps `session_id` and `tool_use_id` as supplied. It stores keyed digests of the working directory and new subagent IDs, never their raw values. Older version 1 records may contain raw subagent IDs. The digests use an HMAC under a random secret that stays in the data directory. A [privacy test](docs/m1/privacy-test.md) runs six hook events whose payloads carry sentinels in the command, a 5 MB response, the working directory, subagent ID and type, transcript paths, an unknown field and the environment, then reads every byte of every file in the data directory (secret, maintenance lock, journal and rotated copies) and every file the run left in the system temp directory. Only the session id may appear, and a journal key outside one list in the code fails the test. Another test sends a 9 MB tool response through the hook and checks that neither the output nor the command reaches the journal.
 - `setup` never edits a symlinked, hard-linked or non-regular `settings.json`, writes the file by rename with its mode kept and no backup copy, removes only entries its manifest says it created and whose value still matches, and trusts the `claude` CLI only after `claude mcp get` shows the exact registration.
-- The hook exits 0 and prints nothing, including on malformed input, an unwritable data directory and a data directory on a volume that is not local APFS, where it records nothing.
+- The hook exits 0 and prints nothing, including on malformed input, an unwritable data directory and a data directory on a filesystem that the platform does not support, where it records nothing. Linux journal writes require writable ext4.
 - The journal decoder, the journal reader and the hook payload parser are [fuzzed](docs/m1/fuzzing.md) beside the `KERN_PROCARGS2` parser. Each target runs under a counting allocator and fails when memory is not bounded by the input or by what the call kept, and the decoder target checks that a record appended after any bytes is read. The seeds are replayed by the test suite and by the Linux CI job, and property tests check that a short write costs the record it cut and no other.
 - The live tests start real processes (some ignore SIGTERM, some detach into their own session, some outlive their parent) through a [harness](docs/m1/live-harness.md) that can only signal processes it started. It revalidates each one's identity before every signal and logs each signal sent.
-- The classifier is checked against a [corpus of 22 fixtures](docs/fixtures.md) that carry the truth about each process: left behind by an ended session, live, detached, managed or unknown. It includes six protected cases (PID 1, another user, the agent itself, a launchd job, a Homebrew service, an app helper). The fixtures that can be started are started for real through the harness, and each one's parent, session and liveness are checked against the kernel.
+- The classifier is checked against a [corpus of 22 fixtures](docs/fixtures.md) that carry the truth about each process: left behind by an ended session, live, detached, managed or unknown. It includes protected cases such as PID 1, another user, the agent itself, launchd and systemd services, a Homebrew service and an app helper. The fixtures that can be started are started for real through the harness, and each one's parent, session and liveness are checked against the kernel.
 
 Cleanup controls:
 
@@ -112,9 +114,9 @@ Cleanup controls:
 
 Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
 
-## Using AgentDust 1.6.1
+## Using AgentDust 1.7.0
 
-Prebuilt Homebrew and npm binaries target macOS on Apple silicon. AgentDust supports Claude Code and Codex process tracking, manual and automatic cleanup, TCP port recovery, local cleanup metrics and a read-only Claude Code disk report. For Codex desktop sessions, automatic cleanup waits until every recorded host process exits. Automatic cleanup passed isolated normal-exit, abrupt-exit and worker-restart checks. The M6 lifecycle and attribution scenarios are captured and replayed for Claude Code 2.1.292. Agent Teams remain outside the support claim. See the [M6 fixture matrix](docs/m6/fixtures.md) for the tested scenarios and their limits. Use `agentdust metrics` for totals or `agentdust metrics --json` for daily buckets; agents can read the same summary with `agentdust_metrics` ([scope and limits](#cleanup-metrics)).
+Homebrew targets macOS arm64. npm and release archives support macOS arm64 and Linux x86_64 on Ubuntu 24.04. AgentDust supports Claude Code and Codex process tracking, manual and automatic cleanup, TCP port recovery and local cleanup metrics. The read-only Claude Code disk report is available on macOS. On Linux, the data directory must be on writable ext4. Automatic cleanup registers a systemd user service. For Codex desktop sessions, automatic cleanup waits until every recorded host process exits. The macOS automatic cleanup acceptance covers normal exit, abrupt exit and worker restart. The M6 lifecycle and attribution scenarios are captured and replayed for Claude Code 2.1.292. Agent Teams remain outside the support claim. See the [M6 fixture matrix](docs/m6/fixtures.md) for tested scenarios and their limits. Use `agentdust metrics` for totals or `agentdust metrics --json` for daily buckets; agents can read the same summary with `agentdust_metrics` ([scope and limits](#cleanup-metrics)).
 
 ### Install and connect
 
@@ -127,14 +129,14 @@ agentdust setup
 
 `brew install` installs the prebuilt binary. To verify the release artifacts, follow [these steps](docs/release.md#verify-a-release). `agentdust setup` shows a diff and asks before it changes anything ([details](#setting-up-claude-code)).
 
-For releases with an npm package, npm installs the same native binary on macOS ARM64:
+Install the npm package on macOS arm64 or Linux x86_64:
 
 ```bash
 npm install -g agentdust
 agentdust setup
 ```
 
-The package contains the binary, README and license, with no JavaScript runtime dependency or install scripts. Installation does not register hooks or enable cleanup. Run `agentdust setup codex` to connect Codex, then review its hooks in Codex `/hooks`.
+The package contains the two native binaries and a small Node launcher, plus the README and license. It has no dependencies or install scripts. Installation does not register hooks or enable cleanup. Run `agentdust setup codex` to connect Codex, then review its hooks in Codex `/hooks`.
 
 Use a global installation for hooks, MCP registration and the background worker. `npx` cache paths and project-local installs are not supported for persistent setup. Upgrading with `npm install -g agentdust@latest` keeps registrations valid within the same npm prefix. If a Node version manager changes that prefix, first pause automatic cleanup and remove each agent's setup from the old installation. Install under the new prefix, run setup for each agent again, review Codex hook trust, and run `agentdust auto resume` if cleanup was enabled. Choose one installation channel so the command and registered binary resolve to the same installation.
 
@@ -160,9 +162,9 @@ The plugin can also be reviewed or tested from a checkout of this repository wit
 | Class | Meaning | Can AgentDust signal it |
 | --- | --- | --- |
 | owned-ended | Started by an agent session that has ended | Yes, with one code for the batch, or automatically within enabled directory policy |
-| suspect | Its parent is launchd or its launcher chain is dead, same user, old, idle and not managed | Yes, with one code per process |
+| suspect | Its parent is init or its launcher chain is dead, same user, old, idle and not managed | Yes, with one code per process |
 | owned-live | Started by a session that is still running | Never |
-| managed | A launchd job, a Homebrew service, a helper of a running app, or on the deny list | Never |
+| managed | A launchd or systemd service, a Homebrew service, a helper of a running app, or on the deny list | Never |
 | unknown | Everything else | Never |
 
 You can also ask the agent. Claude Code calls the `agentdust_doctor` tool and reports what it finds. The findings hold the class, the program name, the PID, the age and the kinds of evidence, and no command text or path.

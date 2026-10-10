@@ -307,7 +307,7 @@ impl Diagnosis {
     pub fn render(&self, live: &dyn LiveDetails) -> String {
         let mut out = String::from("agentdust doctor\n");
         #[cfg(target_os = "linux")]
-        out.push_str("mode: read only, cleanup is unavailable on Linux\n");
+        out.push_str("mode: manual cleanup requires explicit approval, automatic cleanup is opt in\n");
         let _ = writeln!(out, "processes: {} seen", self.processes_seen);
         let _ = writeln!(out, "journal: {}", self.journal_line());
         let (inventory_name, available_text, unavailable_text) = if cfg!(target_os = "linux") {

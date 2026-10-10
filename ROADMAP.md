@@ -18,9 +18,9 @@ An MCP client can use the common diagnosis and manual tools where its client sup
 
 | Target | Agent support | State |
 | --- | --- | --- |
-| macOS arm64 | Claude Code and Codex | Current release. Codex automatic cleanup waits for every recorded host process to exit. |
+| macOS arm64 | Claude Code and Codex | Current release, 1.6.1. Codex automatic cleanup waits for every recorded host process to exit. |
 | macOS x86_64 | Claude Code and Codex | Planned after the Linux baseline. |
-| Linux x86_64 | Claude Code and Codex | Read only doctor and version are in development. Setup and cleanup are not supported. |
+| Linux x86_64 | Claude Code and Codex | M10 implementation targets 1.7.0 in PR #68. Ubuntu acceptance and release gates are pending. |
 | Linux arm64 | Claude Code and Codex | Planned after Linux x86_64 acceptance. |
 | Windows x86_64 | Claude Code and Codex | Planned after the Linux process and lifecycle model. |
 | Other MCP clients | Common diagnosis and manual tools where supported | Automatic cleanup needs a client specific lifecycle adapter and separate acceptance. |
@@ -70,7 +70,7 @@ The table separates current support from planned targets. A platform and agent p
 
 ## Current priority
 
-The next platform priority is Linux x86_64 with Claude Code and Codex. Use the available Mac for field observations in parallel: useful cleanups, incorrect proposals, deliberate keeps and whether port recovery lets the requested server start. A cleanup count does not measure time, CPU or memory saved. No multi Mac study is a release gate. WSL2 reuses the Linux provider. Native Windows follows the Linux and WSL2 safety gates. Intel Mac and Linux arm64 follow after the shared provider and package checks pass.
+M10 Linux x86_64 is in final acceptance for Claude Code and Codex. WSL2 is next after the Linux release, reusing the Linux provider while keeping Windows host processes outside its inventory. Native Windows follows the Linux and WSL2 safety gates. Linux arm64 and Intel Mac follow after the shared provider and package checks pass. Use the available Mac for field observations in parallel: useful cleanups, incorrect proposals, deliberate keeps and whether port recovery lets the requested server start. A cleanup count does not measure time, CPU or memory saved. No multi Mac study is a release gate.
 
 ## Automatic cleanup in 1.1
 
@@ -96,7 +96,8 @@ Port-conflict diagnosis and recovery are implemented in `1.4.0`: identify curren
 | M0 through M3, M6, M7 and M13 | Implemented for the documented macOS arm64 scope |
 | Claude Code on macOS arm64 | Supported; lifecycle and controlled Homebrew acceptance are recorded |
 | Codex on macOS arm64 | Hook and MCP integration is available; automatic cleanup waits for exact host exit |
-| Linux and Windows | Not supported yet; Linux x86_64 is next |
+| Linux x86_64 | M10 implementation is in PR #68; support starts with the 1.7.0 release after CI and artifact gates pass |
+| WSL2 and native Windows | Not supported; WSL2 is next after Linux x86_64 |
 | Other AI agents | Common MCP diagnosis and manual tools are possible; automatic cleanup needs a client specific adapter |
 | M9 controlled Homebrew acceptance | Complete; measurement limits remain in the [readiness record](docs/v1/readiness.md) |
 | Plugin/setup guidance | Guidance package `0.8.0` explains setup readiness, agent-guided port recovery and automatic results |
@@ -107,7 +108,7 @@ Port-conflict diagnosis and recovery are implemented in `1.4.0`: identify curren
 | Codex desktop cleanup while its server stays alive | Deferred until session revocation and live subagent protection have a separate proof |
 | M5 Cursor | Deferred until its lifecycle and ownership evidence can pass the same safety checks |
 | Other MCP hosts | Common manual tools can be evaluated after Claude Code and Codex pass the Linux baseline |
-| M10 through M12 | Linux, WSL2 and native Windows remain; Linux x86_64 is next |
+| M10 through M12 | Linux x86_64 is in final acceptance for 1.7.0; WSL2 and native Windows remain |
 
 ## Milestones
 
@@ -232,15 +233,15 @@ The controlled Homebrew acceptance is complete for Claude Code on Apple silicon.
 
 Pin the first compatibility baseline to Ubuntu 24.04 x86_64. Keep Linux out of the support claim until each acceptance stage passes.
 
-The current branch contains the Linux read only provider and doctor/version commands. Their local Linux arm64 checks pass. Ubuntu 24.04 x86_64 CI, including the ext4 journal matrix, is the next gate. Setup, hooks, MCP, ports, and cleanup remain unavailable on Linux.
+PR #68 implements the Linux process provider, Claude Code and Codex setup, lifecycle hooks, MCP diagnosis and approved apply, opt-in automatic cleanup, TCP port diagnosis and recovery, systemd user worker, and Linux x86_64 release packaging. The implementation targets Ubuntu 24.04 and writable ext4 data directories. Ubuntu CI gates the process identity and classifier suite, setup and hook writes on ext4, unsupported read-only ext4 behavior, pidfd signalling, listener identity, and worker lifecycle for both agents. Linux remains outside the support claim until the PR checks and the native release acceptance pass.
 
-1. Read only inventory: add a Linux `ProcessProvider` and `ProcessSource` using the boot ID and `/proc/<pid>/stat` start time, with bounded reads, effective UID, executable path, CPU time and exact identity rechecks. Parse the parenthesized command field without whitespace tokenization. Unreadable or changing process data stays unknown. Treat systemd service and scope names found in cgroup paths as heuristic evidence, and retain uncertainty when cgroup data is missing. Expose only `agentdust doctor`, `agentdust doctor --json` and `agentdust version` on Linux at this stage.
-2. Validate process identity under PID churn, PID reuse, reparenting, mixed credentials, permission denial, service and scope cgroups, containers and hosts without unified cgroups. Do not offer apply, automatic cleanup, setup, port recovery or MCP mutation.
-3. Validate the journal on a supported Linux file system before installing lifecycle hooks. Exercise private permissions, concurrent append, rotation, locking and torn tail recovery on ext4. Keep other file systems unsupported until they pass the same matrix.
-4. Validate Claude Code and Codex hook setup and ownership lifecycle separately in report only mode. Keep automatic cleanup unavailable until each adapter proves exact process ownership and host exit.
-5. Implement Linux apply with a pidfd backed final identity check and signal. Check identity and authoritative systemd unit membership again in the same final action window. Cgroup path heuristics do not qualify for cleanup. Run the existing decline, cancellation, PID reuse, identity change and competing apply matrix on Ubuntu 24.04.
-6. Add and validate systemd user worker management and port listener identity. Keep cleanup unavailable where authoritative ownership evidence or a supported journal is missing.
-7. Publish an `x86_64-unknown-linux-gnu` release archive and npm package with checksum, SBOM and build attestation. Add a Linux package manager after users ask for one.
+1. Linux inventory uses boot ID, `/proc/<pid>/stat` start time, effective UID, executable path, CPU time and exact identity rechecks. Bounded reads and ambiguous or changing process data fail closed. Systemd cgroup names remain heuristic evidence.
+2. Classifier and owner liveness tests cover PID churn and reuse, reparenting, credentials, permission denial, service and scope cgroups, containers, and zombies.
+3. Linux journal writes require writable ext4. Ubuntu CI exercises private permissions, concurrent append, rotation, locking, torn tail recovery and refusal after a read-only remount.
+4. Claude Code and Codex install, check, remove and hook behavior are tested separately. Linux setup configures hooks and the local MCP server only when its data directory passes the filesystem gate. Removal remains available when it does not.
+5. Manual apply uses pidfd identity revalidation, authoritative systemd unit lookup and `pidfd_send_signal`; missing evidence refuses the signal. The Ubuntu tests cover decline, cancellation, identity changes, pidfd behavior and competing apply.
+6. Automatic cleanup is opt in, uses the shared project policy, and runs through a systemd user service. Live owners and kept processes survive; eligible helpers from ended sessions are stopped once. Port inventory rechecks process identity, listener inode and network namespace, and fails closed when it cannot establish scope.
+7. Release Actions build two independent Linux x86_64 binaries, package the native archive and npm launcher, compare binaries, test native installs, and attach checksums, SBOM and provenance.
 
 Exit: on Ubuntu 24.04 x86_64, Claude Code and Codex each pass setup, removal, lifecycle, approval, cleanup, port recovery and metrics checks. The Linux pidfd action path passes the identity and race matrix, the journal file system gate passes, and release artifacts install and report the version from the source tag. Linux support is claimed only after every gate passes.
 

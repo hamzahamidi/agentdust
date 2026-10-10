@@ -332,4 +332,4 @@ Grouped by concern.
 
 - **Is 64 KiB the right cap for a real `sample`?** It rests on latency. The M2 sampler decides the byte budget.
 - **Should `fsync(2)` be added?** It costs 0.044 ms at p50 and promises survival of an OS crash only. The contract promises neither today.
-- **Does the benchmark pass on Linux?** The tests are platform independent and have not run there.
+- **Does the benchmark pass on Linux?** No Linux benchmark result is recorded. Linux CI runs the core correctness suite and ext4 journal integration tests.

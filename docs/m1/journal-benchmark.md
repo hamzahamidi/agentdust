@@ -296,7 +296,7 @@ What the benchmark does not do:
 - It does not kill a writer in the middle of a write, fill the disk or pull the power. The short write cases are tested on bytes (`tests/frame.rs`) and through files with a hand cut frame (`tests/candidates.rs`), not with an injected `write` error.
 - It does not measure a reader that has to wait on a stopped writer or a stopped rotator.
 - It uses records padded in `session_id`. A `sample` record with a real `procs` list is not measured.
-- It was not run on Linux. The crate compiles for `x86_64-unknown-linux-gnu`, and its tests have not run there.
+- The benchmark was not run on Linux. Linux CI runs the core correctness suite and the ext4 journal integration tests; no Linux benchmark numbers are reported.
 - A, C2 and D lost no acknowledged record in 144,000 attempted appends each, in these three runs. That is an observation and not a proof.
 
 What the platform decides, and the benchmark only observes:

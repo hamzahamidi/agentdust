@@ -62,15 +62,57 @@ fn linux_exposes_version_and_read_only_doctor() {
 }
 
 #[test]
-fn linux_rejects_mutating_commands_without_creating_state() {
+fn linux_rejects_unavailable_commands_and_gates_hooks_only_setup() {
     let sandbox = Sandbox::new();
 
-    for command in [
-        "apply", "auto", "disk", "hook", "mcp", "metrics", "port", "setup", "status",
-    ] {
+    for command in ["disk", "status"] {
         let output = sandbox.run(&[command]);
         assert_eq!(output.status.code(), Some(2), "{command}");
-        assert!(String::from_utf8_lossy(&output.stderr).contains("read-only"));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("unavailable"));
+    }
+
+    let automatic = sandbox.run(&["auto", "status"]);
+    assert!(automatic.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&automatic.stdout).unwrap();
+    assert_eq!(report["enabled"], false);
+    assert_eq!(report["worker_running"], false);
+    assert!(!sandbox.root.join("xdg-data/agentdust").exists());
+
+    let apply = sandbox.run(&["apply"]);
+    assert!(!apply.status.success());
+    assert!(String::from_utf8_lossy(&apply.stderr).contains("terminal"));
+    assert!(!sandbox.root.join("xdg-data/agentdust").exists());
+
+    let port = sandbox.run(&["port", "1", "--json"]);
+    assert!(port.status.success(), "{}", String::from_utf8_lossy(&port.stderr));
+    let report: serde_json::Value = serde_json::from_slice(&port.stdout).unwrap();
+    assert_eq!(report["protocol"], "tcp");
+    assert_eq!(report["visibility"], "current_user_visible");
+    assert!(!sandbox.root.join("xdg-data/agentdust").exists());
+
+    let metrics = sandbox.run(&["metrics", "--json"]);
+    assert!(metrics.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&metrics.stdout).unwrap();
+    assert!(report.get("event_count").is_some());
+    assert!(!sandbox.root.join("xdg-data/agentdust").exists());
+
+    let hook = sandbox.run(&["hook"]);
+    assert!(hook.status.success());
+    assert!(!sandbox.root.join("xdg-data/agentdust").exists());
+
+    let check = sandbox.run(&["setup", "--check"]);
+    assert!(!check.status.success());
+
+    for args in [
+        &["setup", "--remove", "--yes"][..],
+        &["setup", "codex", "--remove", "--yes"][..],
+    ] {
+        let remove = sandbox.run(args);
+        assert!(
+            remove.status.success(),
+            "{}",
+            String::from_utf8_lossy(&remove.stderr)
+        );
     }
     assert!(!sandbox.root.join("xdg-data/agentdust").exists());
 }

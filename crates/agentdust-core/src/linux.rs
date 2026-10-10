@@ -1,12 +1,18 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::{CStr, c_char, c_int, c_void};
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use crate::ancestry::AncestryProvider;
-use crate::identity::{KernelIdentity, ProcessInfo};
+use crate::apply::signal::{SignalResult, Signaller, signalable};
+use crate::identity::{KernelIdentity, ProcessIdentity, ProcessInfo};
 use crate::inventory::{ArgsView, Cpu, LiveDetails, ProcessSource, RawIdentity, RawProcess, Tag};
 use crate::provider::{ProcessProvider, ProcessRead};
+use crate::revalidate::{Revalidation, revalidate};
 use crate::secret::Secret;
 use crate::tag::{self, CODEX_ENV_NAME, ENV_NAME};
 
@@ -19,6 +25,7 @@ const MAX_STATUS_BYTES: usize = 64 * 1024;
 const MAX_ENV_BYTES: u64 = 64 * 1024;
 const MAX_ENV_VALUE_BYTES: usize = 1024;
 const MAX_CMDLINE_BYTES: usize = 256 * 1024;
+const MAX_PROC_NET_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Default)]
 struct SessionEnv {
@@ -28,6 +35,7 @@ struct SessionEnv {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ProcStat {
+    state: u8,
     ppid: i32,
     pgid: i32,
     user_ticks: u64,
@@ -56,7 +64,14 @@ fn parse_stat(bytes: &[u8]) -> io::Result<ProcStat> {
     if fields.len() <= 19 {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "short proc stat"));
     }
+    if fields[0].len() != 1 || !fields[0][0].is_ascii() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid proc stat state",
+        ));
+    }
     Ok(ProcStat {
+        state: fields[0][0],
         ppid: parse_number(fields[1])?,
         pgid: parse_number(fields[2])?,
         user_ticks: parse_number(fields[11])?,
@@ -129,6 +144,9 @@ fn read_info(
         proc_root.join(pid.to_string()).join("stat"),
         MAX_STAT_BYTES,
     )?)?;
+    if matches!(stat.state, b'Z' | b'X') {
+        return Err(io::Error::from_raw_os_error(libc::ESRCH));
+    }
     let uid = process_uid(proc_root, pid)?;
     let since_boot_us =
         u128::from(stat.start_ticks) * u128::from(MICROS_PER_SECOND) / u128::from(ticks_per_second);
@@ -249,6 +267,251 @@ fn command_line(proc_root: &Path, pid: i32) -> io::Result<Option<Vec<Vec<u8>>>> 
     }
 }
 
+fn listener_inodes_for_port(proc_root: &Path, process: &str, port: u16) -> io::Result<BTreeSet<u64>> {
+    if port == 0 {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid TCP port"));
+    }
+    let mut inodes = BTreeSet::new();
+    for table in [
+        proc_root.join(process).join("net/tcp"),
+        proc_root.join(process).join("net/tcp6"),
+    ] {
+        let bytes = read_bounded(table, MAX_PROC_NET_BYTES)?;
+        for line in bytes
+            .split(|byte| *byte == b'\n')
+            .skip(1)
+            .filter(|line| !line.is_empty())
+        {
+            let fields: Vec<&[u8]> = line
+                .split(|byte| byte.is_ascii_whitespace())
+                .filter(|part| !part.is_empty())
+                .collect();
+            if fields.len() < 10 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "short proc TCP table row",
+                ));
+            }
+            if fields[3] != b"0A" {
+                continue;
+            }
+            let port_field = fields[1].rsplit(|byte| *byte == b':').next().unwrap_or_default();
+            let local_port = u16::from_str_radix(
+                std::str::from_utf8(port_field)
+                    .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid proc TCP port"))?,
+                16,
+            )
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid proc TCP port"))?;
+            if local_port == port {
+                inodes.insert(parse_number(fields[9])?);
+            }
+        }
+    }
+    Ok(inodes)
+}
+
+fn network_namespace_inode(proc_root: &Path, process: &str) -> io::Result<u64> {
+    Ok(fs::metadata(proc_root.join(process).join("ns/net"))?.ino())
+}
+
+fn require_current_network_namespace(
+    namespace: u64,
+    current_namespace: u64,
+    inodes: &BTreeSet<u64>,
+) -> io::Result<()> {
+    if namespace != current_namespace && !inodes.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "port inventory found a listener in another network namespace",
+        ));
+    }
+    Ok(())
+}
+
+pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
+    let provider = LinuxProvider::new()?;
+    let current_namespace = network_namespace_inode(Path::new(PROC), "self")?;
+    let mut by_namespace: BTreeMap<u64, Vec<ProcessIdentity>> = BTreeMap::new();
+    for pid in list_pids()? {
+        let identity = match provider.read(pid) {
+            Ok(ProcessRead::Present(identity)) if identity.kernel.uid == current_uid() => identity,
+            Ok(ProcessRead::Present(_)) | Ok(ProcessRead::Gone) => continue,
+            Ok(ProcessRead::PathUnreadable(kernel)) if kernel.uid != current_uid() => continue,
+            Ok(ProcessRead::PathUnreadable(_)) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "listener process identity is unreadable",
+                ));
+            }
+            Err(error) if missing(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        let pid = pid.to_string();
+        let namespace = match network_namespace_inode(Path::new(PROC), &pid) {
+            Ok(namespace) => namespace,
+            Err(error) if missing(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        by_namespace.entry(namespace).or_default().push(identity);
+    }
+
+    let mut inodes = BTreeSet::new();
+    let mut candidates = Vec::new();
+    for (namespace, identities) in by_namespace {
+        let mut namespace_inodes = None;
+        for identity in &identities {
+            let pid = identity.kernel.pid;
+            if revalidate(identity, &provider) != Revalidation::Match {
+                continue;
+            }
+            let pid_path = pid.to_string();
+            match network_namespace_inode(Path::new(PROC), &pid_path) {
+                Ok(found) if found == namespace => {}
+                Ok(_) => {
+                    return Err(io::Error::other(
+                        "process network namespace changed during inventory",
+                    ));
+                }
+                Err(error) if missing(&error) => continue,
+                Err(error) => return Err(error),
+            }
+            let found = match listener_inodes_for_port(Path::new(PROC), &pid_path, port) {
+                Ok(found) => found,
+                Err(error) if missing(&error) => continue,
+                Err(error) => return Err(error),
+            };
+            if revalidate(identity, &provider) != Revalidation::Match
+                || network_namespace_inode(Path::new(PROC), &pid_path)? != namespace
+            {
+                return Err(io::Error::other(
+                    "process identity or network namespace changed during inventory",
+                ));
+            }
+            namespace_inodes = Some(found);
+            break;
+        }
+        let Some(namespace_inodes) = namespace_inodes else {
+            continue;
+        };
+        if namespace_inodes.is_empty() {
+            continue;
+        }
+        require_current_network_namespace(namespace, current_namespace, &namespace_inodes)?;
+        inodes = namespace_inodes;
+        candidates = identities;
+    }
+    if inodes.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut found = Vec::new();
+    for identity in candidates {
+        let pid = identity.kernel.pid;
+        let pid_path = pid.to_string();
+        if network_namespace_inode(Path::new(PROC), &pid_path)? != current_namespace {
+            return Err(io::Error::other(
+                "process network namespace changed during inventory",
+            ));
+        }
+        let fd_dir = Path::new(PROC).join(pid.to_string()).join("fd");
+        let descriptors = match fs::read_dir(&fd_dir) {
+            Ok(descriptors) => descriptors,
+            Err(error) if missing(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        let mut owns_listener = false;
+        for descriptor in descriptors {
+            let descriptor = descriptor?;
+            let target = match fs::read_link(descriptor.path()) {
+                Ok(target) => target,
+                Err(error) if missing(&error) => continue,
+                Err(error) => return Err(error),
+            };
+            if let Some(inode) = socket_inode(&target)
+                && inodes.contains(&inode)
+            {
+                owns_listener = true;
+                break;
+            }
+        }
+        if !owns_listener {
+            continue;
+        }
+        match provider.read(pid)? {
+            ProcessRead::Present(fresh)
+                if fresh == identity
+                    && network_namespace_inode(Path::new(PROC), &pid_path)? == current_namespace =>
+            {
+                found.push(identity)
+            }
+            ProcessRead::Gone => {}
+            _ => {
+                return Err(io::Error::other(
+                    "listener identity or network namespace changed during inventory",
+                ));
+            }
+        }
+    }
+    if network_namespace_inode(Path::new(PROC), "self")? != current_namespace {
+        return Err(io::Error::other(
+            "AgentDust network namespace changed during inventory",
+        ));
+    }
+    let current_inodes = listener_inodes_for_port(Path::new(PROC), "self", port)?;
+    let mut stable = Vec::new();
+    for identity in found {
+        let pid = identity.kernel.pid;
+        let pid_path = pid.to_string();
+        if network_namespace_inode(Path::new(PROC), &pid_path)? != current_namespace {
+            return Err(io::Error::other(
+                "process network namespace changed during inventory",
+            ));
+        }
+        let fd_dir = Path::new(PROC).join(&pid_path).join("fd");
+        let descriptors = match fs::read_dir(fd_dir) {
+            Ok(descriptors) => descriptors,
+            Err(error) if missing(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        let mut still_listening = false;
+        for descriptor in descriptors {
+            let descriptor = descriptor?;
+            let target = match fs::read_link(descriptor.path()) {
+                Ok(target) => target,
+                Err(error) if missing(&error) => continue,
+                Err(error) => return Err(error),
+            };
+            if socket_inode(&target).is_some_and(|inode| current_inodes.contains(&inode)) {
+                still_listening = true;
+                break;
+            }
+        }
+        if !still_listening {
+            continue;
+        }
+        match provider.read(pid)? {
+            ProcessRead::Present(fresh)
+                if fresh == identity
+                    && network_namespace_inode(Path::new(PROC), &pid_path)? == current_namespace =>
+            {
+                stable.push(identity)
+            }
+            ProcessRead::Gone => {}
+            _ => {
+                return Err(io::Error::other(
+                    "listener identity or network namespace changed during inventory",
+                ));
+            }
+        }
+    }
+    Ok(stable)
+}
+
+fn socket_inode(target: &Path) -> Option<u64> {
+    let text = target.to_str()?;
+    text.strip_prefix("socket:[")?.strip_suffix(']')?.parse().ok()
+}
+
 fn script_argument(args: &[Vec<u8>]) -> Option<&[u8]> {
     const VALUE_OPTIONS: [&[u8]; 7] = [
         b"-r",
@@ -345,6 +608,221 @@ fn read_linux_args(
             .and_then(|args| script_argument(args))
             .is_some_and(crate::ancestry::script_names_agent);
     ArgsView { tag, agent_script }
+}
+
+pub struct LinuxPidfdSignaller {
+    provider: LinuxProvider,
+}
+
+impl LinuxPidfdSignaller {
+    pub fn new() -> io::Result<Self> {
+        Ok(Self {
+            provider: LinuxProvider::new()?,
+        })
+    }
+}
+
+impl Signaller for LinuxPidfdSignaller {
+    fn sigterm(&self, _pid: i32) -> SignalResult {
+        SignalResult::Refused
+    }
+
+    fn sigterm_identity(&self, expected: &ProcessIdentity) -> SignalResult {
+        pidfd_signal(expected, &self.provider, &SystemPidfdOps)
+    }
+}
+
+trait PidfdOps {
+    type Handle;
+
+    fn open(&self, pid: i32) -> io::Result<Self::Handle>;
+    fn verify_unmanaged_unit(&self, handle: &Self::Handle) -> io::Result<()>;
+    fn sigterm(&self, handle: &Self::Handle) -> SignalResult;
+}
+
+struct SystemPidfdOps;
+
+impl PidfdOps for SystemPidfdOps {
+    type Handle = OwnedFd;
+
+    fn open(&self, pid: i32) -> io::Result<Self::Handle> {
+        // SAFETY: pidfd_open reads only its scalar arguments and returns a new descriptor.
+        let raw = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0_u32) };
+        if raw < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let fd = i32::try_from(raw).map_err(|_| io::Error::other("pidfd is outside the descriptor range"))?;
+        // SAFETY: pidfd_open returned a new owned descriptor.
+        Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+    }
+
+    fn verify_unmanaged_unit(&self, handle: &Self::Handle) -> io::Result<()> {
+        systemd_unit_for_pidfd(handle.as_raw_fd())
+    }
+
+    fn sigterm(&self, handle: &Self::Handle) -> SignalResult {
+        // SAFETY: pidfd_send_signal uses the open pidfd and a null optional siginfo pointer.
+        let result = unsafe {
+            libc::syscall(
+                libc::SYS_pidfd_send_signal,
+                handle.as_raw_fd(),
+                libc::SIGTERM,
+                std::ptr::null::<libc::siginfo_t>(),
+                0_u32,
+            )
+        };
+        if result == 0 {
+            return SignalResult::Delivered;
+        }
+        signal_error(io::Error::last_os_error())
+    }
+}
+
+fn pidfd_signal<P: ProcessProvider, O: PidfdOps>(
+    expected: &ProcessIdentity,
+    provider: &P,
+    ops: &O,
+) -> SignalResult {
+    let pid = expected.kernel.pid;
+    if !signalable(pid) {
+        return SignalResult::Refused;
+    }
+    let handle = match ops.open(pid) {
+        Ok(handle) => handle,
+        Err(error) => return signal_error(error),
+    };
+    if revalidate(expected, provider) != Revalidation::Match {
+        return SignalResult::Refused;
+    }
+    if ops.verify_unmanaged_unit(&handle).is_err() {
+        return SignalResult::Refused;
+    }
+    if revalidate(expected, provider) != Revalidation::Match {
+        return SignalResult::Refused;
+    }
+    ops.sigterm(&handle)
+}
+
+fn signal_error(error: io::Error) -> SignalResult {
+    match error.raw_os_error() {
+        Some(libc::ESRCH) => SignalResult::NoSuchProcess,
+        Some(libc::EPERM) => SignalResult::Refused,
+        other => SignalResult::Failed(other.unwrap_or(0)),
+    }
+}
+
+type SdPidfdGetText = unsafe extern "C" fn(c_int, *mut *mut c_char) -> c_int;
+
+fn systemd_unit_for_pidfd(pidfd: c_int) -> io::Result<()> {
+    const USER_UNIT: &CStr = c"sd_pidfd_get_user_unit";
+    const SYSTEM_UNIT: &CStr = c"sd_pidfd_get_unit";
+    const CGROUP: &CStr = c"sd_pidfd_get_cgroup";
+    let mut last_error = None;
+    let mut found_symbol = false;
+    let mut found_unit = false;
+    for symbol in [&USER_UNIT, &SYSTEM_UNIT] {
+        let Some(get_unit) = systemd_function(symbol) else {
+            continue;
+        };
+        found_symbol = true;
+        match unsafe { call_systemd_unit(get_unit, pidfd) } {
+            Ok(()) => found_unit = true,
+            Err(error) => last_error = Some(error),
+        }
+    }
+    if !found_unit {
+        if found_symbol {
+            let detail = last_error.map_or_else(
+                || "unit membership is missing".to_owned(),
+                |error| error.to_string(),
+            );
+            return Err(io::Error::other(format!(
+                "systemd unit membership is unavailable: {detail}"
+            )));
+        }
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "libsystemd pidfd unit lookup is unavailable",
+        ));
+    }
+    let get_cgroup = systemd_function(CGROUP).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::Unsupported,
+            "libsystemd pidfd cgroup lookup is unavailable",
+        )
+    })?;
+    let cgroup = unsafe { call_systemd_text(get_cgroup, pidfd) }?;
+    let mut record = b"0::".to_vec();
+    record.extend_from_slice(&cgroup);
+    record.push(b'\n');
+    if cgroup_unit_evidence(&record)? {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "process belongs to a managed systemd unit",
+        ));
+    }
+    Ok(())
+}
+
+fn systemd_function(symbol: &CStr) -> Option<SdPidfdGetText> {
+    static USER: OnceLock<Option<SdPidfdGetText>> = OnceLock::new();
+    static SYSTEM: OnceLock<Option<SdPidfdGetText>> = OnceLock::new();
+    static CGROUP: OnceLock<Option<SdPidfdGetText>> = OnceLock::new();
+    let slot = match symbol.to_bytes() {
+        b"sd_pidfd_get_user_unit" => &USER,
+        b"sd_pidfd_get_unit" => &SYSTEM,
+        b"sd_pidfd_get_cgroup" => &CGROUP,
+        _ => return None,
+    };
+    *slot.get_or_init(|| {
+        const LIBSYSTEMD: &CStr = c"libsystemd.so.0";
+        // SAFETY: the library handle remains loaded for the process lifetime.
+        let library = unsafe { libc::dlopen(LIBSYSTEMD.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
+        if library.is_null() {
+            return None;
+        }
+        // SAFETY: dlsym resolves the requested systemd function by its C symbol name.
+        let function = unsafe { libc::dlsym(library, symbol.as_ptr()) };
+        if function.is_null() {
+            return None;
+        }
+        // SAFETY: the selected sd_pidfd_get_* function returns an allocated string through this signature.
+        Some(unsafe { std::mem::transmute::<*mut c_void, SdPidfdGetText>(function) })
+    })
+}
+
+unsafe fn call_systemd_unit(get_unit: SdPidfdGetText, pidfd: c_int) -> io::Result<()> {
+    unsafe { call_systemd_text(get_unit, pidfd) }.map(|_| ())
+}
+
+unsafe fn call_systemd_text(get_text: SdPidfdGetText, pidfd: c_int) -> io::Result<Vec<u8>> {
+    let mut text = std::ptr::null_mut();
+    // SAFETY: pidfd is an open pidfd and text points to writable output storage.
+    let result = unsafe { get_text(pidfd, &mut text) };
+    if result < 0 {
+        return Err(io::Error::from_raw_os_error(-result));
+    }
+    if text.is_null() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "systemd returned an empty value",
+        ));
+    }
+    // SAFETY: systemd returned a NUL terminated allocation on success.
+    let value = unsafe { CStr::from_ptr(text) };
+    let bytes = value.to_bytes();
+    let valid = !bytes.is_empty() && std::str::from_utf8(bytes).is_ok();
+    let copied = bytes.to_vec();
+    // SAFETY: systemd documents that returned unit strings are freed with libc free.
+    unsafe { libc::free(text.cast()) };
+    if valid {
+        Ok(copied)
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "systemd returned an invalid value",
+        ))
+    }
 }
 
 pub struct LinuxProvider {
@@ -604,7 +1082,13 @@ fn cgroup_unit_evidence(cgroup: &[u8]) -> io::Result<bool> {
         .filter(|line| !line.is_empty())
     {
         if let Some(path) = line.strip_prefix(b"0::") {
-            return Ok(cgroup_unit_component(path).is_some());
+            let Some(unit) = cgroup_unit_component(path) else {
+                return Ok(false);
+            };
+            if unit.ends_with(b".service") {
+                return Ok(!unit.starts_with(b"user@"));
+            }
+            return Ok(unit.ends_with(b".scope") && path.starts_with(b"/system.slice/"));
         }
     }
     Err(io::Error::new(
@@ -639,17 +1123,143 @@ fn missing(error: &io::Error) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::fs;
+    use std::io;
     use std::path::PathBuf;
+    use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{Arc, Mutex};
 
     use super::{
-        LinuxProvider, ProcStat, cgroup_unit_component, cgroup_unit_evidence, parse_environment, parse_stat,
-        parse_uid_status,
+        LinuxProvider, PidfdOps, ProcStat, cgroup_unit_component, cgroup_unit_evidence, parse_environment,
+        parse_stat, parse_uid_status, pidfd_signal, process_info, require_current_network_namespace,
     };
     use crate::ancestry::AncestryProvider;
+    use crate::apply::signal::SignalResult;
+    use crate::identity::{IdentityEvidence, KernelIdentity, ProcessIdentity};
+    use crate::provider::{ProcessProvider, ProcessRead};
 
     static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
+
+    struct ScriptedProvider {
+        identity: ProcessIdentity,
+        reads: AtomicUsize,
+        changed_on_second_read: bool,
+        events: Arc<Mutex<Vec<&'static str>>>,
+    }
+
+    impl ProcessProvider for ScriptedProvider {
+        fn read(&self, _pid: i32) -> io::Result<ProcessRead> {
+            self.events.lock().unwrap().push("read");
+            let count = self.reads.fetch_add(1, Ordering::Relaxed);
+            let mut identity = self.identity.clone();
+            if self.changed_on_second_read && count > 0 {
+                identity.kernel.start_time_us += 1;
+            }
+            Ok(ProcessRead::Present(identity))
+        }
+    }
+
+    struct FakePidfdOps {
+        has_unit: bool,
+        managed_unit: bool,
+        events: Arc<Mutex<Vec<&'static str>>>,
+    }
+
+    impl PidfdOps for FakePidfdOps {
+        type Handle = ();
+
+        fn open(&self, _pid: i32) -> io::Result<Self::Handle> {
+            self.events.lock().unwrap().push("open");
+            Ok(())
+        }
+
+        fn verify_unmanaged_unit(&self, _handle: &Self::Handle) -> io::Result<()> {
+            self.events.lock().unwrap().push("unit");
+            match (self.has_unit, self.managed_unit) {
+                (true, false) => Ok(()),
+                (false, _) => Err(io::Error::new(io::ErrorKind::NotFound, "no unit")),
+                (true, true) => Err(io::Error::new(io::ErrorKind::PermissionDenied, "managed unit")),
+            }
+        }
+
+        fn sigterm(&self, _handle: &Self::Handle) -> SignalResult {
+            self.events.lock().unwrap().push("signal");
+            SignalResult::Delivered
+        }
+    }
+
+    fn expected_identity() -> ProcessIdentity {
+        ProcessIdentity {
+            kernel: KernelIdentity {
+                boot_session_uuid: "boot".into(),
+                pid: 42,
+                start_time_us: 100,
+                uid: 1000,
+            },
+            evidence: IdentityEvidence {
+                exe_path: "/usr/bin/node".into(),
+            },
+        }
+    }
+
+    fn scripted_action(
+        has_unit: bool,
+        managed_unit: bool,
+        changed_on_second_read: bool,
+    ) -> (SignalResult, Vec<&'static str>) {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let provider = ScriptedProvider {
+            identity: expected_identity(),
+            reads: AtomicUsize::new(0),
+            changed_on_second_read,
+            events: events.clone(),
+        };
+        let ops = FakePidfdOps {
+            has_unit,
+            managed_unit,
+            events: events.clone(),
+        };
+        let result = pidfd_signal(&expected_identity(), &provider, &ops);
+        let events = events.lock().unwrap().clone();
+        (result, events)
+    }
+
+    #[test]
+    fn pidfd_signal_revalidates_before_and_after_authoritative_unit_lookup() {
+        let (result, events) = scripted_action(true, false, false);
+        assert_eq!(result, SignalResult::Delivered);
+        assert_eq!(events, ["open", "read", "unit", "read", "signal"]);
+    }
+
+    #[test]
+    fn pidfd_signal_fails_closed_without_unit_or_for_a_managed_unit() {
+        let (result, events) = scripted_action(false, false, false);
+        assert_eq!(result, SignalResult::Refused);
+        assert_eq!(events, ["open", "read", "unit"]);
+
+        let (result, events) = scripted_action(true, true, false);
+        assert_eq!(result, SignalResult::Refused);
+        assert_eq!(events, ["open", "read", "unit"]);
+
+        let (result, events) = scripted_action(true, false, true);
+        assert_eq!(result, SignalResult::Refused);
+        assert_eq!(events, ["open", "read", "unit", "read"]);
+    }
+
+    #[test]
+    fn port_inventory_refuses_an_active_listener_outside_the_callers_network_namespace() {
+        let listener = BTreeSet::from([123_u64]);
+        assert_eq!(
+            require_current_network_namespace(2, 1, &listener)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::Unsupported
+        );
+        assert!(require_current_network_namespace(2, 1, &BTreeSet::new()).is_ok());
+        assert!(require_current_network_namespace(1, 1, &listener).is_ok());
+    }
 
     struct ProcFixture(PathBuf);
 
@@ -688,8 +1298,12 @@ mod tests {
     }
 
     fn stat_line(pid: i32, comm: &str, ppid: i32, start_ticks: u64) -> Vec<u8> {
+        stat_line_with_state(pid, comm, ppid, start_ticks, b'S')
+    }
+
+    fn stat_line_with_state(pid: i32, comm: &str, ppid: i32, start_ticks: u64, state: u8) -> Vec<u8> {
         let fields = [
-            "S".to_owned(),
+            char::from(state).to_string(),
             ppid.to_string(),
             "3".to_owned(),
             "0".to_owned(),
@@ -720,6 +1334,7 @@ mod tests {
         assert_eq!(
             parsed,
             ProcStat {
+                state: b'S',
                 ppid: 7,
                 pgid: 3,
                 user_ticks: 11,
@@ -727,6 +1342,16 @@ mod tests {
                 start_ticks: 91,
             }
         );
+    }
+
+    #[test]
+    fn zombie_processes_are_gone_for_owner_liveness() {
+        let fixture = ProcFixture::new();
+        fixture.process(42, 91, 7);
+        let path = fixture.0.join("42/stat");
+        assert!(process_info(&fixture.0, 42, "boot", 0, 100).unwrap().is_some());
+        fs::write(&path, stat_line_with_state(42, "node", 7, 91, b'Z')).unwrap();
+        assert!(process_info(&fixture.0, 42, "boot", 0, 100).unwrap().is_none());
     }
 
     #[test]
@@ -778,7 +1403,9 @@ mod tests {
     #[test]
     fn managed_inventory_requires_a_unified_cgroup_record() {
         assert!(cgroup_unit_evidence(b"0::/system.slice/ssh.service\n").unwrap());
-        assert!(!cgroup_unit_evidence(b"0::/user.slice/session-2\n").unwrap());
+        assert!(cgroup_unit_evidence(b"0::/system.slice/transient-2.scope\n").unwrap());
+        assert!(!cgroup_unit_evidence(b"0::/user.slice/session-2.scope\n").unwrap());
+        assert!(!cgroup_unit_evidence(b"0::/user.slice/user-1000.slice/user@1000.service\n").unwrap());
         assert_eq!(
             cgroup_unit_evidence(b"2:cpu:/system.slice/ssh.service\n")
                 .unwrap_err()

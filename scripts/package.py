@@ -19,7 +19,7 @@ def add_file(tar: tarfile.TarFile, path: Path, arcname: str, mode: int, mtime: i
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Create a reproducible agentdust release tarball.")
+    parser = argparse.ArgumentParser(description="Create a reproducible AgentDust release tarball.")
     parser.add_argument("--binary", required=True, type=Path)
     parser.add_argument("--version", required=True)
     parser.add_argument("--target", default="darwin-arm64")

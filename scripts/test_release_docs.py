@@ -67,7 +67,7 @@ class ReadmeUsageTest(unittest.TestCase):
         cls.usage = section(cls.text, r"## Using AgentDust " + re.escape(VERSION))
 
     def test_the_section_names_the_supported_release_platform_and_agents(self):
-        self.assertIn("Prebuilt Homebrew and npm binaries target macOS on Apple silicon.", self.usage)
+        self.assertIn("Homebrew targets macOS arm64. npm and release archives support macOS arm64 and Linux x86_64 on Ubuntu 24.04.", self.usage)
         self.assertIn("AgentDust supports Claude Code and Codex process tracking", self.usage)
 
     def test_the_section_covers_the_commands_of_current_release(self):
@@ -165,7 +165,7 @@ class ReleaseDocTest(unittest.TestCase):
                 self.assertRegex(self.text, rf"(?m)^{re.escape(heading)}$")
 
     def test_every_job_of_the_workflow_is_described(self):
-        self.assertEqual(len(self.jobs), 6)
+        self.assertEqual(len(self.jobs), 7)
         for job in self.jobs:
             with self.subTest(job=job):
                 self.assertIn(f"`{job}`", self.text)

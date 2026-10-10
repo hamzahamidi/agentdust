@@ -339,7 +339,7 @@ impl Executor {
             return Verdict::of(Outcome::Disabled);
         }
         let sent = match revalidate(&item.identity, self.deps.provider.as_ref()) {
-            Revalidation::Match => self.deps.signaller.sigterm(item.identity.kernel.pid),
+            Revalidation::Match => self.deps.signaller.sigterm_identity(&item.identity),
             Revalidation::Gone => return Verdict::of(Outcome::Gone),
             Revalidation::Changed(Field::ExePath) => return Verdict::failed(Reason::PathChanged),
             Revalidation::Changed(_) => return Verdict::failed(Reason::IdentityChanged),
