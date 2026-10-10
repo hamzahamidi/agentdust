@@ -723,45 +723,21 @@ fn systemd_unit_for_pidfd(pidfd: c_int) -> io::Result<()> {
     const USER_UNIT: &CStr = c"sd_pidfd_get_user_unit";
     const SYSTEM_UNIT: &CStr = c"sd_pidfd_get_unit";
     const CGROUP: &CStr = c"sd_pidfd_get_cgroup";
-    let mut last_error = None;
-    let mut found_symbol = false;
-    let mut found_unit = false;
-    for (symbol, kind) in [
-        (&USER_UNIT, SystemdUnitKind::User),
-        (&SYSTEM_UNIT, SystemdUnitKind::System),
-    ] {
-        let Some(get_unit) = systemd_function(symbol) else {
-            continue;
-        };
-        found_symbol = true;
-        match unsafe { call_systemd_unit(get_unit, pidfd) } {
-            Ok(unit) => {
-                found_unit = true;
-                if systemd_unit_is_managed(kind, &unit)? {
-                    return Err(io::Error::new(
-                        io::ErrorKind::PermissionDenied,
-                        "process belongs to a managed systemd service",
-                    ));
-                }
-            }
-            Err(error) => last_error = Some(error),
-        }
-    }
-    if !found_unit {
-        if found_symbol {
-            let detail = last_error.map_or_else(
-                || "unit membership is missing".to_owned(),
-                |error| error.to_string(),
-            );
-            return Err(io::Error::other(format!(
-                "systemd unit membership is unavailable: {detail}"
-            )));
-        }
-        return Err(io::Error::new(
+    let get_user_unit = systemd_function(USER_UNIT).ok_or_else(|| {
+        io::Error::new(
             io::ErrorKind::Unsupported,
-            "libsystemd pidfd unit lookup is unavailable",
-        ));
-    }
+            "libsystemd user pidfd unit lookup is unavailable",
+        )
+    })?;
+    let get_system_unit = systemd_function(SYSTEM_UNIT).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::Unsupported,
+            "libsystemd system pidfd unit lookup is unavailable",
+        )
+    })?;
+    verify_systemd_unit_lookups(unsafe { call_systemd_unit(get_user_unit, pidfd) }, unsafe {
+        call_systemd_unit(get_system_unit, pidfd)
+    })?;
     let get_cgroup = systemd_function(CGROUP).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::Unsupported,
@@ -779,6 +755,39 @@ fn systemd_unit_for_pidfd(pidfd: c_int) -> io::Result<()> {
         ));
     }
     Ok(())
+}
+
+fn verify_systemd_unit_lookups(
+    user_unit: io::Result<Vec<u8>>,
+    system_unit: io::Result<Vec<u8>>,
+) -> io::Result<()> {
+    let mut found_unit = false;
+    for (kind, result) in [
+        (SystemdUnitKind::User, user_unit),
+        (SystemdUnitKind::System, system_unit),
+    ] {
+        match result {
+            Ok(unit) => {
+                found_unit = true;
+                if systemd_unit_is_managed(kind, &unit)? {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "process belongs to a managed systemd service",
+                    ));
+                }
+            }
+            Err(error) if error.raw_os_error() == Some(libc::ENODATA) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    if found_unit {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "systemd did not report authoritative unit membership",
+        ))
+    }
 }
 
 fn systemd_unit_is_managed(kind: SystemdUnitKind, unit: &[u8]) -> io::Result<bool> {
@@ -1164,7 +1173,7 @@ mod tests {
     use super::{
         LinuxProvider, PidfdOps, ProcStat, SystemdUnitKind, cgroup_unit_component, cgroup_unit_evidence,
         parse_environment, parse_stat, parse_uid_status, pidfd_signal, process_info,
-        require_current_network_namespace, systemd_unit_is_managed,
+        require_current_network_namespace, systemd_unit_is_managed, verify_systemd_unit_lookups,
     };
     use crate::ancestry::AncestryProvider;
     use crate::apply::signal::SignalResult;
@@ -1291,6 +1300,54 @@ mod tests {
                 .unwrap_err()
                 .kind(),
             io::ErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn systemd_unit_lookups_fail_closed_on_unexpected_or_missing_membership() {
+        assert!(
+            verify_systemd_unit_lookups(
+                Ok(b"session-2.scope".to_vec()),
+                Err(io::Error::from_raw_os_error(libc::ENODATA)),
+            )
+            .is_ok()
+        );
+
+        for results in [
+            (
+                Ok(b"session-2.scope".to_vec()),
+                Err(io::Error::from_raw_os_error(libc::EIO)),
+            ),
+            (
+                Err(io::Error::from_raw_os_error(libc::EIO)),
+                Ok(b"session-2.scope".to_vec()),
+            ),
+        ] {
+            assert_eq!(
+                verify_systemd_unit_lookups(results.0, results.1)
+                    .unwrap_err()
+                    .raw_os_error(),
+                Some(libc::EIO)
+            );
+        }
+
+        assert_eq!(
+            verify_systemd_unit_lookups(
+                Err(io::Error::from_raw_os_error(libc::ENODATA)),
+                Err(io::Error::from_raw_os_error(libc::ENODATA)),
+            )
+            .unwrap_err()
+            .kind(),
+            io::ErrorKind::Unsupported
+        );
+        assert_eq!(
+            verify_systemd_unit_lookups(
+                Ok(b"agentdust.service".to_vec()),
+                Err(io::Error::from_raw_os_error(libc::ENODATA)),
+            )
+            .unwrap_err()
+            .kind(),
+            io::ErrorKind::PermissionDenied
         );
     }
 
