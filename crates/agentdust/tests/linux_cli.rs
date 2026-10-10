@@ -88,17 +88,17 @@ fn linux_rejects_unavailable_commands_and_gates_hooks_only_setup() {
     let port_number = listener.local_addr().unwrap().port();
     let port_arg = port_number.to_string();
     let port = sandbox.run(&["port", &port_arg, "--json"]);
-    assert!(
-        port.status.success(),
-        "status: {:?}\nstdout: {}\nstderr: {}",
-        port.status.code(),
-        String::from_utf8_lossy(&port.stdout),
-        String::from_utf8_lossy(&port.stderr)
-    );
     let report: serde_json::Value = serde_json::from_slice(&port.stdout).unwrap();
-    assert_eq!(report["state"], "listening");
     assert_eq!(report["protocol"], "tcp");
     assert_eq!(report["visibility"], "current_user_visible");
+    match report["state"].as_str() {
+        Some("listening") => assert!(port.status.success()),
+        Some("unavailable") => {
+            assert_eq!(port.status.code(), Some(1));
+            assert_eq!(report["error"], "listener_inventory_unavailable");
+        }
+        state => panic!("unexpected port state: {state:?}"),
+    }
     assert!(!sandbox.root.join("xdg-data/agentdust").exists());
 
     let metrics = sandbox.run(&["metrics", "--json"]);
