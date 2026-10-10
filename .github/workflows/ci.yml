@@ -33,6 +33,21 @@ jobs:
         run: cargo clippy --locked -p agentdust --bin agentdust --test linux_cli -- -D warnings
       - name: Check the Linux read only CLI contract
         run: cargo test --locked -p agentdust --test linux_cli
+      - name: Run the journal matrix on ext4
+        run: |
+          image="$RUNNER_TEMP/agentdust-ext4.img"
+          mount_point="$RUNNER_TEMP/agentdust-ext4"
+          truncate -s 512M "$image"
+          mkfs.ext4 -F -q "$image"
+          mkdir -p "$mount_point"
+          sudo mount -o loop "$image" "$mount_point"
+          sudo chown "$USER:$USER" "$mount_point"
+          mkdir "$mount_point/tmp"
+          TMPDIR="$mount_point/tmp" cargo test --locked -p agentdust-core
+          TMPDIR="$mount_point/tmp" AGENTDUST_EXT4_TEST_ROOT="$mount_point" cargo test --locked -p agentdust-core --test linux_journal_ext4 -- --ignored ext4_journal_append_rotation_and_torn_tail_recovery
+          sudo mount -o remount,ro "$mount_point"
+          AGENTDUST_EXT4_TEST_ROOT="$mount_point" cargo test --locked -p agentdust-core --test linux_journal_ext4 -- --ignored read_only_ext4_mount_is_not_supported
+          sudo umount "$mount_point"
       - uses: taiki-e/install-action@861a07ce7084f55488e375df125cdc99bba60eb7 # v2.87.23
         with:
           tool: cargo-deny,cargo-audit,cargo-fuzz@0.13.2

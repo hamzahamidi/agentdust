@@ -232,14 +232,15 @@ The controlled Homebrew acceptance is complete for Claude Code on Apple silicon.
 
 Pin the first compatibility baseline to Ubuntu 24.04 x86_64. Keep Linux out of the support claim until each acceptance stage passes.
 
-The current branch contains the Linux read only provider and doctor/version commands. Their local Linux arm64 checks pass. Ubuntu 24.04 x86_64 CI is the next gate. Setup, hooks, MCP, ports, and cleanup remain unavailable on Linux.
+The current branch contains the Linux read only provider and doctor/version commands. Their local Linux arm64 checks pass. Ubuntu 24.04 x86_64 CI, including the ext4 journal matrix, is the next gate. Setup, hooks, MCP, ports, and cleanup remain unavailable on Linux.
 
 1. Read only inventory: add a Linux `ProcessProvider` and `ProcessSource` using the boot ID and `/proc/<pid>/stat` start time, with bounded reads, effective UID, executable path, CPU time and exact identity rechecks. Parse the parenthesized command field without whitespace tokenization. Unreadable or changing process data stays unknown. Treat systemd service and scope names found in cgroup paths as heuristic evidence, and retain uncertainty when cgroup data is missing. Expose only `agentdust doctor`, `agentdust doctor --json` and `agentdust version` on Linux at this stage.
 2. Validate process identity under PID churn, PID reuse, reparenting, mixed credentials, permission denial, service and scope cgroups, containers and hosts without unified cgroups. Do not offer apply, automatic cleanup, setup, port recovery or MCP mutation.
-3. Validate Claude Code and Codex hook setup and ownership lifecycle separately in report only mode. Keep automatic cleanup unavailable until each adapter proves exact process ownership and host exit.
-4. Implement Linux apply with a pidfd backed final identity check and signal. Check identity and authoritative systemd unit membership again in the same final action window. Cgroup path heuristics do not qualify for cleanup. Run the existing decline, cancellation, PID reuse, identity change and competing apply matrix on Ubuntu 24.04.
-5. Add and validate systemd user worker management, port listener identity, and journal file system checks. A local file system is supported only after its permissions, locking, append, rotation, and crash recovery pass the existing journal matrix.
-6. Publish an `x86_64-unknown-linux-gnu` release archive and npm package with checksum, SBOM and build attestation. Add a Linux package manager after users ask for one.
+3. Validate the journal on a supported Linux file system before installing lifecycle hooks. Exercise private permissions, concurrent append, rotation, locking and torn tail recovery on ext4. Keep other file systems unsupported until they pass the same matrix.
+4. Validate Claude Code and Codex hook setup and ownership lifecycle separately in report only mode. Keep automatic cleanup unavailable until each adapter proves exact process ownership and host exit.
+5. Implement Linux apply with a pidfd backed final identity check and signal. Check identity and authoritative systemd unit membership again in the same final action window. Cgroup path heuristics do not qualify for cleanup. Run the existing decline, cancellation, PID reuse, identity change and competing apply matrix on Ubuntu 24.04.
+6. Add and validate systemd user worker management and port listener identity. Keep cleanup unavailable where authoritative ownership evidence or a supported journal is missing.
+7. Publish an `x86_64-unknown-linux-gnu` release archive and npm package with checksum, SBOM and build attestation. Add a Linux package manager after users ask for one.
 
 Exit: on Ubuntu 24.04 x86_64, Claude Code and Codex each pass setup, removal, lifecycle, approval, cleanup, port recovery and metrics checks. The Linux pidfd action path passes the identity and race matrix, the journal file system gate passes, and release artifacts install and report the version from the source tag. Linux support is claimed only after every gate passes.
 

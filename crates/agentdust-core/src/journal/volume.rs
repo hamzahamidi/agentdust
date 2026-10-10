@@ -83,10 +83,6 @@ impl VolumeProbe for SystemVolume {
         use std::ffi::CString;
         use std::os::unix::ffi::OsStrExt;
 
-        const EXT4_SUPER_MAGIC: u64 = 0xef53;
-        const XFS_SUPER_MAGIC: u64 = 0x5846_5342;
-        const BTRFS_SUPER_MAGIC: u64 = 0x9123_683e;
-
         let c_path = CString::new(path.as_os_str().as_bytes())
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "the path holds a NUL byte"))?;
         // SAFETY: statfs is plain old data and all zero bytes is a valid value.
@@ -95,51 +91,75 @@ impl VolumeProbe for SystemVolume {
         if unsafe { libc::statfs(c_path.as_ptr(), &mut stat) } != 0 {
             return Err(io::Error::last_os_error());
         }
-        let filesystem = match mount_filesystem(path) {
-            Ok(Some(filesystem)) => filesystem,
-            Ok(None) => {
-                return Ok(FsFacts {
-                    name: "unknown".into(),
-                    local: false,
-                    supported: false,
-                });
-            }
-            Err(_) => {
-                return Ok(FsFacts {
-                    name: "unknown".into(),
-                    local: false,
-                    supported: false,
-                });
+        let (filesystem, mount_options) = match mount_filesystem(path) {
+            Ok(Some(facts)) => facts,
+            Ok(None) | Err(_) => {
+                return Ok(linux_facts(b"unknown", 0, b""));
             }
         };
-        let name = String::from_utf8_lossy(&filesystem).into_owned();
-        let local = matches!(
-            name.as_str(),
-            "ext2" | "ext3" | "ext4" | "xfs" | "btrfs" | "f2fs" | "tmpfs" | "overlay"
-        );
-        let magic_matches = match name.as_str() {
-            "ext4" => stat.f_type as u64 == EXT4_SUPER_MAGIC,
-            "xfs" => stat.f_type as u64 == XFS_SUPER_MAGIC,
-            "btrfs" => stat.f_type as u64 == BTRFS_SUPER_MAGIC,
-            _ => false,
-        };
-        if matches!(name.as_str(), "ext4" | "xfs" | "btrfs") && !magic_matches {
-            return Ok(FsFacts {
-                name: "unknown".into(),
-                local: false,
-                supported: false,
-            });
-        }
-        Ok(FsFacts {
-            name,
-            local,
-            supported: false,
-        })
+        Ok(linux_facts(&filesystem, stat.f_type as u64, &mount_options))
     }
 }
 
 #[cfg(target_os = "linux")]
-fn mount_filesystem(path: &Path) -> io::Result<Option<Vec<u8>>> {
+fn linux_facts(name: &[u8], filesystem_magic: u64, mount_options: &[u8]) -> FsFacts {
+    const EXT4_SUPER_MAGIC: u64 = 0xef53;
+    const XFS_SUPER_MAGIC: u64 = 0x5846_5342;
+    const BTRFS_SUPER_MAGIC: u64 = 0x9123_683e;
+
+    let name = String::from_utf8_lossy(name).into_owned();
+    let local = matches!(
+        name.as_str(),
+        "ext2" | "ext3" | "ext4" | "xfs" | "btrfs" | "f2fs" | "tmpfs" | "overlay"
+    );
+    let expected_magic = match name.as_str() {
+        "ext4" => Some(EXT4_SUPER_MAGIC),
+        "xfs" => Some(XFS_SUPER_MAGIC),
+        "btrfs" => Some(BTRFS_SUPER_MAGIC),
+        _ => None,
+    };
+    if expected_magic.is_some_and(|expected| filesystem_magic != expected) {
+        return FsFacts {
+            name: "unknown".into(),
+            local: false,
+            supported: false,
+        };
+    }
+    FsFacts {
+        supported: local
+            && name == "ext4"
+            && expected_magic == Some(filesystem_magic)
+            && !mount_options
+                .split(|byte| *byte == b',')
+                .any(|option| option == b"ro"),
+        name,
+        local,
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_tests {
+    use super::linux_facts;
+
+    #[test]
+    fn ext4_is_the_only_supported_linux_journal_filesystem() {
+        assert!(linux_facts(b"ext4", 0xef53, b"rw,relatime").supported);
+        assert!(!linux_facts(b"xfs", 0x5846_5342, b"rw,relatime").supported);
+        assert!(!linux_facts(b"btrfs", 0x9123_683e, b"rw,relatime").supported);
+        assert!(!linux_facts(b"overlay", 0, b"rw,relatime").supported);
+    }
+
+    #[test]
+    fn read_only_or_mismatched_ext4_facts_are_not_supported() {
+        assert!(!linux_facts(b"ext4", 0xef53, b"ro,relatime").supported);
+        let facts = linux_facts(b"ext4", 0, b"rw,relatime");
+        assert_eq!(facts.name, "unknown");
+        assert!(!facts.local && !facts.supported);
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn mount_filesystem(path: &Path) -> io::Result<Option<(Vec<u8>, Vec<u8>)>> {
     use std::io::Read;
     use std::os::unix::ffi::OsStrExt;
 
@@ -154,7 +174,7 @@ fn mount_filesystem(path: &Path) -> io::Result<Option<Vec<u8>>> {
             "mount inventory exceeds the read limit",
         ));
     }
-    let mut best: Option<(usize, Vec<u8>)> = None;
+    let mut best: Option<(usize, Vec<u8>, Vec<u8>)> = None;
     for line in mounts
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
@@ -166,7 +186,9 @@ fn mount_filesystem(path: &Path) -> io::Result<Option<Vec<u8>>> {
         let Some(separator) = fields.iter().position(|field| *field == b"-") else {
             continue;
         };
-        let (Some(mount), Some(filesystem)) = (fields.get(4), fields.get(separator + 1)) else {
+        let (Some(mount), Some(options), Some(filesystem)) =
+            (fields.get(4), fields.get(5), fields.get(separator + 1))
+        else {
             continue;
         };
         let Some(mount) = decode_mount_path(mount) else {
@@ -180,11 +202,11 @@ fn mount_filesystem(path: &Path) -> io::Result<Option<Vec<u8>>> {
                     .strip_prefix(mount.as_slice())
                     .is_some_and(|rest| rest.starts_with(b"/"))
         };
-        if below_mount && best.as_ref().is_none_or(|(length, _)| mount.len() > *length) {
-            best = Some((mount.len(), filesystem.to_vec()));
+        if below_mount && best.as_ref().is_none_or(|(length, _, _)| mount.len() > *length) {
+            best = Some((mount.len(), filesystem.to_vec(), options.to_vec()));
         }
     }
-    Ok(best.map(|(_, filesystem)| filesystem))
+    Ok(best.map(|(_, filesystem, options)| (filesystem, options)))
 }
 
 #[cfg(target_os = "linux")]
