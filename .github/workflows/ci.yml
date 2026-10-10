@@ -40,7 +40,7 @@ jobs:
           sudo loginctl enable-linger "$USER"
           sudo systemctl start "user@$(id -u).service"
           export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-          systemd-run --user --scope --wait env AGENTDUST_REQUIRE_SYSTEMD_PIDFD=1 cargo test --locked -p agentdust --test linux_pidfd
+          systemd-run --user --scope env AGENTDUST_REQUIRE_SYSTEMD_PIDFD=1 cargo test --locked -p agentdust --test linux_pidfd
       - name: Check Linux TCP listener identity
         run: cargo test --locked -p agentdust --test linux_port
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -96,7 +96,7 @@ jobs:
           systemctl --user disable --now agentdust-automatic.service
           rm "$HOME/.config/systemd/user/agentdust-automatic.service"
           systemctl --user daemon-reload
-          systemd-run --user --scope --wait env TMPDIR="$mount_point/tmp" AGENTDUST_EXT4_TEST_ROOT="$mount_point" AGENTDUST_FIXTURE_SLEEPER="$GITHUB_WORKSPACE/target/debug/fixture-sleeper" cargo test --locked -p agentdust --test linux_automatic -- --ignored --test-threads=1
+          systemd-run --user --scope env TMPDIR="$mount_point/tmp" AGENTDUST_EXT4_TEST_ROOT="$mount_point" AGENTDUST_FIXTURE_SLEEPER="$GITHUB_WORKSPACE/target/debug/fixture-sleeper" cargo test --locked -p agentdust --test linux_automatic -- --ignored --test-threads=1
           sudo mount -o remount,ro "$mount_point"
           AGENTDUST_EXT4_TEST_ROOT="$mount_point" cargo test --locked -p agentdust-core --test linux_journal_ext4 -- --ignored read_only_ext4_mount_is_not_supported
           AGENTDUST_EXT4_TEST_ROOT="$mount_point" cargo test --locked -p agentdust --test linux_setup_ext4 -- --ignored read_only_ext4_refuses_setup_checks_and_hook_writes_but_allows_removal
