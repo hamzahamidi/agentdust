@@ -153,11 +153,31 @@ impl AncestryProvider for DarwinProvider {
     }
 
     fn script_argument(&self, pid: i32) -> io::Result<Option<Vec<u8>>> {
+        let Some(identity) = process_info(pid, &self.boot_session_uuid)?.map(|info| info.identity) else {
+            return Ok(None);
+        };
+        self.script_argument_for(&identity)
+    }
+
+    fn script_argument_for(&self, identity: &KernelIdentity) -> io::Result<Option<Vec<u8>>> {
+        if !matches!(
+            process_info(identity.pid, &self.boot_session_uuid)?,
+            Some(info) if info.identity == *identity
+        ) {
+            return Ok(None);
+        }
+        let pid = identity.pid;
         let Some(buf) = procargs2(pid)? else {
             return Ok(None);
         };
         let script =
             procargs::script_argument(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let Some(after) = process_info(pid, &self.boot_session_uuid)? else {
+            return Ok(None);
+        };
+        if after.identity != *identity {
+            return Ok(None);
+        }
         Ok(script.map(<[u8]>::to_vec))
     }
 }

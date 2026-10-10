@@ -46,7 +46,7 @@ impl Unavailable {
             }
             Unavailable::UnsupportedFilesystem(name) => {
                 format!(
-                    "the data directory is on a volume that is not local APFS ({})",
+                    "the data directory uses an unsupported filesystem ({})",
                     escape(name)
                 )
             }
@@ -197,7 +197,7 @@ struct OwnedView {
 }
 
 #[derive(Serialize)]
-struct LaunchdView {
+struct ManagedView {
     available: bool,
 }
 
@@ -205,7 +205,10 @@ struct LaunchdView {
 struct JsonView<'a> {
     version: u32,
     owned_classes: OwnedView,
-    launchd: LaunchdView,
+    #[cfg(target_os = "linux")]
+    cgroup_unit_evidence: ManagedView,
+    #[cfg(not(target_os = "linux"))]
+    launchd: ManagedView,
     sessions: &'a SessionSummary,
     unexplained_tags: usize,
     counts: &'a Counts,
@@ -285,7 +288,12 @@ impl Diagnosis {
                 available: self.owned.is_none(),
                 reason: self.owned.as_ref().map(Unavailable::code),
             },
-            launchd: LaunchdView {
+            #[cfg(target_os = "linux")]
+            cgroup_unit_evidence: ManagedView {
+                available: self.launchd_available,
+            },
+            #[cfg(not(target_os = "linux"))]
+            launchd: ManagedView {
                 available: self.launchd_available,
             },
             sessions: &self.sessions,
@@ -298,15 +306,30 @@ impl Diagnosis {
 
     pub fn render(&self, live: &dyn LiveDetails) -> String {
         let mut out = String::from("agentdust doctor\n");
+        #[cfg(target_os = "linux")]
+        out.push_str("mode: read only, cleanup is unavailable on Linux\n");
         let _ = writeln!(out, "processes: {} seen", self.processes_seen);
         let _ = writeln!(out, "journal: {}", self.journal_line());
+        let (inventory_name, available_text, unavailable_text) = if cfg!(target_os = "linux") {
+            (
+                "systemd cgroup evidence (heuristic)",
+                "unit paths read",
+                "unit path inventory unavailable, so managed process classification is incomplete",
+            )
+        } else {
+            (
+                "launchd",
+                "PID list read",
+                "PID list unavailable, so no process can be offered for cleanup",
+            )
+        };
         let _ = writeln!(
             out,
-            "launchd: {}",
+            "{inventory_name}: {}",
             if self.launchd_available {
-                "PID list read"
+                available_text
             } else {
-                "PID list unavailable, so no process can be offered for cleanup"
+                unavailable_text
             }
         );
         let counts = &self.counts;

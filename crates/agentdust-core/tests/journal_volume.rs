@@ -216,7 +216,7 @@ mod on_macos {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 #[test]
 fn off_macos_the_system_probe_reports_an_unsupported_unknown_volume() {
     use agentdust_core::journal::volume::SystemVolume;

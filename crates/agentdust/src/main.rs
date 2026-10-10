@@ -1,15 +1,41 @@
+#[cfg(not(target_os = "linux"))]
 mod apply;
+#[cfg(not(target_os = "linux"))]
 mod automatic;
+#[cfg(not(target_os = "linux"))]
 mod disk;
 mod doctor;
+#[cfg(not(target_os = "linux"))]
 mod hook;
+#[cfg(not(target_os = "linux"))]
 mod metrics;
+#[cfg(not(target_os = "linux"))]
 mod port;
+#[cfg(not(target_os = "linux"))]
 mod setup;
+#[cfg(not(target_os = "linux"))]
 mod status;
 
 use std::process::ExitCode;
 
+#[cfg(target_os = "linux")]
+fn main() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+        ["doctor"] => doctor::run(false),
+        ["doctor", "--json"] => doctor::run(true),
+        ["version"] => {
+            println!("agentdust {}", env!("CARGO_PKG_VERSION"));
+            ExitCode::SUCCESS
+        }
+        _ => {
+            eprintln!("Linux currently supports read-only process diagnosis and version reporting.");
+            ExitCode::from(2)
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
 fn main() -> ExitCode {
     if std::env::args_os().nth(1).is_some_and(|arg| arg == "hook") {
         hook::run();
@@ -47,6 +73,7 @@ fn main() -> ExitCode {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
 fn mcp() -> ExitCode {
     let runtime = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
         Ok(runtime) => runtime,

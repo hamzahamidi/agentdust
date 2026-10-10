@@ -17,6 +17,9 @@ fn an_absolute_override_is_used_as_is() {
 #[test]
 fn an_empty_override_counts_as_unset() {
     let dir = resolve_data_dir(Some(OsStr::new("")), home()).unwrap();
+    #[cfg(target_os = "linux")]
+    assert_eq!(dir, Path::new("/Users/a/.local/share/agentdust"));
+    #[cfg(not(target_os = "linux"))]
     assert_eq!(dir, Path::new("/Users/a/Library/Application Support/agentdust"));
 }
 
