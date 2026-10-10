@@ -1,7 +1,7 @@
 use std::process::Child;
 
 pub mod fixture;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub mod harness;
 pub mod report;
 pub mod spec;

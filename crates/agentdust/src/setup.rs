@@ -8,6 +8,8 @@ use std::time::Duration;
 use agentdust_agents::claude_setup::{self, InstallOutcome, RemoveOutcome, SetupEnv};
 use agentdust_agents::hook_config::stable_exe;
 use agentdust_agents::native_cli::{CliRunner, SystemRunner};
+#[cfg(target_os = "linux")]
+use agentdust_core::journal::volume::{self, SystemVolume};
 use agentdust_core::paths;
 
 const USAGE: &str = "usage: agentdust setup [codex] [--check | --remove] [--yes]";
@@ -117,29 +119,110 @@ pub fn run(args: &[&str]) -> ExitCode {
         );
         return ExitCode::FAILURE;
     }
+    #[cfg(target_os = "linux")]
+    return run_linux(options);
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        if options.codex {
+            return run_codex(options);
+        }
+        let context = match Context::detect() {
+            Ok(context) => context,
+            Err(err) => {
+                eprintln!("agentdust setup: {err}");
+                return ExitCode::FAILURE;
+            }
+        };
+        let env = context.env();
+        let mut ask = |plan: &str| -> bool {
+            println!("{plan}");
+            if options.yes {
+                return true;
+            }
+            let mut stdout = io::stdout();
+            claude_setup::ask_yes_no(
+                &mut io::stdin().lock(),
+                &mut stdout,
+                "Apply these changes? [y/N] ",
+            )
+            .unwrap_or(false)
+        };
+        match options.mode {
+            Mode::Check => {
+                let report = claude_setup::check(&env, true);
+                print!("{}", report.render());
+                exit(report.ok())
+            }
+            Mode::Install => match claude_setup::install(&env, &mut ask) {
+                Ok(InstallOutcome::Nothing { text, complete }) => {
+                    print!("{text}");
+                    exit(complete)
+                }
+                Ok(InstallOutcome::Declined) => declined(),
+                Ok(InstallOutcome::Applied(report)) => {
+                    if report.succeeded() {
+                        print!("{}", report.render());
+                    } else {
+                        eprint!("{}", report.render());
+                    }
+                    exit(report.succeeded())
+                }
+                Err(err) => failed(&err.to_string()),
+            },
+            Mode::Remove => match claude_setup::remove(&env, &mut ask) {
+                Ok(RemoveOutcome::Nothing { text }) => {
+                    print!("{text}");
+                    ExitCode::SUCCESS
+                }
+                Ok(RemoveOutcome::Declined) => declined(),
+                Ok(RemoveOutcome::Applied(report)) => {
+                    if report.complete {
+                        print!("{}", report.text);
+                    } else {
+                        eprint!("{}", report.text);
+                    }
+                    exit(report.complete)
+                }
+                Err(err) => failed(&err.to_string()),
+            },
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn run_linux(options: Options) -> ExitCode {
+    let data_dir = match paths::data_dir() {
+        Ok(dir) => dir,
+        Err(err) => return failed(&err.to_string()),
+    };
+    if options.mode != Mode::Remove
+        && let Err(err) = check_linux_data_volume(&data_dir)
+    {
+        return failed(&err);
+    }
     if options.codex {
         return run_codex(options);
     }
     let context = match Context::detect() {
         Ok(context) => context,
-        Err(err) => {
-            eprintln!("agentdust setup: {err}");
-            return ExitCode::FAILURE;
-        }
+        Err(err) => return failed(&err),
     };
     let env = context.env();
     let mut ask = |plan: &str| -> bool {
         println!("{plan}");
-        if options.yes {
-            return true;
-        }
-        let mut stdout = io::stdout();
-        claude_setup::ask_yes_no(
-            &mut io::stdin().lock(),
-            &mut stdout,
-            "Apply these changes? [y/N] ",
-        )
-        .unwrap_or(false)
+        let approved = if options.yes {
+            true
+        } else {
+            let mut stdout = io::stdout();
+            claude_setup::ask_yes_no(
+                &mut io::stdin().lock(),
+                &mut stdout,
+                "Apply these changes? [y/N] ",
+            )
+            .unwrap_or(false)
+        };
+        approved && confirm_setup_volume(options.mode, &data_dir)
     };
     match options.mode {
         Mode::Check => {
@@ -182,6 +265,32 @@ pub fn run(args: &[&str]) -> ExitCode {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn check_linux_data_volume(data_dir: &std::path::Path) -> Result<(), String> {
+    match volume::locate(&SystemVolume, data_dir) {
+        Ok(facts) if facts.supported => Ok(()),
+        Ok(facts) => Err(format!(
+            "the data directory requires writable ext4; found {}",
+            facts.describe()
+        )),
+        Err(err) => Err(format!("cannot verify the data directory filesystem: {err}")),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn confirm_linux_setup_volume(mode: Mode, data_dir: &std::path::Path) -> bool {
+    if mode == Mode::Remove {
+        return true;
+    }
+    match check_linux_data_volume(data_dir) {
+        Ok(()) => true,
+        Err(err) => {
+            eprintln!("agentdust setup: {err}");
+            false
+        }
+    }
+}
+
 fn exit(success: bool) -> ExitCode {
     if success {
         ExitCode::SUCCESS
@@ -200,6 +309,16 @@ fn failed(reason: &str) -> ExitCode {
     ExitCode::FAILURE
 }
 
+#[cfg(target_os = "linux")]
+fn confirm_setup_volume(mode: Mode, data_dir: &std::path::Path) -> bool {
+    confirm_linux_setup_volume(mode, data_dir)
+}
+
+#[cfg(target_os = "macos")]
+fn confirm_setup_volume(_mode: Mode, _data_dir: &std::path::Path) -> bool {
+    true
+}
+
 fn run_codex(options: Options) -> ExitCode {
     use agentdust_agents::codex_setup::{self, Mode as CodexMode};
     let result = (|| -> Result<(String, bool), String> {
@@ -210,7 +329,33 @@ fn run_codex(options: Options) -> ExitCode {
         if !config_dir.is_absolute() {
             return Err("CODEX_HOME must be absolute".into());
         }
-        let cli = find_on_path("codex").ok_or("Codex CLI was not found on PATH")?;
+        let Some(cli) = find_on_path("codex") else {
+            if options.mode != Mode::Remove {
+                return Err("Codex CLI was not found on PATH".into());
+            }
+            let env = codex_setup::HooksOnlySetupEnv {
+                config_dir,
+                data_dir: paths::data_dir().map_err(|e| e.to_string())?,
+                exe: stable_exe(&std::env::current_exe().map_err(|e| e.to_string())?),
+            };
+            let (text, complete) = codex_setup::run_hooks_only(&env, CodexMode::Remove, &mut |plan| {
+                println!("{plan}");
+                let approved = options.yes
+                    || claude_setup::ask_yes_no(
+                        &mut io::stdin().lock(),
+                        &mut io::stdout(),
+                        "Remove these Codex hooks? [y/N] ",
+                    )
+                    .unwrap_or(false);
+                approved && confirm_setup_volume(options.mode, &env.data_dir)
+            })?;
+            return Ok((
+                format!(
+                    "{text}Codex MCP configuration was left untouched because the Codex CLI is unavailable.\n"
+                ),
+                complete,
+            ));
+        };
         let runner = SystemRunner::for_codex(cli, config_dir.clone(), CLI_TIMEOUT);
         let exe = stable_exe(&std::env::current_exe().map_err(|e| e.to_string())?);
         let env = codex_setup::SetupEnv {
@@ -226,13 +371,14 @@ fn run_codex(options: Options) -> ExitCode {
         };
         codex_setup::run(&env, mode, &mut |plan| {
             println!("{plan}");
-            options.yes
+            let approved = options.yes
                 || claude_setup::ask_yes_no(
                     &mut io::stdin().lock(),
                     &mut io::stdout(),
                     "Apply these changes? [y/N] ",
                 )
-                .unwrap_or(false)
+                .unwrap_or(false);
+            approved && confirm_setup_volume(options.mode, &env.data_dir)
         })
     })();
     match result {

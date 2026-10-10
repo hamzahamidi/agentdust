@@ -1,5 +1,7 @@
 use std::io;
 
+use crate::identity::ProcessIdentity;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignalResult {
     Delivered,
@@ -10,6 +12,10 @@ pub enum SignalResult {
 
 pub trait Signaller: Send + Sync {
     fn sigterm(&self, pid: i32) -> SignalResult;
+
+    fn sigterm_identity(&self, identity: &ProcessIdentity) -> SignalResult {
+        self.sigterm(identity.kernel.pid)
+    }
 }
 
 pub const fn signalable(pid: i32) -> bool {

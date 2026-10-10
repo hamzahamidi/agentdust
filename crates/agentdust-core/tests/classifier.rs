@@ -38,6 +38,12 @@ fn evidence_names_are_dotted_and_unique() {
         assert!(seen.insert(name), "{name}");
         assert_eq!(serde_json::to_string(&evidence).unwrap(), format!("\"{name}\""));
     }
+    #[cfg(target_os = "linux")]
+    assert_eq!(
+        Evidence::ManagedLaunchd.as_str(),
+        "managed.cgroup_unit_path_heuristic"
+    );
+    #[cfg(not(target_os = "linux"))]
     assert_eq!(Evidence::ManagedLaunchd.as_str(), "managed.launchd");
     assert_eq!(Evidence::SuspectIdle.as_str(), "suspect.idle");
 }

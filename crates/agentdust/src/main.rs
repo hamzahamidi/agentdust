@@ -1,15 +1,48 @@
 mod apply;
 mod automatic;
+#[cfg(not(target_os = "linux"))]
 mod disk;
 mod doctor;
 mod hook;
 mod metrics;
 mod port;
 mod setup;
+#[cfg(not(target_os = "linux"))]
 mod status;
 
 use std::process::ExitCode;
 
+#[cfg(target_os = "linux")]
+fn main() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|arg| arg == "hook") {
+        hook::run();
+        return ExitCode::SUCCESS;
+    }
+    match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+        ["setup", rest @ ..] => setup::run(rest),
+        ["apply"] => apply::run(),
+        ["auto", rest @ ..] => automatic::run(rest),
+        ["port", rest @ ..] => port::run(rest),
+        ["metrics"] => metrics::run(false),
+        ["metrics", "--json"] => metrics::run(true),
+        ["mcp"] => mcp(),
+        ["doctor"] => doctor::run(false),
+        ["doctor", "--json"] => doctor::run(true),
+        ["version"] => {
+            println!("agentdust {}", env!("CARGO_PKG_VERSION"));
+            ExitCode::SUCCESS
+        }
+        _ => {
+            eprintln!(
+                "Linux enables diagnosis, Claude Code and Codex setup, MCP tools, foreground apply, opt-in automatic cleanup, metrics, and current-user TCP port diagnosis on writable ext4. Disk reports are unavailable."
+            );
+            ExitCode::from(2)
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
 fn main() -> ExitCode {
     if std::env::args_os().nth(1).is_some_and(|arg| arg == "hook") {
         hook::run();

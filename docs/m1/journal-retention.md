@@ -140,7 +140,7 @@ The mutation checks below were run once each, and each makes the named tests fai
 - A line of an unknown kind is kept for ever, because retention cannot tell its session or its age.
 - A symlink, a hard link or a loose mode on one generation stops every run until a person removes it. That is the refusal of spec 7.3 and it is a standing denial of retention for whoever can plant a file, which is out of scope under spec 7.4.
 - Rotation and retention sync the replacement and the directory. A crash was simulated by planting the files each crash point leaves, and no power was pulled.
-- The tests that need a real APFS volume are macOS only. The Linux job compiles and lints `agentdust-core` and `agentdust-testkit` for `x86_64-unknown-linux-gnu`, and the platform independent tests use `FixedVolume`. They were not run on Linux here.
+- The APFS-specific checks run on macOS. Linux CI runs the core suite and the ext4 journal matrix as an unprivileged user; platform-independent tests also use `FixedVolume`.
 - No network volume was available.
 
 ## Where this differs from the spec

@@ -81,7 +81,13 @@ impl Evidence {
             Evidence::ManagedAncestor => "managed.deny.ancestor",
             Evidence::ManagedAgent => "managed.deny.agent",
             Evidence::ManagedSystemPath => "managed.deny.system_path",
+            #[cfg(target_os = "linux")]
+            Evidence::ManagedLaunchd => "managed.cgroup_unit_path_heuristic",
+            #[cfg(not(target_os = "linux"))]
             Evidence::ManagedLaunchd => "managed.launchd",
+            #[cfg(target_os = "linux")]
+            Evidence::ManagedLaunchdChild => "managed.cgroup_child_unit_path_heuristic",
+            #[cfg(not(target_os = "linux"))]
             Evidence::ManagedLaunchdChild => "managed.launchd_child",
             Evidence::OwnedTag => "owned.tag",
             Evidence::OwnedAgentAlive => "owned.agent_alive",
@@ -90,10 +96,16 @@ impl Evidence {
             Evidence::TagUnmatched => "tag.unmatched",
             Evidence::TagUnverifiable => "tag.unverifiable",
             Evidence::TagDegraded => "tag.degraded_session",
+            #[cfg(target_os = "linux")]
+            Evidence::SuspectParentLaunchd => "suspect.parent_init",
+            #[cfg(not(target_os = "linux"))]
             Evidence::SuspectParentLaunchd => "suspect.parent_launchd",
             Evidence::SuspectSameUser => "suspect.same_user",
             Evidence::SuspectAge => "suspect.age",
             Evidence::SuspectIdle => "suspect.idle",
+            #[cfg(target_os = "linux")]
+            Evidence::LaunchdUnavailable => "managed.cgroup_unit_evidence_unavailable",
+            #[cfg(not(target_os = "linux"))]
             Evidence::LaunchdUnavailable => "launchd.unavailable",
             Evidence::PathUnreadable => "identity.path_unreadable",
         }

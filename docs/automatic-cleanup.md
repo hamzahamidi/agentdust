@@ -1,6 +1,6 @@
 # Automatic cleanup
 
-AgentDust `1.1.0` adds opt-in automatic cleanup for Claude Code on Apple silicon. Version `1.0.0` provides manual cleanup only. Check `agentdust version` before using these commands.
+AgentDust `1.1.0` added opt-in automatic cleanup for Claude Code on Apple silicon. Version `1.0.0` provides manual cleanup only. Version `1.7.0` adds the same Linux workflow on Ubuntu 24.04 x86_64. Check `agentdust version` before using these commands.
 
 A local worker survives Claude Code termination. It stops a helper only when the existing classifier freshly proves ownership by an ended supported session, every recorded owner process is gone, the human enabled the recorded directory, and the helper is not kept. Uncertain cases remain available through the manual approval flow.
 
@@ -103,6 +103,6 @@ Each recorded outcome is one private JSONL row with a schema version, Unix epoch
 
 The policy allows at most 128 directories and 256 keeps. The worker refuses a journal watch with more than 4,096 recorded identities. Attempt storage holds at most 16,384 outstanding receipts. Policy and report files are limited to 64 KiB. Storage failure, unsupported journal data, or unavailable ownership prevents automatic action.
 
-The LaunchAgent is installed only after opt-in at `~/Library/LaunchAgents/com.agentdust.automatic.plist`. It runs `agentdust auto worker`, retains the selected data directory and restarts on failure with launchd throttling. The worker refuses a disabled policy and only one worker can hold its lock. Installed binary paths use the same stable Homebrew path resolution as setup.
+On macOS, opt-in installs a LaunchAgent at `~/Library/LaunchAgents/com.agentdust.automatic.plist`. On Linux, opt-in installs the user unit `~/.config/systemd/user/agentdust-automatic.service` and enables it with `systemctl --user`. Both run `agentdust auto worker` with the selected data directory and restart after failure. Linux automatic cleanup needs a running systemd user manager and a writable ext4 data directory. The worker refuses a disabled policy and only one worker can hold its lock. Installed binary paths use the stable Homebrew path on macOS and the selected global npm binary on Linux.
 
 Programs running as the same user can manipulate that user's files or signal processes directly. CLI checks and MCP permissions constrain AgentDust's supported interfaces; they do not create a security boundary against arbitrary same-user shell access.

@@ -18,6 +18,10 @@ pub trait AncestryProvider: ProcessProvider {
     fn parent(&self, identity: &KernelIdentity) -> io::Result<Option<i32>>;
 
     fn script_argument(&self, pid: i32) -> io::Result<Option<Vec<u8>>>;
+
+    fn script_argument_for(&self, identity: &KernelIdentity) -> io::Result<Option<Vec<u8>>> {
+        self.script_argument(identity.pid)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,7 +96,7 @@ fn anchor<P: AncestryProvider + ?Sized>(
     if agent != Agent::Claude || !is_node(path) {
         return None;
     }
-    let script = provider.script_argument(identity.kernel.pid).ok().flatten()?;
+    let script = provider.script_argument_for(&identity.kernel).ok().flatten()?;
     script_names_agent(&script).then_some(Anchor::NodeScript)
 }
 

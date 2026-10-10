@@ -7,11 +7,15 @@ use std::sync::Arc;
 use agentdust_core::ancestry::find_agent;
 use agentdust_core::apply::exec::{Deps, Settings};
 use agentdust_core::apply::server::{Call, Response, Server};
+#[cfg(target_os = "macos")]
 use agentdust_core::apply::signal::KillSignaller;
+use agentdust_core::apply::signal::Signaller;
 use agentdust_core::apply::timer::SystemTimer;
-use agentdust_core::darwin::DarwinProvider;
+#[cfg(target_os = "linux")]
+use agentdust_core::linux::LinuxPidfdSignaller;
 use agentdust_core::live::LiveSurveyor;
 use agentdust_core::paths;
+use agentdust_core::platform::Provider;
 
 pub fn run() -> ExitCode {
     match execute() {
@@ -40,7 +44,8 @@ fn execute() -> io::Result<()> {
         ));
     }
     let data_dir = paths::data_dir()?;
-    let provider = DarwinProvider::new()?;
+    require_supported_volume(&data_dir)?;
+    let provider = Provider::new()?;
     if find_agent(&provider, std::process::id() as i32).is_some() {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
@@ -48,12 +53,16 @@ fn execute() -> io::Result<()> {
         ));
     }
     let surveyor = Arc::new(LiveSurveyor::new(&data_dir));
+    #[cfg(target_os = "macos")]
+    let signaller: Box<dyn Signaller> = Box::new(KillSignaller);
+    #[cfg(target_os = "linux")]
+    let signaller: Box<dyn Signaller> = Box::new(LinuxPidfdSignaller::new()?);
     let server = Server::new(
         Deps {
             data_dir,
             surveyor: surveyor.clone(),
             provider: Box::new(provider),
-            signaller: Box::new(KillSignaller),
+            signaller,
             timer: Arc::new(SystemTimer::new()),
         },
         Settings::default(),
@@ -93,5 +102,26 @@ fn execute() -> io::Result<()> {
     let report = server.run(&call, &mut ask).map_err(io::Error::other)?;
     serde_json::to_writer_pretty(terminal.get_mut(), &report)?;
     writeln!(terminal.get_mut())?;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn require_supported_volume(data_dir: &std::path::Path) -> io::Result<()> {
+    use agentdust_core::journal::volume::{self, SystemVolume};
+
+    match volume::locate(&SystemVolume, data_dir) {
+        Ok(facts) if facts.supported => Ok(()),
+        Ok(facts) => Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            format!("apply requires writable ext4; found {}", facts.describe()),
+        )),
+        Err(error) => Err(io::Error::other(format!(
+            "cannot verify apply data volume: {error}"
+        ))),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn require_supported_volume(_data_dir: &std::path::Path) -> io::Result<()> {
     Ok(())
 }

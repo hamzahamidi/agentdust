@@ -1,7 +1,7 @@
 mod support;
-use agentdust_agents::codex_setup::{self, Mode, SetupEnv};
+use agentdust_agents::codex_setup::{self, HooksOnlySetupEnv, Mode, SetupEnv};
 use agentdust_agents::native_cli::{CliError, CliOutput, CliRunner};
-use agentdust_core::manifest;
+use agentdust_core::manifest::{self, Entry, Manifest, Origin, Resource};
 use serde_json::json;
 use std::cell::{Cell, RefCell};
 use std::fs;
@@ -154,4 +154,110 @@ fn preexisting_codex_mcp_registration_survives_removal() {
     codex_setup::run(&env, Mode::Install, &mut |_| true).unwrap();
     codex_setup::run(&env, Mode::Remove, &mut |_| true).unwrap();
     assert!(runner.registered.get());
+}
+
+#[test]
+fn hooks_only_setup_preserves_mcp_configuration_and_manifest_without_a_cli() {
+    let dir = TempDir::new("codex-hooks-only");
+    let config_dir = dir.join("codex");
+    let data_dir = dir.join("data");
+    fs::create_dir(&config_dir).unwrap();
+    let config = "[mcp_servers.agentdust]\ncommand = '/opt/agentdust'\nargs = ['mcp']\n";
+    fs::write(config_dir.join("config.toml"), config).unwrap();
+    let mcp = Entry {
+        resource: Resource::McpServer,
+        target: config_dir.join("config.toml").to_string_lossy().into_owned(),
+        key: "agentdust".into(),
+        origin: Origin::PreExisting,
+        command: "/opt/agentdust".into(),
+        args: vec!["mcp".into()],
+        hash: "00".repeat(32),
+        created_hooks_key: false,
+        created_event_key: false,
+    };
+    manifest::store(
+        &data_dir,
+        &Manifest {
+            entries: vec![mcp.clone()],
+            ..Manifest::new()
+        },
+    )
+    .unwrap();
+    let env = HooksOnlySetupEnv {
+        config_dir: config_dir.clone(),
+        data_dir: data_dir.clone(),
+        exe: "/opt/agentdust".into(),
+    };
+
+    assert!(
+        codex_setup::run_hooks_only(&env, Mode::Install, &mut |_| true)
+            .unwrap()
+            .1
+    );
+    assert!(
+        codex_setup::run_hooks_only(&env, Mode::Check, &mut |_| panic!("check asks consent"))
+            .unwrap()
+            .1
+    );
+    assert_eq!(
+        fs::read_to_string(config_dir.join("config.toml")).unwrap(),
+        config
+    );
+    assert!(manifest::load(&data_dir).unwrap().unwrap().entries.contains(&mcp));
+    assert!(
+        codex_setup::run_hooks_only(&env, Mode::Remove, &mut |_| true)
+            .unwrap()
+            .1
+    );
+    assert_eq!(
+        fs::read_to_string(config_dir.join("config.toml")).unwrap(),
+        config
+    );
+    assert_eq!(manifest::load(&data_dir).unwrap().unwrap().entries, vec![mcp]);
+}
+
+#[test]
+fn removal_without_an_ownership_manifest_preserves_user_files_and_creates_no_state() {
+    let dir = TempDir::new("codex-remove-unowned");
+    let runner = Codex::default();
+    runner.registered.set(true);
+    let env = env(&dir, &runner);
+    fs::create_dir(&env.config_dir).unwrap();
+    let hooks =
+        "{\"hooks\":{\"SessionStart\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"user-hook\"}]}]}}\n";
+    let config = "[mcp_servers.agentdust]\ncommand = '/opt/user-agentdust'\nargs = ['mcp']\n";
+    fs::write(env.config_dir.join("hooks.json"), hooks).unwrap();
+    fs::write(env.config_dir.join("config.toml"), config).unwrap();
+
+    assert!(
+        codex_setup::run(&env, Mode::Remove, &mut |_| panic!(
+            "unowned setup asks for no changes"
+        ))
+        .unwrap()
+        .1
+    );
+    assert!(
+        codex_setup::run_hooks_only(
+            &HooksOnlySetupEnv {
+                config_dir: env.config_dir.clone(),
+                data_dir: env.data_dir.clone(),
+                exe: env.exe.clone(),
+            },
+            Mode::Remove,
+            &mut |_| panic!("unowned setup asks for no changes"),
+        )
+        .unwrap()
+        .1
+    );
+    assert!(runner.registered.get());
+    assert!(runner.calls.borrow().is_empty());
+    assert_eq!(
+        fs::read_to_string(env.config_dir.join("hooks.json")).unwrap(),
+        hooks
+    );
+    assert_eq!(
+        fs::read_to_string(env.config_dir.join("config.toml")).unwrap(),
+        config
+    );
+    assert!(!env.data_dir.exists());
 }

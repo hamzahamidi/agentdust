@@ -2,7 +2,7 @@
 
 Spec 9.2 lists a live layer that "spawns real process trees and signals only PIDs it created". S8 asks for "SIGTERM only, one exact PID, no group, no SIGKILL" and reads it from a signal log. This page describes the code that provides both, in `agentdust-testkit`.
 
-The harness (`agentdust_testkit::harness`) exists on macOS only, because it reads kernel identities through `agentdust_core::darwin`. The fixture binary, its argument grammar (`spec`), its report format (`report`) and `wait_until` build and test on Linux too.
+The harness (`agentdust_testkit::harness`) uses the shared process provider on macOS and Linux, then revalidates each registered process identity before it signals that PID. The fixture binary, its argument grammar (`spec`), its report format (`report`) and `wait_until` build on both platforms.
 
 ## The fixture process
 

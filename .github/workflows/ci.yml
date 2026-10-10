@@ -29,6 +29,98 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --exclude agentdust --all-targets --locked -- -D warnings
       - run: cargo test --workspace --exclude agentdust --locked
+      - name: Lint the Linux CLI
+        run: cargo clippy --locked -p agentdust --bin agentdust --test linux_cli --test linux_setup_ext4 --test linux_pidfd --test linux_port --test linux_automatic -- -D warnings
+      - name: Check Linux service unit handling
+        run: cargo test --locked -p agentdust --bin agentdust systemd_tests
+      - name: Check the Linux read only CLI contract
+        run: cargo test --locked -p agentdust --test linux_cli
+      - name: Check the Linux pidfd action path
+        run: |
+          sudo loginctl enable-linger "$USER"
+          sudo systemctl start "user@$(id -u).service"
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          systemd-run --user --scope env AGENTDUST_REQUIRE_SYSTEMD_PIDFD=1 cargo test --locked -p agentdust --test linux_pidfd
+      - name: Check Linux TCP listener identity
+        run: |
+          cargo test --locked -p agentdust --test linux_port --no-run --message-format=json > "$RUNNER_TEMP/linux-port-build.json"
+          built_test_binary="$(python3 - "$RUNNER_TEMP/linux-port-build.json" <<'PY'
+          import json
+          import sys
+
+          for line in open(sys.argv[1], encoding="utf-8"):
+              record = json.loads(line)
+              target = record.get("target", {})
+              if record.get("reason") == "compiler-artifact" and target.get("name") == "linux_port" and "test" in target.get("kind", []):
+                  print(record["executable"])
+                  break
+          else:
+              raise SystemExit("linux_port test binary was not built")
+          PY
+          )"
+          test_binary="$(mktemp /tmp/agentdust-linux-port.XXXXXX)"
+          trap 'rm -f "$test_binary"' EXIT
+          install -m 755 "$built_test_binary" "$test_binary"
+          docker run --rm --volume "$test_binary:/agentdust-linux-port:ro" ubuntu:24.04 /agentdust-linux-port --exact procfs_listener_inventory_returns_the_exact_current_user_process
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm install --global npm@12.1.0 --ignore-scripts
+      - name: Check the Linux npm launcher
+        run: |
+          cargo build --locked -p agentdust
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          mkdir -p npm-build/bin npm-build/vendor/linux-x64 npm-dist
+          cp npm/package.json LICENSE README.md npm-build/
+          install -m 755 npm/bin/agentdust.js npm-build/bin/agentdust.js
+          install -m 755 target/debug/agentdust npm-build/vendor/linux-x64/agentdust
+          npm --prefix npm-build version "$version" --no-git-tag-version --ignore-scripts --allow-same-version
+          npm pack ./npm-build --pack-destination npm-dist --ignore-scripts
+          npm install --global --prefix "$RUNNER_TEMP/npm-prefix" "./npm-dist/agentdust-$version.tgz" --ignore-scripts --no-audit --no-fund
+          test "$("$RUNNER_TEMP/npm-prefix/bin/agentdust" version)" = "agentdust $version"
+          cmp target/debug/agentdust npm-build/vendor/linux-x64/agentdust
+      - name: Run the journal matrix on ext4
+        run: |
+          image="$RUNNER_TEMP/agentdust-ext4.img"
+          mount_point="$RUNNER_TEMP/agentdust-ext4"
+          truncate -s 512M "$image"
+          mkfs.ext4 -F -q "$image"
+          mkdir -p "$mount_point"
+          sudo mount -o loop "$image" "$mount_point"
+          sudo chown "$USER:$USER" "$mount_point"
+          mkdir "$mount_point/tmp"
+          TMPDIR="$mount_point/tmp" cargo test --locked -p agentdust-core
+          TMPDIR="$mount_point/tmp" AGENTDUST_EXT4_TEST_ROOT="$mount_point" cargo test --locked -p agentdust-core --test linux_journal_ext4 -- --ignored ext4_journal_append_rotation_and_torn_tail_recovery
+          AGENTDUST_EXT4_TEST_ROOT="$mount_point" cargo test --locked -p agentdust --test linux_setup_ext4 -- --ignored claude_codex_setup_hooks_and_mcp_work_on_ext4
+          cargo build --locked -p agentdust -p agentdust-testkit --bins
+          sudo loginctl enable-linger "$USER"
+          sudo systemctl start "user@$(id -u).service"
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export XDG_CONFIG_HOME="$HOME/.config"
+          automatic_data="$mount_point/agentdust-automatic-service-data"
+          automatic_project="$RUNNER_TEMP/agentdust-automatic-service-project"
+          mkdir -m 700 -p "$automatic_data"
+          mkdir -p "$automatic_project"
+          AGENTDUST_DATA_DIR="$automatic_data" target/debug/agentdust auto enable --yes "$automatic_project"
+          systemctl --user is-active --quiet agentdust-automatic.service
+          ready=0
+          for attempt in {1..50}; do
+            if AGENTDUST_DATA_DIR="$automatic_data" target/debug/agentdust auto status | python3 -c 'import json,sys; assert json.load(sys.stdin)["worker_running"]'; then
+              ready=1
+              break
+            fi
+            sleep 0.1
+          done
+          test "$ready" = 1
+          systemctl --user disable --now agentdust-automatic.service
+          rm "$HOME/.config/systemd/user/agentdust-automatic.service"
+          systemctl --user daemon-reload
+          systemd-run --user --scope env TMPDIR="$mount_point/tmp" AGENTDUST_EXT4_TEST_ROOT="$mount_point" AGENTDUST_FIXTURE_SLEEPER="$GITHUB_WORKSPACE/target/debug/fixture-sleeper" cargo test --locked -p agentdust --test linux_automatic -- --ignored --test-threads=1
+          sudo mount -o remount,ro "$mount_point"
+          AGENTDUST_EXT4_TEST_ROOT="$mount_point" cargo test --locked -p agentdust-core --test linux_journal_ext4 -- --ignored read_only_ext4_mount_is_not_supported
+          AGENTDUST_EXT4_TEST_ROOT="$mount_point" cargo test --locked -p agentdust --test linux_setup_ext4 -- --ignored read_only_ext4_refuses_setup_checks_and_hook_writes_but_allows_removal
+          sudo umount "$mount_point"
       - uses: taiki-e/install-action@861a07ce7084f55488e375df125cdc99bba60eb7 # v2.87.23
         with:
           tool: cargo-deny,cargo-audit,cargo-fuzz@0.13.2
@@ -61,14 +153,16 @@ jobs:
       - name: Check the npm global installation
         run: |
           version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
-          mkdir -p npm-build/bin dist
+          mkdir -p npm-build/bin npm-build/vendor/darwin-arm64 dist
           cp npm/package.json LICENSE README.md npm-build/
-          install -m 755 target/debug/agentdust npm-build/bin/agentdust
+          install -m 755 npm/bin/agentdust.js npm-build/bin/agentdust.js
+          install -m 755 target/debug/agentdust npm-build/vendor/darwin-arm64/agentdust
           npm --prefix npm-build version "$version" --no-git-tag-version --ignore-scripts --allow-same-version
           npm pack ./npm-build --pack-destination dist --ignore-scripts
           npm install --global --prefix "$RUNNER_TEMP/npm-prefix" "./dist/agentdust-$version.tgz" --ignore-scripts --no-audit --no-fund
           test "$("$RUNNER_TEMP/npm-prefix/bin/agentdust" version)" = "agentdust $version"
-          cmp target/debug/agentdust "$RUNNER_TEMP/npm-prefix/bin/agentdust"
+          cmp target/debug/agentdust npm-build/vendor/darwin-arm64/agentdust
+          cmp target/debug/agentdust "$RUNNER_TEMP/npm-prefix/lib/node_modules/agentdust/vendor/darwin-arm64/agentdust"
       - name: Build the isolated automatic cleanup fixtures
         run: cargo build --locked -p agentdust -p agentdust-testkit --bins
       - name: Check automatic cleanup after owner exit and worker restart

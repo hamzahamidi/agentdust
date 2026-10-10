@@ -1,6 +1,6 @@
 # Codex support
 
-AgentDust 1.3.0 adds Codex process tracking and cleanup after exact host exit on Apple silicon. The adapter targets native local hooks and shell markers in Codex 0.156.1. Cloud orchestration and remote shells are outside this support claim. Claude Code disk reports remain specific to Claude Code.
+AgentDust 1.3.0 added Codex process tracking and cleanup after exact host exit on Apple silicon. Version 1.7.0 adds the same local hook integration on Ubuntu 24.04 x86_64. The adapter targets native local hooks and shell markers in Codex 0.156.1. Cloud orchestration and remote shells are outside this support claim. Claude Code disk reports remain specific to macOS.
 
 ## Install and connect
 

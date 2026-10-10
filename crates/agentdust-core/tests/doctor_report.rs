@@ -18,6 +18,25 @@ use inventory_support::{Edit, HOUR, MINUTE, NOW, SELF_PID, UID, raw};
 use scratch::private_dir;
 use serde_json::Value;
 
+fn managed_inventory_key() -> &'static str {
+    if cfg!(target_os = "linux") {
+        "cgroup_unit_evidence"
+    } else {
+        "launchd"
+    }
+}
+
+fn managed_inventory_line(available: bool) -> &'static str {
+    match (cfg!(target_os = "linux"), available) {
+        (true, true) => "systemd cgroup evidence (heuristic): unit paths read",
+        (true, false) => {
+            "systemd cgroup evidence (heuristic): unit path inventory unavailable, so managed process classification is incomplete"
+        }
+        (false, true) => "launchd: PID list read",
+        (false, false) => "launchd: PID list unavailable, so no process can be offered for cleanup",
+    }
+}
+
 #[derive(Default)]
 struct ScriptedLive {
     cwds: HashMap<i32, PathBuf>,
@@ -275,13 +294,15 @@ fn sessions_are_summarised_by_state_and_by_whether_the_agent_is_known() {
 fn the_json_has_a_fixed_shape() {
     let diagnosis = diagnose(&world(), &sessions(), &policy(), &live(), &nowhere());
     let text = diagnosis.to_json();
-    assert!(text.starts_with(
-        "{\"version\":1,\"owned_classes\":{\"available\":true,\"reason\":null},\"launchd\":{\"available\":true},\
-         \"sessions\":{\"records\":3,\"skipped_lines\":0,\"active\":1,\"ended\":1,\"unknown\":0,\"degraded\":0},\
+    let expected = format!(
+        "{{\"version\":1,\"owned_classes\":{{\"available\":true,\"reason\":null}},\"{}\":{{\"available\":true}},\
+         \"sessions\":{{\"records\":3,\"skipped_lines\":0,\"active\":1,\"ended\":1,\"unknown\":0,\"degraded\":0}},\
          \"unexplained_tags\":1,\
-         \"counts\":{\"managed\":4,\"owned-live\":1,\"owned-ended\":1,\"likely-owned\":0,\"suspect\":1,\"unknown\":2},\
-         \"findings\":[{\"item_id\":"
-    ), "{text}");
+         \"counts\":{{\"managed\":4,\"owned-live\":1,\"owned-ended\":1,\"likely-owned\":0,\"suspect\":1,\"unknown\":2}},\
+         \"findings\":[{{\"item_id\":",
+        managed_inventory_key()
+    );
+    assert!(text.starts_with(&expected), "{text}");
     let parsed = value(&text);
     let findings = parsed["findings"].as_array().unwrap();
     assert_eq!(findings.len(), 3);
@@ -386,14 +407,20 @@ fn block(pid: i32, diagnosis: &agentdust_core::doctor::Diagnosis, live: &Scripte
 fn the_terminal_text_has_a_fixed_layout() {
     let live = live();
     let diagnosis = diagnose(&world(), &sessions(), &policy(), &live, &nowhere());
+    let mode = if cfg!(target_os = "linux") {
+        "mode: manual cleanup requires explicit approval, automatic cleanup is opt in\n"
+    } else {
+        ""
+    };
     let expected = format!(
-        "agentdust doctor\n\
+        "agentdust doctor\n{mode}\
          processes: 9 seen\n\
          journal: 3 records, 2 sessions (active 1, ended 1, unknown 0), 0 without a known agent\n\
-         launchd: PID list read\n\
+         {}\n\
          classes: managed 4, owned-live 1, owned-ended 1, likely-owned 0, suspect 1, unknown 2\n\
          tags without a usable session: 1\n\
          findings: 3\n\n{}\n\n{}\n\n{}\n",
+        managed_inventory_line(true),
         block(301, &diagnosis, &live),
         block(300, &diagnosis, &live),
         block(302, &diagnosis, &live),
@@ -422,16 +449,13 @@ fn the_terminal_text_names_each_reason_owned_classes_are_unavailable() {
 }
 
 #[test]
-fn the_terminal_text_says_when_the_launchd_list_is_missing() {
+fn the_terminal_text_says_when_the_managed_process_inventory_is_missing() {
     let snapshot = Snapshot {
         launchd: Launchd::Unavailable,
         ..world()
     };
     let text = diagnose(&snapshot, &sessions(), &policy(), &live(), &nowhere()).render(&live());
-    assert!(
-        text.lines()
-            .any(|l| l == "launchd: PID list unavailable, so no process can be offered for cleanup")
-    );
+    assert!(text.lines().any(|l| l == managed_inventory_line(false)));
 }
 
 #[test]
@@ -457,5 +481,15 @@ fn hostile_process_text_cannot_change_the_layout() {
     assert!(!text.contains('\u{1b}'));
     assert!(!text.contains('\u{202e}'));
     assert_eq!(text.lines().filter(|l| l.starts_with("findings:")).count(), 1);
-    assert_eq!(text.lines().filter(|l| l.starts_with("launchd:")).count(), 1);
+    let inventory_prefix = if cfg!(target_os = "linux") {
+        "systemd cgroup evidence (heuristic):"
+    } else {
+        "launchd:"
+    };
+    assert_eq!(
+        text.lines()
+            .filter(|line| line.starts_with(inventory_prefix))
+            .count(),
+        1
+    );
 }

@@ -2,11 +2,11 @@
 
 AgentDust finds processes that AI coding agents leave behind and signals them through manual typed approval or a previously enabled automatic directory policy. This page says who or what could make it do harm, what they can reach, what stops them and what risk is left.
 
-It has twelve sections against [the design spec](superpowers/specs/2026-10-03-agentdust-design.md). Sections 1 to 8 are the eight adversaries that [ROADMAP.md](../ROADMAP.md) names for M1. Sections 9 to 12 cover the storage under the journal. Their failures come from the environment, from an accident, from a planted file or from the timing of a short-lived process, so they are named for the failure and not for one attacker: an unsupported filesystem, journal poisoning and short writes, stale writers and rotation, and durability limits.
+The first twelve sections cover the adversaries and journal failures in [the design spec](superpowers/specs/2026-10-03-agentdust-design.md). Sections 1 to 8 are the adversaries that [ROADMAP.md](../ROADMAP.md) names for M1. Sections 9 to 12 cover filesystem support, journal poisoning and short writes, stale writers and rotation, and durability limits. The later sections record additional platform and feature boundaries.
 
 Numbers such as 6.4 are spec sections. IDs such as S7 are the safety requirements of spec section 9.1. [ADR-1](m1/adr-journal-format.md) proposes three more rows for 9.1, for the journal. They are not in the spec, so no row here cites them, and the journal controls they would cover say `none` in the Requirement column.
 
-The page describes the repository after M1, M2 and M3. M1 holds the process and journal primitives. M2 adds provenance, classification, the doctor command, plan and apply core. M3 adds Claude Code setup, status and release automation. The apply clients use the same core approval protocol ([apply](m3/apply.md), [setup](m3/setup.md)). Rows marked planned identify work that remains.
+The page describes the current macOS and Linux implementation. macOS uses local APFS for journal writes. Linux support targets Ubuntu 24.04 x86_64 with writable ext4 data directories. Claude Code and Codex share process ownership, approval and cleanup rules, with platform-specific identity and signal implementations. Rows marked planned identify work that remains.
 
 ## How to read this page
 
@@ -28,12 +28,12 @@ A control that is half built appears as two rows: the built half as `implemented
 
 These hold whatever else is built. Each is stated again, with its numbers, in the section named.
 
-- **PID reuse (section 5).** Between the identity read and the `kill` call there is a window of microseconds in which the target can exit and its PID go to another process of the same user. The design narrows the window and does not close it: macOS has no pidfd and `kill` takes a number.
+- **PID reuse (section 5).** macOS `kill` takes a numeric PID, so a narrow reuse window remains between identity revalidation and signaling. Linux pins the process with a pidfd and signals through that descriptor.
 - **Programs of the same user (sections 4, 10, 11).** Anything that runs as the user can forge journal records, read `install.secret`, plant or hold files in the data directory and signal processes without AgentDust. Nothing authenticates a journal writer. Spec 7.4 puts this out of scope, and the controls only bound the effect.
 - **The host (sections 1, 3).** The application that shows the approval form stays in the trusted computing base. A host that answers the form itself defeats approval.
 - **Durability (section 12).** An acknowledged journal record can be lost on an OS crash or a power failure, and nothing promises otherwise.
 - **Lost evidence (section 12).** Missing ownership evidence moves a process out of the owned classes. By the table in spec 3.4 it can then be a suspect, which can be signalled after a per-item code. Lower confidence means "not known to be owned". It does not mean "cannot be signalled".
-- **Other volumes (section 9).** The journal is written only on a local APFS volume. A home directory on NFS or SMB gets no journal, and no network volume was available to observe the refusal.
+- **Other volumes (section 9).** macOS journal writes require local APFS. Linux journal writes require writable ext4. NFS, SMB and other unsupported filesystems are refused; network-volume behavior has not been observed on a real network mount.
 - **Shared build inputs (section 8).** Two identical builds can share one malicious input.
 
 ## Assets and trust
@@ -48,9 +48,9 @@ These hold whatever else is built. Each is stated again, with its numbers, in th
 | Agent latency | Hooks run inside every agent turn (4.4) |
 | The release artifact | It runs as the user |
 
-Trusted without checking: the macOS kernel and the login session, the host application that shows the approval form to the person (7.1 keeps it in the trusted computing base), the person at the keyboard, GitHub with its hosted runners for the release, and the semantics of a local APFS volume: an `O_APPEND` write lands whole at the end of the file, `rename` is atomic, and `fstat` and `lstat` report the file that is there. The last is stress tested and is not an APFS guarantee (section 11).
+Trusted without checking: the macOS or Linux kernel and the login session, the host application that shows the approval form to the person (7.1 keeps it in the trusted computing base), the person at the keyboard, GitHub with its hosted runners for the release, and the local filesystem semantics AgentDust relies on for APFS and ext4. An `O_APPEND` write lands whole at the end of the file, `rename` is atomic, and `fstat` and `lstat` report the file that is there. These behaviors are tested on APFS and ext4, but are not filesystem guarantees (section 11).
 
-Untrusted: everything a model writes, process metadata, the contents of hook payloads, any file in the data directory until it is opened safely, the volume under the data directory until `statfs` reports it local APFS, and the release artifact until it is verified.
+Untrusted: everything a model writes, process metadata, the contents of hook payloads, any file in the data directory until it is opened safely, the volume under the data directory until the platform probe reports local APFS on macOS or writable ext4 on Linux, and the release artifact until it is verified.
 
 ## 1. Malicious model
 
@@ -161,7 +161,7 @@ Untrusted: everything a model writes, process metadata, the contents of hook pay
 
 ## 5. PID reuse
 
-**What it can do.** The kernel reuses PIDs. Between the inventory, the approval and the signal, a target can exit and a different process can take its PID: an important process of the user, a restarted copy of the same program, or a process that an attacker started on purpose by churning PIDs. After a reboot every old PID is meaningless.
+**What it can do.** The kernel reuses PIDs. Between inventory, approval and signaling, a target can exit and a different process can take its PID: an important process of the user, a restarted copy of the same program, or a process started by deliberately churning PIDs. After a reboot every old PID is meaningless. macOS signaling uses a numeric PID. Linux opens a pidfd before the final identity check and sends through that descriptor.
 
 **At risk.** The user's processes.
 
@@ -174,12 +174,13 @@ Untrusted: everything a model writes, process metadata, the contents of hook pay
 | A PID of 0 or below is never read and never matches, so it cannot reach `kill`, which with 0 or -1 addresses a process group or every process | 6.4 | S8 | implemented | `crates/agentdust-core/tests/revalidate.rs` |
 | The boot session UUID makes every PID of an earlier boot invalid, and retention drops earlier-boot records on every run | 3.1, 3.2 | S7 | implemented | `crates/agentdust-core/tests/revalidate.rs`, `crates/agentdust-core/tests/journal_retention.rs`, `crates/agentdust-core/tests/journal_retain_rules.rs` |
 | The test harness signals only processes it started. Every signal goes through one private function that looks the PID up in its registry, revalidates the stored identity and logs the signal only after `kill` succeeded. A recycled PID, an unregistered PID and an exited process are refused | 9.2 | S8 | implemented | `crates/agentdust-testkit/tests/harness.rs`, `crates/agentdust-testkit/tests/harness_tree.rs`, `crates/agentdust-testkit/src/harness/tests.rs` |
-| `apply` revalidates and calls `kill(pid, SIGTERM)` back to back, with no logging, allocation or I/O between them, and reports `ESRCH` as gone | 6.4 | S7 | implemented | `crates/agentdust-core/src/apply/exec.rs`, `crates/agentdust-core/tests/apply_exec.rs`, `crates/agentdust-testkit/tests/apply_live.rs` |
+| macOS `apply` revalidates and calls `kill(pid, SIGTERM)` back to back, with no logging, allocation or I/O between them, and reports `ESRCH` as gone | 6.4 | S7 | implemented | `crates/agentdust-core/src/apply/exec.rs`, `crates/agentdust-core/tests/apply_exec.rs`, `crates/agentdust-testkit/tests/apply_live.rs` |
+| Linux `apply` opens a pidfd and requires both systemd unit lookups to return a unit or the documented `ENODATA` absence, with at least one unit present. Missing symbols, other lookup errors, malformed unit names and managed units refuse signaling. A scope is exempt only when its exact name appears below the user.slice/user-UID.slice hierarchy for the target process UID. The `user@UID.service` exception requires the same UID and cgroup path. Cgroup evidence is supplementary. It then revalidates exact identity and sends `SIGTERM` through the same pidfd. PID reuse cannot redirect the signal | 6.4 | S7 | implemented | `crates/agentdust-core/src/linux.rs`, `crates/agentdust/tests/linux_pidfd.rs` |
 | A live PID churn stress run beside the deterministic test | 9.2 | none | planned M3 | Stress run that churns PIDs while a plan is applied |
 
 **Residual risk.**
 
-- **This race remains possible.** Between the identity read and the `kill` call there is a window of microseconds. If the target exits in that window and the kernel gives its PID to a new process of the same user, that process receives SIGTERM. macOS has no pidfd and `kill` takes a number, so the design narrows the window (6.4) and cannot close it. The test harness has the same window when it signals a fixture child.
+- **macOS retains a narrow race.** Between the identity read and the `kill` call, the target can exit and the kernel can give its PID to a new process of the same user. macOS has no pidfd and `kill` takes a number, so revalidation narrows the window but cannot close it. Linux pins the process with a pidfd and uses `pidfd_send_signal`; a recycled PID cannot receive the signal. The test harness still uses numeric PIDs for its controlled fixture children.
 - The harm is bounded: one process, the same user (a signal to another user's process fails), and SIGTERM only, which a process can handle.
 - A new process with the same boot session and PID has a later start time. An `exec` keeps all three and changes the path, which the path check catches. A process that executes the same binary again keeps its identity and is the same process.
 
@@ -221,7 +222,7 @@ Spec 3.2 and 4.4 describe a `flock` taken by every journal writer. The code foll
 | Evidence for an active session is pinned when the journal is trimmed, and the loss of such evidence is listed in the `prune` report as degraded provenance | 3.2 | none | implemented | `crates/agentdust-core/tests/journal_retention.rs`, `crates/agentdust-core/tests/journal_retain_rules.rs` |
 | One framed journal record is written in one append call, is capped at 65,536 bytes, and short or failed writes cost only that record | 3.2, 4.4, 9.2 | S22 | implemented | `crates/agentdust-core/tests/journal_frame.rs`, `crates/agentdust-core/tests/journal_append_faults.rs`, `crates/agentdust-core/tests/journal_truncation_props.rs`, `crates/agentdust/tests/hook.rs` |
 | An acknowledged append remains present exactly once across append, read, rotation and retention interleavings | 3.2, 9.2 | S23 | implemented | `crates/agentdust-core/tests/journal_append_recheck.rs`, `crates/agentdust-core/tests/journal_rotate_interleave.rs`, `crates/agentdust-core/tests/journal_retain_interleave.rs`, `crates/agentdust-core/tests/journal_snapshot.rs` |
-| Journal writes and secret operations require a local APFS volume | 3.2, 7.2, 7.3 | S24 | implemented | `crates/agentdust-core/tests/journal_volume.rs`, `crates/agentdust-core/tests/journal_append_volume.rs`, `crates/agentdust-core/tests/secret_volume.rs` |
+| Journal writes and secret operations require local APFS on macOS or writable ext4 on Linux | 3.2, 7.2, 7.3 | S24 | implemented | `crates/agentdust-core/tests/journal_volume.rs`, `crates/agentdust-core/tests/journal_append_volume.rs`, `crates/agentdust-core/tests/secret_volume.rs`, `crates/agentdust-core/tests/linux_journal_ext4.rs` |
 | Journal readers return a deterministic order and collapse exact duplicate records | 3.2 | S25 | implemented | `crates/agentdust-core/tests/journal_read.rs` |
 | `doctor` shows degraded provenance and owned classes follow it | 3.2, 6.5 | none | implemented | `crates/agentdust-core/tests/doctor_report.rs`, `crates/agentdust-core/tests/doctor_sessions.rs`, `crates/agentdust-core/tests/classifier_provenance.rs` |
 
@@ -267,28 +268,28 @@ Spec 7.1 points this threat at section 8.3. The release controls are in 8.4, and
 
 ## 9. Unsupported filesystem
 
-**What it can do.** The volume under the data directory decides what `write(2)`, `rename` and `fstat` mean. A home directory on a file server (an NFS or SMB network home), an `AGENTDUST_DATA_DIR` that points at one, a mount placed over the directory, an external disk formatted HFS+ or exFAT, and the automounted `/System/Volumes/Data/home` (which reports `autofs`) all put the journal on a volume AgentDust did not test. ADR-1 treats a network volume as breaking the premise of an atomic append, SMB as unproven and a local volume that is not APFS as untested.
+**What it can do.** The volume under the data directory decides what `write(2)`, `rename` and `fstat` mean. macOS supports local APFS. Linux support requires a writable ext4 mount. A network home on NFS or SMB, a mount placed over the directory, an external macOS disk formatted HFS+ or exFAT, Linux XFS, Btrfs, overlay or a read-only ext4 mount all put journal writes outside the supported filesystem gate. The automounted `/System/Volumes/Data/home` reports `autofs` and is refused. ADR-1 treats network filesystems as breaking the premise of an atomic append and SMB as unproven.
 
 **At risk.** Journal integrity (torn, interleaved or lost lines), the install secret, hook latency, and the evidence itself: on a refused volume there is none.
 
 | Control | Spec | Requirement | Status | Tests |
 | --- | --- | --- | --- | --- |
-| The writer asks `statfs` about the journal directory, or about its nearest existing ancestor when the directory is missing, and writes only when `f_fstypename` is `apfs` and `MNT_LOCAL` is set. On any other volume there is no record, no file and no directory, and the error names the volume. A probe that fails stops the append | 3.2, 7.3 | none | implemented | `crates/agentdust-core/src/journal/volume.rs`, `crates/agentdust-core/tests/journal_append_volume.rs`, `crates/agentdust-core/tests/journal_volume.rs` |
+| The writer checks the journal directory or its nearest existing ancestor. macOS requires `statfs` to report local APFS. Linux cross-checks the `statfs` magic and /proc/self/mountinfo, and supports only writable ext4. Unsupported volumes create no record, file or directory, and a failed probe stops the append | 3.2, 7.3 | none | implemented | `crates/agentdust-core/src/journal/volume.rs`, `crates/agentdust-core/tests/journal_append_volume.rs`, `crates/agentdust-core/tests/journal_volume.rs`, `crates/agentdust-core/tests/linux_journal_ext4.rs`, `.github/workflows/ci.yml` |
 | The install secret, rotation and retention follow the same gate. On a refused volume the secret is neither read nor created, and a maintenance run creates nothing | 7.2, 7.3 | none | implemented | `crates/agentdust-core/tests/secret_volume.rs`, `crates/agentdust-core/tests/journal_rotate.rs`, `crates/agentdust-core/tests/journal_retain.rs` |
-| A hook whose data directory is on a refused volume exits 0, prints nothing and creates nothing | 4.4 | S13 | implemented | `crates/agentdust/tests/hook.rs` |
-| The gate is injectable. The decision runs on injected facts for apfs local, apfs not local, hfs, devfs, nfs, smbfs and autofs and needs no real volume, so it runs on any platform, and `SystemVolume` answers "unknown, not local, not supported" off macOS | 9.2 | none | implemented | `crates/agentdust-core/tests/journal_volume.rs`, `crates/agentdust-core/tests/secret_volume.rs` |
+| A hook whose data directory is on a refused volume exits 0, prints nothing and creates nothing. Linux setup checks also cover refused writes on a real ext4 mount remounted read-only | 4.4 | S13 | implemented | `crates/agentdust/tests/hook.rs`, `crates/agentdust/tests/linux_setup_ext4.rs`, `.github/workflows/ci.yml` |
+| The gate is injectable. macOS tests cover local and remote APFS, HFS, devfs, NFS, SMB and autofs. Linux tests cover supported writable ext4, read-only ext4, mismatched filesystem magic and unsupported local filesystems. Other platforms report unknown and unsupported | 9.2 | none | implemented | `crates/agentdust-core/src/journal/volume.rs`, `crates/agentdust-core/tests/journal_volume.rs`, `crates/agentdust-core/tests/secret_volume.rs`, `crates/agentdust-core/tests/linux_journal_ext4.rs` |
 | A reader does not refuse an unsupported volume, because a read tears nothing. The report carries the file system name, whether it is local and whether it is supported, and `Journal::status()` returns the same facts | 3.2 | none | implemented | `crates/agentdust-core/tests/journal_read.rs` |
-| `agentdust status` prints filesystem type, locality and support, and hook health records `unsupported_filesystem` with the name | 4.4 | none | implemented | `crates/agentdust/src/status.rs`, `crates/agentdust-core/tests/journal_volume.rs`, `crates/agentdust-core/tests/journal_append_volume.rs` |
+| `doctor` reports filesystem type, locality and support. macOS `status` prints the same facts, and hook health records `unsupported_filesystem` with the name | 4.4 | none | implemented | `crates/agentdust/src/doctor.rs`, `crates/agentdust/src/status.rs`, `crates/agentdust-core/tests/journal_volume.rs`, `crates/agentdust-core/tests/journal_append_volume.rs` |
 | A refused volume counts as missing provenance: owned classes become unavailable and nothing becomes more certain | 4.4, 6.5 | S19 | implemented | `crates/agentdust-core/tests/doctor_sessions.rs`, `crates/agentdust-core/tests/classifier_provenance.rs` |
 
 **Residual risk.**
 
-- A person whose home directory is on a network volume gets no journal at all, so AgentDust never learns which processes a session owns. Refusing is the safe default. It is also a loss of the feature for that person until the data directory moves to a local APFS volume, and section 12 says what missing evidence does to the classes.
-- The refusal of NFS and SMB rests on the `MNT_LOCAL` flag and the file system name. No network volume was available, so no refusal was observed on one. On the benchmark machine `$TMPDIR`, `$HOME` and `/private/tmp` reported apfs and local, `/dev` reported devfs (local, refused) and `/System/Volumes/Data/home` reported autofs (not local, refused).
-- A local volume that is not APFS (HFS+, exFAT, FAT) is refused even though it might work. It was not tested.
-- The check is a point in time. `statfs` runs before the open of each append, so a mount that appears over the directory between the check and the open is not seen by that append. Each later append asks again. The gate judges the file system the kernel reports for the path and does not look behind a local volume.
+- A person whose data directory is on an unsupported volume gets no journal, so AgentDust cannot learn which processes a session owns. Refusing is the safe default. macOS requires local APFS; Linux requires writable ext4. Section 12 describes what missing evidence does to classifications.
+- No real network volume was available for a refusal test. On the benchmark Mac, `$TMPDIR`, `$HOME` and `/private/tmp` reported local APFS, `/dev` reported local devfs and was refused, and `/System/Volumes/Data/home` reported autofs and was refused. Linux CI tests filesystem rejection on an ext4 loop image, not on a network mount.
+- macOS HFS+, exFAT and FAT, and Linux filesystems other than ext4 are refused even if they might work. Linux classification tests cover XFS, Btrfs and overlay, but release support is limited to Ubuntu 24.04 x86_64 with writable ext4.
+- The check is a point in time. Each append probes the path before opening it; a mount placed over the directory between the probe and open is not seen by that append. Each later append probes again. The gate judges the filesystem the kernel reports for the path and does not look behind a local volume.
 - The gate has no time limit. `statfs` and the open have none of their own, and `realpath` of a working directory on a stalled network mount can hold the hook until the host gives up (`docs/m1/install-secret.md`). The hook has no bound of its own. The host's 10 second timeout (4.4) is the only one.
-- The gate costs 0.0015 to 0.0038 ms at p50, measured on a local volume (`docs/m1/journal-schema.md`).
+- The macOS gate costs 0.0015 to 0.0038 ms at p50, measured on a local APFS volume (`docs/m1/journal-schema.md`). Linux gate latency has not been benchmarked separately.
 
 ## 10. Journal poisoning and short writes
 
@@ -348,7 +349,7 @@ Spec 7.1 points this threat at section 8.3. The release controls are in 8.4, and
 - A same-user program that holds `journal.maint` for ever denies rotation and retention, and one that stops a hook stops only that hook. Neither changes the journal. Spec 7.4 puts both out of scope.
 - Retention reads the whole journal into memory, about 20 MB of frames and the same again for their records at the default limit. A journal of that size was not measured.
 - Nothing calls `rotate`, `retain` or `prune`. The CLI and the server set the cadence (M3), and each run that finds bytes in the active file adds one generation.
-- The interleaving and stress tests were run on macOS. The platform independent ones compile for `x86_64-unknown-linux-gnu` and were not run there.
+- The recorded benchmark and stress measurements are from macOS. Linux CI runs the core correctness suite, including interleaving tests, and runs ext4 journal integration tests separately.
 
 ## 12. Durability limits
 
@@ -414,7 +415,7 @@ Policy and executor checks are in `crates/agentdust-core/tests/automatic.rs`. CL
 
 Codex native hooks and `CODEX_SESSION_ID` add attribution evidence with a separate HMAC domain. The marker is public metadata, not an authentication boundary against a same-UID actor. A dual Claude/Codex marker, missing ancestry or a host change without a recorded session start cannot authorize cleanup. SessionEnd and SubagentStop do not replace exact host death. Desktop helpers stay protected while any recorded shared host remains alive. Setup preserves user hooks, verifies native MCP changes and does not bypass Codex hook trust. Tests are in `crates/agentdust-agents/tests/codex_setup.rs`, `crates/agentdust-core/tests/inventory.rs`, `crates/agentdust-core/tests/session.rs` and `crates/agentdust/tests/automatic_worker.rs`.
 
-Not modelled: file systems other than local APFS beyond the refusal in section 9, immediate per-chat Codex cleanup while a shared server remains live, the Cursor adapter (M5), and agent storage outside the M7 roots. The M7 metadata scanner is covered below.
+Not modelled: filesystems beyond local APFS on macOS and writable ext4 on Linux, except for the refusal behavior in section 9; immediate per-chat Codex cleanup while a shared server remains live; the Cursor adapter (M5); and agent storage outside the M7 roots. The M7 metadata scanner is covered below.
 
 ## 16. Read-only disk inventory (M7)
 

@@ -3,16 +3,16 @@ use std::time::Duration;
 
 use agentdust_core::apply::exec::{Deps, Settings};
 use agentdust_core::apply::server::{ApplyError, Call, Challenge, Response, Server, Step};
-use agentdust_core::apply::signal::KillSignaller;
+use agentdust_core::apply::signal::Signaller;
 use agentdust_core::apply::timer::SystemTimer;
 use agentdust_core::classifier::Policy;
 use agentdust_core::cwd::RelationContext;
-use agentdust_core::darwin::{self, DarwinLive, DarwinProvider, DarwinSource};
 use agentdust_core::doctor::{Components, run as diagnose};
 use agentdust_core::finding::ModelFinding;
-use agentdust_core::inventory::{LaunchctlList, SystemClock};
+use agentdust_core::inventory::SystemClock;
 use agentdust_core::journal::volume::SystemVolume;
 use agentdust_core::paths;
+use agentdust_core::platform::{self, Live, ManagedProcesses, Provider, Source};
 use agentdust_core::secret;
 use agentdust_core::session::ProviderLiveness;
 use rmcp::model::{
@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 const PORT: &str = "agentdust_port";
+#[cfg(target_os = "macos")]
 const DISK: &str = "agentdust_disk";
 const DOCTOR: &str = "agentdust_doctor";
 const PLAN: &str = "agentdust_plan";
@@ -88,14 +89,19 @@ pub struct AgentDustServer {
 impl AgentDustServer {
     pub fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let data_dir = paths::data_dir()?;
+        ensure_supported_volume(&data_dir)?;
         let surveyor = Arc::new(agentdust_core::live::LiveSurveyor::new(&data_dir));
-        let provider = DarwinProvider::new()?;
+        let provider = Provider::new()?;
+        #[cfg(target_os = "macos")]
+        let signaller: Box<dyn Signaller> = Box::new(agentdust_core::apply::signal::KillSignaller);
+        #[cfg(target_os = "linux")]
+        let signaller: Box<dyn Signaller> = Box::new(agentdust_core::linux::LinuxPidfdSignaller::new()?);
         let apply = Server::new(
             Deps {
                 data_dir,
                 surveyor: surveyor.clone(),
                 provider: Box::new(provider),
-                signaller: Box::new(KillSignaller),
+                signaller,
                 timer: Arc::new(SystemTimer::new()),
             },
             Settings::default(),
@@ -118,17 +124,23 @@ impl ServerHandler for AgentDustServer {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        Ok(ListToolsResult::with_all_items(vec![
+        let tools = vec![
             doctor_tool(),
             plan_tool(),
             apply_tool(),
-            disk_tool(),
             auto_status_tool(),
             metrics_tool(),
             port_tool(),
-        ])
-        .with_ttl_ms(0)
-        .with_cache_scope(CacheScope::Private))
+        ];
+        #[cfg(target_os = "macos")]
+        let tools = {
+            let mut tools = tools;
+            tools.push(disk_tool());
+            tools
+        };
+        Ok(ListToolsResult::with_all_items(tools)
+            .with_ttl_ms(0)
+            .with_cache_scope(CacheScope::Private))
     }
 
     async fn call_tool(
@@ -161,6 +173,7 @@ impl ServerHandler for AgentDustServer {
                 success(&summary)
             }
             PORT => self.port(&request).await,
+            #[cfg(target_os = "macos")]
             DISK => self.disk(&request).await,
             PLAN => self.plan(),
             APPLY => self.apply(&request, &context).await,
@@ -189,7 +202,14 @@ impl AgentDustServer {
         let dir = paths::data_dir().map_err(internal)?;
         let report = tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            agentdust_core::port_live::run(&dir, args.port, args.resolve)
+            #[cfg(target_os = "macos")]
+            {
+                agentdust_core::port_live::run(&dir, args.port, args.resolve)
+            }
+            #[cfg(target_os = "linux")]
+            {
+                agentdust_core::linux_port_live::run(&dir, args.port, args.resolve)
+            }
         })
         .await
         .map_err(|_| internal("port report unavailable"))?
@@ -204,6 +224,7 @@ impl AgentDustServer {
         }
     }
 
+    #[cfg(target_os = "macos")]
     async fn disk(&self, request: &CallToolRequestParams) -> Result<CallToolResponse, ErrorData> {
         if request.arguments.as_ref().is_some_and(|args| !args.is_empty()) {
             return Err(ErrorData::invalid_params("disk report takes no arguments", None));
@@ -229,21 +250,21 @@ impl AgentDustServer {
     fn doctor(&self) -> Result<CallToolResponse, ErrorData> {
         let data_dir = paths::data_dir().map_err(internal)?;
         let install_secret = secret::load_existing(&data_dir).ok();
-        let source = DarwinSource::new(install_secret.as_ref()).map_err(internal)?;
-        let provider = DarwinProvider::new().map_err(internal)?;
-        let live = DarwinLive::new().map_err(internal)?;
+        let source = Source::new(install_secret.as_ref()).map_err(internal)?;
+        let provider = Provider::new().map_err(internal)?;
+        let live = Live::new().map_err(internal)?;
         let relation = RelationContext::system();
         let diagnosis = diagnose(&Components {
             data_dir: &data_dir,
             volume: &SystemVolume,
             secret_available: install_secret.is_some(),
             processes: &source,
-            launchd: &LaunchctlList,
+            launchd: &ManagedProcesses,
             clock: &SystemClock,
             liveness: &ProviderLiveness(&provider),
             live: &live,
             relation: &relation,
-            policy: Policy::new(darwin::current_uid(), std::process::id() as i32),
+            policy: Policy::new(platform::current_uid(), std::process::id() as i32),
         })
         .map_err(internal)?;
         let result = diagnosis.to_json();
@@ -354,6 +375,7 @@ fn port_tool() -> Tool {
     )
 }
 
+#[cfg(target_os = "macos")]
 fn disk_tool() -> Tool {
     tool::<EmptyArgs>(
         DISK,
@@ -469,4 +491,22 @@ fn apply_error(error: ApplyError) -> ErrorData {
 
 fn internal(error: impl std::fmt::Display) -> ErrorData {
     ErrorData::internal_error(error.to_string(), None)
+}
+
+#[cfg(target_os = "linux")]
+fn ensure_supported_volume(data_dir: &std::path::Path) -> Result<(), std::io::Error> {
+    use agentdust_core::journal::volume;
+
+    match volume::locate(&SystemVolume, data_dir)? {
+        facts if facts.supported => Ok(()),
+        facts => Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            format!("MCP server requires writable ext4; found {}", facts.describe()),
+        )),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn ensure_supported_volume(_data_dir: &std::path::Path) -> Result<(), std::io::Error> {
+    Ok(())
 }
