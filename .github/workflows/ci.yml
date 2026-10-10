@@ -59,15 +59,9 @@ jobs:
           PY
           )"
           test_binary="$(mktemp /tmp/agentdust-linux-port.XXXXXX)"
-          test_user="agentdust-port-$GITHUB_RUN_ID"
-          cleanup() {
-            sudo userdel "$test_user" >/dev/null 2>&1 || true
-            rm -f "$test_binary"
-          }
-          trap cleanup EXIT
-          sudo useradd --system --no-create-home --shell /usr/sbin/nologin "$test_user"
+          trap 'rm -f "$test_binary"' EXIT
           install -m 755 "$built_test_binary" "$test_binary"
-          sudo -u "$test_user" -- "$test_binary" --exact procfs_listener_inventory_returns_the_exact_current_user_process
+          docker run --rm --volume "$test_binary:/agentdust-linux-port:ro" ubuntu:24.04 /agentdust-linux-port --exact procfs_listener_inventory_returns_the_exact_current_user_process
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
