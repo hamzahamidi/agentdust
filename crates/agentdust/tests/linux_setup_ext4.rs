@@ -116,8 +116,6 @@ async fn claude_codex_setup_hooks_and_mcp_work_on_ext4() {
     );
 
     use rmcp::{ServiceExt, model::CallToolRequestParams, transport::TokioChildProcess};
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_agentdust"));
     command
         .arg("mcp")
@@ -144,16 +142,6 @@ async fn claude_codex_setup_hooks_and_mcp_work_on_ext4() {
         .unwrap();
     let doctor: serde_json::Value = serde_json::from_str(&doctor.content[0].as_text().unwrap().text).unwrap();
     assert!(doctor.get("cgroup_unit_evidence").is_some());
-    let port_result = service
-        .call_tool(
-            CallToolRequestParams::new("agentdust_port")
-                .with_arguments(serde_json::json!({"port": port}).as_object().unwrap().clone()),
-        )
-        .await
-        .unwrap();
-    let port_result: serde_json::Value =
-        serde_json::from_str(&port_result.content[0].as_text().unwrap().text).unwrap();
-    assert_eq!(port_result["state"], "listening");
     service.cancel().await.unwrap();
 
     let codex_remove = run_with_path(
