@@ -1,6 +1,6 @@
 # M6 dogfood record
 
-This record tracks real use after the limited beta. The v1 release gate is one controlled end-to-end run on the maintainer's Mac, recorded in the [readiness record](../v1/readiness.md). Setup checks and scripted acceptance tests do not replace that run. Review product value after the next ten substantive sessions on the available Mac. There is no multi-Mac or fixed-duration gate. Identify each recorded build by its source commit and binary digest.
+This record tracks real use after the limited beta. The v1 release gate is one controlled end-to-end run on the maintainer's Mac, recorded in the [readiness record](../v1/readiness.md). Setup checks and scripted acceptance tests do not replace that run. Review product value after each ten substantive sessions on the available Mac. There is no multi-Mac or fixed-duration gate. Identify each recorded build by its source commit and binary digest.
 
 On 2026-10-07, only machine A was available. Its setup check passed, but no interactive Claude Code session has been observed. Machines B and C are unavailable; the optional confidence study has not started.
 
@@ -16,7 +16,9 @@ On 2026-10-11, the isolated macOS automatic worker test ran four controlled scen
 
 An aggregate parse of the retained local journal generations on 2026-10-11 covered 2026-10-07 through 2026-10-11. It found 29,747 valid records across 75 agent/session pairs (41 Claude and 34 Codex). The records included 212 `session_start` events, 92 `session_end` events, 14,777 `shell_start` events and 14,543 `shell_end` events. Twenty-nine pairs contained both a session start and a session end. The journal contained no `sample` records. This count covers persisted journal events only; it does not show whether the worker or doctor took ephemeral process snapshots. The other counts confirm hook activity, but do not identify substantive sessions, process ownership ground truth, useful cleanup or user benefit. The records do not identify their AgentDust build or scenario, so they cannot validate the suspect thresholds or be attributed to a particular release. Metrics remained at zero. The historical `terminated` result remains unattributed.
 
-For each real incident during the next ten substantive sessions, record the smallest evidence that supports one of these signals:
+At the ten-session checkpoint, the maintainer reports completing ten substantive Claude Code or Codex sessions with the `1.8.1` worker enabled and no incidents observed. A current status check reports the worker at `1.8.1`, matching the CLI, with automatic cleanup enabled for 37 project scopes. The report contains one retained `terminated` result without a per-result timestamp and two `owned-live` candidates marked untouched. `agentdust metrics --json` reports zero events. The retained result cannot be attributed to these ten sessions. The maintainer reports no useful cleanup, incorrect proposal, deliberate keep, port recovery, failure, missed opportunity or safety issue during this checkpoint. No per-session outcome counts were recorded. This records the observed result, but does not prove that no cleanup opportunity existed.
+
+For each real incident in a dogfood window, record the smallest evidence that supports one of these signals:
 
 | Signal | Evidence |
 | --- | --- |

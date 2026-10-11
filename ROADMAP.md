@@ -104,7 +104,7 @@ Port-conflict diagnosis and recovery are implemented in `1.4.0`: identify curren
 | Other AI agents | Common MCP diagnosis and manual tools are possible; automatic cleanup needs a client specific adapter |
 | M9 controlled Homebrew acceptance | Complete; measurement limits remain in the [readiness record](docs/v1/readiness.md) |
 | Plugin/setup guidance | Guidance package `0.8.0` explains setup readiness, agent-guided port recovery and automatic results |
-| Automatic cleanup | Implemented for `1.1.0`; `1.5.0` adds per-result record times; measure value during normal use |
+| Automatic cleanup | Implemented for `1.1.0`; `1.5.0` adds per-result record times. The ten-session dogfood checkpoint reports no incidents; reconsider further investment before adding features. |
 | M13 local outcome metrics | Included in 1.6.0; history begins when a metrics-enabled build records cleanup results |
 | Worker upgrade visibility | Worker status reports its build; use `agentdust auto resume` after an upgrade mismatch or for a legacy worker |
 | Port-conflict recovery | Implemented in `1.4.0`; measure useful recovery during normal use |
