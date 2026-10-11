@@ -169,7 +169,7 @@ Acceptance: the exact Homebrew 1.0 binary passed setup, live discovery, human de
 - Missing ancestry, a host switch without a recorded session start and mixed Claude/Codex markers cannot grant automatic cleanup.
 - Setup install, removal, idempotence, rollback and user-setting preservation tests are in `crates/agentdust-agents/tests/codex_setup.rs`.
 
-Remaining: immediate cleanup after a desktop chat ends while its shared server stays alive. This requires independently defensible session revocation, resume and live subagent protection. The current adapter waits for exact host exit. See [support and limits](docs/codex.md).
+Deferred extension outside the current support contract: immediate cleanup after one desktop chat ends while its shared server stays alive. Reopening this requires an independently defensible session revocation signal, verified resume behavior and protection for live subagents. The current adapter waits for exact host exit. See [support and limits](docs/codex.md).
 
 ### M5 Cursor adapter and setup (L, deferred)
 
