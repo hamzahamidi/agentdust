@@ -10,4 +10,4 @@ Windows host processes are outside the Linux process inventory. Start Linux agen
 
 The automatic worker uses the systemd user service while the distribution is running. Stopping WSL also stops that worker. Enabling systemd does not keep the distribution alive.
 
-WSL2 uses the Linux x86_64 package. It is not native Windows support. Native Windows process discovery, listener attribution, installation and safe per-process termination remain a separate feasibility milestone.
+WSL2 uses the Linux x86_64 package. It is not native Windows support. The tested native Windows Restart Manager path is a no-go because its shutdown signal reached console peers. Native Windows remains unsupported; reconsider it only if a different per-process action can avoid signaling peers and user demand warrants a new feasibility evaluation.
