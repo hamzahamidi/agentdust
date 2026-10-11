@@ -440,25 +440,13 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
         if !owns_listener {
             continue;
         }
-        match provider.read(pid)? {
-            ProcessRead::Present(fresh)
-                if fresh.kernel == process.kernel
-                    && network_namespace_inode(Path::new(PROC), &pid_path)? == current_namespace =>
-            {
-                found.push(fresh)
-            }
-            ProcessRead::Gone => {}
-            ProcessRead::PathUnreadable(kernel) if kernel == process.kernel => {
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    format!("listener process identity is unreadable for PID {pid}"),
-                ));
-            }
-            _ => {
+        if let Some(fresh) = listener_identity(&process.kernel, provider.read(pid)?)? {
+            if network_namespace_inode(Path::new(PROC), &pid_path)? != current_namespace {
                 return Err(io::Error::other(
                     "listener identity or network namespace changed during inventory",
                 ));
             }
+            found.push(fresh);
         }
     }
     if network_namespace_inode(Path::new(PROC), "self")? != current_namespace {
@@ -537,7 +525,7 @@ impl ListenerProcess {
         }
     }
 
-    fn refresh(&mut self, provider: &LinuxProvider) -> io::Result<bool> {
+    fn refresh<P: ProcessProvider + ?Sized>(&mut self, provider: &P) -> io::Result<bool> {
         let read = match provider.read(self.kernel.pid) {
             Ok(read) => read,
             Err(error) if missing(&error) => return Ok(false),
@@ -551,6 +539,125 @@ impl ListenerProcess {
             ProcessRead::PathUnreadable(kernel) if self.kernel == kernel => Ok(true),
             ProcessRead::Present(_) | ProcessRead::PathUnreadable(_) | ProcessRead::Gone => Ok(false),
         }
+    }
+}
+
+fn listener_identity(expected: &KernelIdentity, read: ProcessRead) -> io::Result<Option<ProcessIdentity>> {
+    match read {
+        ProcessRead::Present(identity) if identity.kernel == *expected => Ok(Some(identity)),
+        ProcessRead::Gone => Ok(None),
+        ProcessRead::PathUnreadable(kernel) if kernel == *expected => Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("listener process identity is unreadable for PID {}", expected.pid),
+        )),
+        ProcessRead::Present(_) | ProcessRead::PathUnreadable(_) => {
+            Err(io::Error::other("listener identity changed during inventory"))
+        }
+    }
+}
+
+#[cfg(test)]
+mod listener_process_tests {
+    use super::*;
+    use crate::identity::IdentityEvidence;
+
+    struct ScriptedProvider(ProcessRead);
+
+    impl ProcessProvider for ScriptedProvider {
+        fn read(&self, _pid: i32) -> io::Result<ProcessRead> {
+            Ok(self.0.clone())
+        }
+    }
+
+    fn kernel(start_time_us: u64) -> KernelIdentity {
+        KernelIdentity {
+            boot_session_uuid: "a23b2a10-71df-4f5d-a941-4a18eaac32a8".into(),
+            pid: 42,
+            start_time_us,
+            uid: 1000,
+        }
+    }
+
+    fn identity(kernel: KernelIdentity, exe_path: &str) -> ProcessIdentity {
+        ProcessIdentity {
+            kernel,
+            evidence: IdentityEvidence {
+                exe_path: PathBuf::from(exe_path),
+            },
+        }
+    }
+
+    #[test]
+    fn unreadable_executable_is_retained_only_as_kernel_identity_during_discovery() {
+        let expected = kernel(100);
+        let mut process = ListenerProcess::unreadable(expected.clone());
+        assert!(
+            process
+                .refresh(&ScriptedProvider(ProcessRead::PathUnreadable(expected)))
+                .unwrap()
+        );
+        assert!(process.identity.is_none());
+    }
+
+    #[test]
+    fn exec_refreshes_path_for_the_same_kernel_process() {
+        let expected = kernel(100);
+        let mut process = ListenerProcess::unreadable(expected.clone());
+        let fresh = identity(expected, "/usr/bin/fixture");
+        assert!(
+            process
+                .refresh(&ScriptedProvider(ProcessRead::Present(fresh.clone())))
+                .unwrap()
+        );
+        assert_eq!(process.identity, Some(fresh));
+    }
+
+    #[test]
+    fn a_reused_pid_does_not_refresh_the_discovered_process() {
+        let expected = kernel(100);
+        let mut process = ListenerProcess::unreadable(expected);
+        assert!(
+            !process
+                .refresh(&ScriptedProvider(ProcessRead::PathUnreadable(kernel(101))))
+                .unwrap()
+        );
+        assert!(process.identity.is_none());
+    }
+
+    #[test]
+    fn unreadable_identity_of_the_actual_listener_fails_closed() {
+        let expected = kernel(100);
+        let error = listener_identity(&expected, ProcessRead::PathUnreadable(expected.clone())).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn the_verified_listener_identity_keeps_its_executable_evidence() {
+        let expected = kernel(100);
+        let fresh = identity(expected.clone(), "/usr/bin/fixture");
+        assert_eq!(
+            listener_identity(&expected, ProcessRead::Present(fresh.clone())).unwrap(),
+            Some(fresh)
+        );
+    }
+
+    #[test]
+    fn a_gone_listener_is_not_an_identity_error() {
+        assert!(
+            listener_identity(&kernel(100), ProcessRead::Gone)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_reused_pid_cannot_become_a_listener_identity() {
+        let error = listener_identity(
+            &kernel(100),
+            ProcessRead::Present(identity(kernel(101), "/usr/bin/fixture")),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Other);
     }
 }
 

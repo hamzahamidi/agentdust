@@ -27,9 +27,13 @@ python3 - <<'PY'
 from pathlib import Path
 import subprocess
 
-for path in sorted(Path("fuzz/seeds").rglob("*")):
+tracked_seeds = subprocess.check_output(
+    ["git", "ls-tree", "-r", "--name-only", "HEAD", "--", "fuzz/seeds"], text=True
+).splitlines()
+for relative in tracked_seeds:
+    path = Path(relative)
     if not path.is_file():
-        continue
+        raise SystemExit(f"tracked fuzz seed is missing from the working tree: {path}")
     expected = subprocess.check_output(
         ["git", "rev-parse", f"HEAD:{path.as_posix()}"], text=True
     ).strip()
