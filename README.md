@@ -206,25 +206,27 @@ agentdust status
 
 ## Running the development probe
 
-Run the probe to check whether your agent client can collect a typed approval. It shows a typed-code form and reports how the client answered. It changes nothing on your machine. Building it needs Rust 1.99.0 (pinned in `rust-toolchain.toml`); the release candidate is a prebuilt binary that needs no Rust.
+Run the probe to check whether your agent client can collect a typed approval. It shows a typed-code form and reports how the client answered. It changes nothing on your machine. Building it needs Rust 1.99.0 (pinned in `rust-toolchain.toml`).
 
 ```bash
-cargo build --release
+cargo build --release -p agentdust-mcp --example approval_probe
 ```
 
-Register it with the agent you use:
+Register the probe with the agent you want to check:
 
 ```bash
-claude mcp add --scope user agentdust-probe -- "$PWD/target/release/agentdust" mcp
+claude mcp add --scope user agentdust-probe -- "$PWD/target/release/examples/approval_probe"
 ```
 
 ```bash
-codex mcp add agentdust-probe "$PWD/target/release/agentdust" mcp
+codex mcp add agentdust-probe -- "$PWD/target/release/examples/approval_probe"
 ```
 
-Ask the agent to call `agentdust_probe_approval`. The tool returns JSON such as `{"outcome": "approved", "protocol": "2025-06-18", "path": "legacy"}`. Remove the probe afterwards with `claude mcp remove --scope user agentdust-probe` or `codex mcp remove agentdust-probe`.
+Start a new agent session and ask it to call `agentdust_probe_approval`. The tool returns JSON such as `{"outcome": "approved", "protocol": "2025-06-18", "path": "legacy"}`. Remove the probe afterwards with `claude mcp remove --scope user agentdust-probe` or `codex mcp remove agentdust-probe`.
 
-What has been checked, per client ([client matrix](docs/m0/client-matrix.md)):
+The [client matrix](docs/m0/client-matrix.md) records the manual procedure, scenarios, client versions and observed results.
+
+What has been checked, per client:
 
 - Codex CLI 0.156.1: the full typed-code flow, including a wrong code, Esc and a timeout.
 - Claude Code 2.1.289: the full typed-code form was tested, including accept, wrong code, decline, cancel, timeout and a forged retry. No automatic approval was observed.
