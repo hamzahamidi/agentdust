@@ -66,11 +66,11 @@ The table separates current support from planned targets. A platform and agent p
 
 ## Open decisions
 
-1. Suspect thresholds: the classifier currently uses a 30 minute age threshold and a two second idle sample. The M1 corpus verifies that the chosen age is applied, but does not establish that 30 minutes is the right threshold. Review false proposals during dogfood before treating the value as validated. See [fixture limits](docs/fixtures.md#the-suspect-thresholds).
+1. Suspect thresholds: the classifier uses a 30 minute age threshold and a two second idle sample. Both are unvalidated heuristics. Suspect items remain advisory, require a separate typed approval and are excluded from automatic cleanup. Calibration is deferred and is not a v1 gate. Revisit it if normal use produces false proposals. See [fixture limits](docs/fixtures.md#the-suspect-thresholds).
 
 ## Current priority
 
-M10 Linux x86_64 shipped in 1.7.0. M11 WSL2 certification completed in 1.7.1 after source acceptance on PR #70 and exact archive and npm acceptance in release run 38104539057. M12 completed with a no-go for the tested native Windows shutdown path because its control event reached console peers. Journal rotation and retention run from the automatic worker. The next product priority is recording useful cleanups, incorrect proposals, deliberate keeps and successful port recovery during ordinary use. Review evidence after the next ten substantive sessions on the available Mac; there is no fixed-duration or multi-Mac gate. A cleanup count does not measure time, CPU or memory saved.
+M10 Linux x86_64 shipped in 1.7.0. M11 WSL2 certification completed in 1.7.1 after source acceptance on PR #70 and exact archive and npm acceptance in release run 38104539057. M12 completed with a no-go for the tested native Windows shutdown path because its control event reached console peers. Journal rotation and retention run from the automatic worker. The isolated worker check in the [dogfood record](docs/m6/dogfood.md) verifies that cleanup outcomes reach local metrics, but natural cleanup and user benefit remain unmeasured. The next product priority is recording useful cleanups, incorrect proposals, deliberate keeps and successful port recovery during ordinary use. Review evidence after the next ten substantive sessions on the available Mac; there is no fixed-duration or multi-Mac gate. A cleanup count does not measure time, CPU or memory saved.
 
 A Homebrew upgrade check found that replacing the installed binary does not replace an already-running worker process. `agentdust auto resume` refreshed the worker from 1.4.0 to 1.7.1 without changing its 37 enabled directories. Worker-version status reports whether the running worker matches the CLI build, differs or is an unversioned legacy worker. Run resume from the installed binary after an upgrade mismatch. Automatic restart on upgrade remains deferred. The old worker's termination report was not backfilled into M13 metrics. A full Windows provider is not committed. Do not schedule Linux arm64 or Intel Mac until there is demand and the shared runtime gates are complete.
 
@@ -95,7 +95,7 @@ Port-conflict diagnosis and recovery are implemented in `1.4.0`: identify curren
 
 | Scope | State |
 | --- | --- |
-| M0 through M3, M6, M7 and M13 | Implemented for the documented macOS arm64 scope. M2 uses ephemeral live inventory with marker-based ownership; independent persisted descendant attribution is outside this support scope. Suspect-threshold validation awaits the labeled process corpus in issue #17. |
+| M0 through M3, M6, M7 and M13 | Implemented for the documented macOS arm64 scope. M2 uses ephemeral live inventory with marker-based ownership; independent persisted descendant attribution is outside this support scope. Suspect-threshold calibration is deferred, not a v1 gate, and remains open in issue #17. |
 | Claude Code on macOS arm64 | Supported; lifecycle and controlled Homebrew acceptance are recorded |
 | Codex on macOS arm64 | Hook and MCP integration is available; automatic cleanup waits for exact host exit |
 | Linux x86_64 | Supported in 1.7.0 on Ubuntu 24.04 with writable ext4 data directories |
