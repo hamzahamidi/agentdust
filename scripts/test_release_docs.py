@@ -68,8 +68,8 @@ class ReadmeUsageTest(unittest.TestCase):
         cls.usage = section(cls.text, r"## Using AgentDust " + re.escape(VERSION))
 
     def test_the_section_names_the_supported_release_platform_and_agents(self):
-        self.assertIn("Homebrew targets macOS arm64. npm and release archives target macOS arm64 and Linux x86_64 on Ubuntu 24.04.", self.usage)
-        self.assertIn("only if the exact Linux archive and npm package pass the release workflow's WSL2 checks before publication", self.usage)
+        self.assertIn("Homebrew targets macOS arm64. npm and release archives support macOS arm64 and Linux x86_64 on Ubuntu 24.04, including Ubuntu 24.04 x86_64 under WSL2.", self.usage)
+        self.assertIn("The exact Linux archive and npm package passed WSL2 release acceptance before publication.", self.usage)
         self.assertIn("On Linux and WSL2, the data directory must be on writable ext4.", self.usage)
         self.assertIn("In WSL2, the agent and AgentDust must run in the same distribution.", self.usage)
         self.assertIn("AgentDust supports Claude Code and Codex process tracking", self.usage)
