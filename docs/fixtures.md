@@ -179,7 +179,7 @@ Success criterion 5 reads as three checks over the result, and the tests hold al
 
 ### The suspect thresholds
 
-The thresholds are provisional constants (GitHub issue 17). The corpus was measured like this:
+The thresholds are provisional heuristics (GitHub issue 17). Suspect items remain advisory, require one typed approval per item and never enter automatic cleanup. Empirical calibration is deferred, not a v1 release gate. Revisit it if ordinary use produces false proposals. The fixture corpus was measured like this:
 
 1. For the two `true_detached` fixtures and five fixtures that must stay out of `suspect`, the classifier ran at ages of 0, 10, 20, 29, 31, 90 and 600 minutes.
 2. A process is a suspect exactly when it is `true_detached` and the age reaches 30 minutes. No process with `must_never_signal` is a suspect at any age.
