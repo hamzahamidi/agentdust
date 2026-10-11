@@ -76,7 +76,7 @@ A Homebrew upgrade check found that replacing the installed binary does not repl
 
 ## Automatic cleanup in 1.1
 
-The user-selected scope is automatic cleanup of proven leftovers, with approval for uncertain cases. The opt-in addition preserves the existing manual API and uses `1.1.0` under the [release policy](docs/release.md#semantic-versioning). Breaking public contracts would require a major version instead. All four items are implemented. The [implementation CI run](https://github.com/hamzahamidi/agentdust/actions/runs/37740053058) passed Linux and macOS checks, including isolated normal and abrupt owner exits and survivor restart. An isolated local GUI launchd check separately passed worker start and unload. Production setup acceptance and normal-use value remain unmeasured.
+The user-selected scope is automatic cleanup of proven leftovers, with approval for uncertain cases. The opt-in addition preserves the existing manual API and uses `1.1.0` under the [release policy](docs/release.md#semantic-versioning). Breaking public contracts would require a major version instead. All four items are implemented. The [implementation CI run](https://github.com/hamzahamidi/agentdust/actions/runs/37740053058) passed Linux and macOS checks, including isolated normal and abrupt owner exits and survivor restart. An isolated local GUI launchd check separately passed worker start and unload. On 2026-10-11, the installed 1.8.1 Claude Code setup check and foreground worker resume were verified on the maintainer's Mac. The worker matched the CLI build with 37 project scopes enabled. The [dogfood record](docs/m6/dogfood.md) records these checks; natural cleanup value remains unmeasured.
 
 | Order | Deliverable | Completion evidence |
 | --- | --- | --- |
@@ -142,7 +142,7 @@ Exit: primitives and storage survive unit, property, fuzz and concurrency tests,
 
 ### M2 Claude Code doctor and provenance (L)
 
-- Process inventory and classifier (owned-ended, likely-owned, suspect, managed, unknown). Listening-port evidence is deferred.
+- Process inventory and classifier (owned-ended, likely-owned, suspect, managed, unknown). Listening-port evidence was outside M2 and shipped separately in 1.4.0.
 - Suspect rules: parent is launchd or the launcher chain is dead, same UID, older than the age threshold, idle, not managed by launchd or Homebrew services, and not on a deny list (system processes, the agent that is asking, the AgentDust server itself).
 - Claude Code adapter: `SessionStart` environment tag through `CLAUDE_ENV_FILE`, `PreToolUse` and `PostToolUse` with a Bash matcher paired by `tool_use_id`, event-driven process sampling.
 - Acceptance cases: fresh session, resumed session, after `/clear`, subagent Bash, `CLAUDE_ENV_FILE` missing, abrupt termination, normal session end.
@@ -283,7 +283,7 @@ The M8 plugin directory submission and upstream issue comment are optional. Neit
 | `CLAUDE_ENV_FILE` is missing on resume, `/clear` or in plugin hooks | Tag is additive evidence only, with explicit acceptance cases |
 | Hook latency grows under journal contention | 3 and 16 writer benchmark in M1, hard budget in CI |
 | Missing Codex native markers or host identity, and weaker Cursor provenance | Codex requires its native marker and every exact recorded host gone. Incomplete evidence stays report-only. Cursor remains deferred |
-| A suspect is a deliberately detached process | Evidence shown per item, one typed code per item, SIGTERM only, audit log, deny list, false positives counted in the 1.0 evidence |
+| A suspect is a deliberately detached process | Evidence shown per item, one typed code per item, SIGTERM only, audit log and deny list. Count false proposals during ordinary use; controlled fixtures establish safety rules |
 | Secrets in commands reach the journal | Ingestion minimisation, privacy invariant test |
 | Config patching damages a user file | Surgical edits, diff plus consent, per-product rollback, `--check`, `--remove` |
 | Release trust discovered too late | Release skeleton and reproducibility experiment in M0 |
