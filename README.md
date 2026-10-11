@@ -45,7 +45,7 @@ agentdust port 3000
 agentdust port 3000 --resolve --json
 ```
 
-A port number does not grant permission to stop its listener. Live, kept, unknown and managed processes remain protected. Results cover current-user-visible IPv4/IPv6 TCP listeners. `no_visible_listener` is an observation, not a guarantee that a bind will succeed. See [port conflict recovery](docs/port-conflicts.md).
+A port number does not grant permission to stop its listener. Live, kept, unknown and managed processes remain protected. Results cover current-user-visible IPv4/IPv6 TCP listeners. A process may be omitted when its identity or socket descriptors cannot be read. `no_visible_listener` is an observation, not a guarantee that a bind will succeed. See [port conflict recovery](docs/port-conflicts.md).
 
 ## Connect Codex
 

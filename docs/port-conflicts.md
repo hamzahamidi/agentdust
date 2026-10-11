@@ -25,10 +25,10 @@ The JSON report has version `1`, the requested `port`, protocol `tcp`, visibilit
 | State | Meaning |
 | --- | --- |
 | `listening` | At least one listener was observed in the final scan |
-| `no_visible_listener` | No listener was observed within current-user visibility at that moment |
+| `no_visible_listener` | No listener was observed among current-user processes whose relevant data was readable at that moment |
 | `unavailable` | Inventory, classification or final verification failed; read `error` |
 
-An empty visible scan is not a bind guarantee. Another user may hold a socket that this account cannot inspect. A process can start listening after the scan, and non-listening TCP sockets can also affect binding. UDP, cloud execution and remote hosts are outside this feature.
+An empty visible scan is not a bind guarantee. Another user or an inaccessible same-user process may hold a socket that AgentDust cannot inspect. A process can start listening after the scan, and non-listening TCP sockets can also affect binding. UDP, cloud execution and remote hosts are outside this feature.
 
 ## Execution boundary
 

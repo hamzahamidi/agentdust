@@ -353,6 +353,35 @@ fn refresh_current_namespace_candidate<P: ProcessProvider + ?Sized>(
     }
 }
 
+fn listener_fd_match<I, F>(
+    descriptors: I,
+    inodes: &BTreeSet<u64>,
+    mut read_link: F,
+) -> io::Result<Option<bool>>
+where
+    I: IntoIterator<Item = io::Result<PathBuf>>,
+    F: FnMut(&Path) -> io::Result<PathBuf>,
+{
+    for descriptor in descriptors {
+        let descriptor = match descriptor {
+            Ok(descriptor) => descriptor,
+            Err(error) if missing(&error) => continue,
+            Err(error) if permission_denied(&error) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let target = match read_link(&descriptor) {
+            Ok(target) => target,
+            Err(error) if missing(&error) => continue,
+            Err(error) if permission_denied(&error) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        if socket_inode(&target).is_some_and(|inode| inodes.contains(&inode)) {
+            return Ok(Some(true));
+        }
+    }
+    Ok(Some(false))
+}
+
 pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
     let provider = LinuxProvider::new()?;
     let current_namespace = network_namespace_inode(Path::new(PROC), "self")?;
@@ -418,33 +447,8 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
             Err(error) if not_visible(&error) => continue,
             Err(error) => return Err(error),
         };
-        let mut owns_listener = false;
-        let mut visible = true;
-        for descriptor in descriptors {
-            let descriptor = match descriptor {
-                Ok(descriptor) => descriptor,
-                Err(error) if not_visible(&error) => {
-                    visible = false;
-                    break;
-                }
-                Err(error) => return Err(error),
-            };
-            let target = match fs::read_link(descriptor.path()) {
-                Ok(target) => target,
-                Err(error) if not_visible(&error) => {
-                    visible = false;
-                    break;
-                }
-                Err(error) => return Err(error),
-            };
-            if let Some(inode) = socket_inode(&target)
-                && inodes.contains(&inode)
-            {
-                owns_listener = true;
-                break;
-            }
-        }
-        if !visible || !owns_listener {
+        let descriptor_paths = descriptors.map(|descriptor| descriptor.map(|entry| entry.path()));
+        if listener_fd_match(descriptor_paths, &inodes, |path| fs::read_link(path))? != Some(true) {
             continue;
         }
         if let Some(fresh) = listener_identity(&process.kernel, provider.read(pid)?)? {
@@ -477,20 +481,8 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
             Err(error) if missing(&error) => continue,
             Err(error) => return Err(error),
         };
-        let mut still_listening = false;
-        for descriptor in descriptors {
-            let descriptor = descriptor?;
-            let target = match fs::read_link(descriptor.path()) {
-                Ok(target) => target,
-                Err(error) if missing(&error) => continue,
-                Err(error) => return Err(error),
-            };
-            if socket_inode(&target).is_some_and(|inode| current_inodes.contains(&inode)) {
-                still_listening = true;
-                break;
-            }
-        }
-        if !still_listening {
+        let descriptor_paths = descriptors.map(|descriptor| descriptor.map(|entry| entry.path()));
+        if listener_fd_match(descriptor_paths, &current_inodes, |path| fs::read_link(path))? != Some(true) {
             continue;
         }
         match provider.read(pid)? {
@@ -667,6 +659,20 @@ mod listener_process_tests {
             )
             .unwrap()
         );
+    }
+
+    #[test]
+    fn a_vanished_descriptor_does_not_hide_a_later_listener_descriptor() {
+        let descriptors = vec![Ok(PathBuf::from("vanished")), Ok(PathBuf::from("listener"))];
+        let matched = listener_fd_match(descriptors, &BTreeSet::from([123]), |path| {
+            if path == Path::new("vanished") {
+                Err(io::Error::from(io::ErrorKind::NotFound))
+            } else {
+                Ok(PathBuf::from("socket:[123]"))
+            }
+        })
+        .unwrap();
+        assert_eq!(matched, Some(true));
     }
 
     #[test]
@@ -1386,6 +1392,10 @@ fn missing(error: &io::Error) -> bool {
 
 fn not_visible(error: &io::Error) -> bool {
     missing(error) || error.kind() == io::ErrorKind::PermissionDenied
+}
+
+fn permission_denied(error: &io::Error) -> bool {
+    error.kind() == io::ErrorKind::PermissionDenied
 }
 
 #[cfg(test)]
