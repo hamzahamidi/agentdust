@@ -97,10 +97,14 @@ host_pid=$(powershell.exe -NoProfile -NonInteractive -Command '$p = Start-Proces
 case "$host_pid" in
     ''|*[!0-9]*) echo 'WSL interop did not return a Windows host PID' >&2; exit 1 ;;
 esac
+assert_host_alive() {
+    powershell.exe -NoProfile -NonInteractive -Command "if (-not (Get-Process -Id $host_pid -ErrorAction SilentlyContinue)) { exit 1 }" >/dev/null
+}
 cleanup_host() {
     powershell.exe -NoProfile -NonInteractive -Command "Stop-Process -Id $host_pid -Force -ErrorAction SilentlyContinue" >/dev/null 2>&1 || true
 }
 trap cleanup_host EXIT
+assert_host_alive
 windows_process_seen=0
 for proc_exe in /proc/[0-9]*/exe; do
     exe=$(readlink "$proc_exe" 2>/dev/null || true)
@@ -118,5 +122,6 @@ findings = json.load(open(sys.argv[1], encoding="utf-8"))["findings"]
 windows_names = {"powershell.exe", "pwsh.exe"}
 assert all((finding.get("exe_base") or "").lower() not in windows_names for finding in findings)
 PY
+assert_host_alive
 
 printf 'PASS: WSL2 ext4, Claude Code and Codex setup, journal, PID identity, ports, automatic worker, npm package and host process isolation\n'

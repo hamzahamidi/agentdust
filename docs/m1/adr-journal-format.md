@@ -309,7 +309,7 @@ Section 9.2, stress row. Replace "three concurrent journal writers, rotation und
 
 Section 10, journal format row. Replace "M1 contention benchmark" with "M1 contention benchmark: one `O_APPEND` file, no lock for appenders and readers, an append recheck (docs/m1/adr-journal-format.md)".
 
-ROADMAP: remove open decision 1, and add a row to the decisions table: `| Journal | One O_APPEND file framed with RS, no lock for appenders and readers, an append recheck, 64 KiB frame cap, local APFS only |`. In the M1 bullet "Locking and the three-writer benchmark that picks the ledger format", replace "Locking and the three-writer benchmark" with "The 3 and 16 writer benchmark".
+ROADMAP: remove open decision 1, and add a row to the decisions table: `| Journal | One O_APPEND file framed with RS, no lock for appenders and readers, an append recheck, 64 KiB frame cap, local APFS on macOS and writable ext4 on Linux |`. In the M1 bullet "Locking and the three-writer benchmark that picks the ledger format", replace "Locking and the three-writer benchmark" with "The 3 and 16 writer benchmark".
 
 ## What the remaining journal tasks must change
 

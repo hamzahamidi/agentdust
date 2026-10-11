@@ -250,9 +250,9 @@ Exit: complete. Ubuntu 24.04 x86_64 acceptance passed for Claude Code and Codex,
 
 Run AgentDust and the agent inside one Ubuntu 24.04 WSL2 distribution. Use the existing Linux x86_64 release package and process provider. Keep discovery, identity checks and signals inside the WSL2 Linux process namespace. Reject data directories on `/mnt/c` and other non-ext4 volumes. See the [WSL2 runtime limits](docs/wsl2.md).
 
-Acceptance covers Claude Code and Codex setup, check and removal; hooks and MCP; doctor, plan and approved apply; opt-in cleanup after normal and abrupt owner exit; controlled TCP port recovery; npm and archive installation; and systemd user worker start, stop and restart while the distro is running. Launch a Windows PowerShell process through WSL interop, verify it is absent from Linux `/proc` and AgentDust findings, and keep it outside actionable inventory. Verify that the default WSL data path uses ext4 and that `/mnt/c` fails the journal gate. Document that stopping WSL stops its worker and that systemd does not keep the distro alive.
+Acceptance uses controlled fixtures for Claude Code and Codex setup, check and removal; hooks and MCP; doctor, plan and approved apply; opt-in cleanup after normal and abrupt owner exit; and controlled TCP port recovery. These lifecycle fixtures do not launch the Claude Code or Codex client binaries. The exact release archive is checked for version, `/mnt/c` refusal, worker lifecycle and Windows process isolation. The exact npm tarball is installed and its Linux binary is compared with the archive. Launch a Windows PowerShell process through WSL interop, verify it is absent from Linux `/proc` and AgentDust findings, and confirm it stays alive during the inventory. Verify that the default WSL data path uses ext4. Document that stopping WSL stops its worker and that systemd does not keep the distro alive.
 
-Exit: the full matrix passes in a clean WSL2 distribution on GitHub Actions and the release package. WSL2 remains a Linux deployment, not native Windows support.
+Exit: the controlled source matrix passes in a clean WSL2 distribution on GitHub Actions. The exact archive and npm package pass the package checks listed above. WSL2 remains a Linux deployment, not native Windows support.
 
 ### M12 Native Windows feasibility spike (S, 4 to 7 days)
 

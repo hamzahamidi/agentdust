@@ -173,6 +173,13 @@ fn check_resolution(survivor: bool) {
 }
 
 fn report(data: &Path, home: &Path, project: &Path, port: u16) -> Value {
+    let direct = LinuxListeners
+        .listeners(port)
+        .expect("controlled listener inventory");
+    assert!(
+        !direct.is_empty(),
+        "the controlled listener is missing: {direct:?}"
+    );
     let output = Command::new(env!("CARGO_BIN_EXE_agentdust"))
         .args(["port", &port.to_string(), "--resolve", "--json"])
         .env("HOME", home)
