@@ -1,6 +1,6 @@
 # WSL2 runtime limits
 
-WSL2 support in AgentDust 1.7.1 requires the exact Linux x86_64 archive and npm package to pass WSL2 checks in the release workflow before publication. The target is Ubuntu 24.04 x86_64. The agent and AgentDust must run in the same distribution, and the data directory must be on writable ext4.
+AgentDust 1.7.1 supports Ubuntu 24.04 x86_64 under WSL2. The exact Linux archive and npm package passed WSL2 release acceptance in [run 38104539057](https://github.com/hamzahamidi/agentdust/actions/runs/38104539057). The agent and AgentDust must run in the same distribution, and the data directory must be on writable ext4.
 
 AgentDust runs as a Linux process inside one Ubuntu 24.04 WSL2 distribution. The agent and AgentDust must run in that same distribution so process discovery, identity checks and signals use one Linux process namespace.
 

@@ -1,6 +1,6 @@
 # AgentDust roadmap
 
-The latest stable release, AgentDust 1.7.0, supports Claude Code and Codex on Apple silicon macOS and Ubuntu 24.04 x86_64. The 1.7.1 candidate adds WSL2 after exact release artifact acceptance. On Linux, the data directory must be on writable ext4. Automatic cleanup results include their record time. M0 through M3, M6, M7, M10 and M13 are implemented for these support scopes. The Claude Code 2.1.292 fixture matrix covers concurrent sessions, subagents, resume, `/clear` and abrupt exit. The 1.0.0 Homebrew setup, live session discovery, idle measurement, human decline and approved apply passed on the maintainer's Mac using that exact release binary. See the [v1 readiness record](docs/v1/readiness.md), [fixture matrix](docs/m6/fixtures.md) and [design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
+The latest stable release, AgentDust 1.7.1, supports Claude Code and Codex on Apple silicon macOS, Ubuntu 24.04 x86_64 and Ubuntu 24.04 x86_64 under WSL2. WSL2 uses the Linux process namespace, writable ext4 and one distribution for both AgentDust and the agent. The exact 1.7.1 archive and npm package passed WSL2 release acceptance in [run 38104539057](https://github.com/hamzahamidi/agentdust/actions/runs/38104539057). Automatic cleanup results include their record time. M0 through M3, M6, M7, M10, M11 and M13 are implemented for these support scopes. The Claude Code 2.1.292 fixture matrix covers concurrent sessions, subagents, resume, `/clear` and abrupt exit. The 1.0.0 Homebrew setup, live session discovery, idle measurement, human decline and approved apply passed on the maintainer's Mac using that exact release binary. See the [v1 readiness record](docs/v1/readiness.md), [fixture matrix](docs/m6/fixtures.md) and [design spec](docs/superpowers/specs/2026-10-03-agentdust-design.md).
 
 ## Project setup
 
@@ -70,7 +70,7 @@ The table separates current support from planned targets. A platform and agent p
 
 ## Current priority
 
-M10 Linux x86_64 shipped in 1.7.0 for Claude Code and Codex on Ubuntu 24.04 with writable ext4 data directories. Journal rotation and retention run from the automatic worker. The M11 WSL2 source acceptance passed on PR #70. Exact 1.7.1 archive and npm acceptance remains required before WSL2 is supported. M12 is a native Windows feasibility spike, not a commitment to Windows signalling. Do not schedule Linux arm64 or Intel Mac until there is demand and the shared runtime gates are complete. Record useful cleanups, incorrect proposals, deliberate keeps and successful port recovery on the available Mac. A cleanup count does not measure time, CPU or memory saved. No multi Mac study is a release gate.
+M10 Linux x86_64 shipped in 1.7.0. M11 WSL2 certification completed in 1.7.1 after source acceptance on PR #70 and exact archive and npm acceptance in release run 38104539057. Journal rotation and retention run from the automatic worker. The next product priority is recording useful cleanups, incorrect proposals, deliberate keeps and successful port recovery during ordinary use. A cleanup count does not measure time, CPU or memory saved. M12 is a bounded native Windows feasibility decision. Diagnosis only or no go is acceptable; a full Windows provider is not committed. Do not schedule Linux arm64 or Intel Mac until there is demand and the shared runtime gates are complete. No multi Mac study is a release gate.
 
 ## Automatic cleanup in 1.1
 
@@ -97,7 +97,7 @@ Port-conflict diagnosis and recovery are implemented in `1.4.0`: identify curren
 | Claude Code on macOS arm64 | Supported; lifecycle and controlled Homebrew acceptance are recorded |
 | Codex on macOS arm64 | Hook and MCP integration is available; automatic cleanup waits for exact host exit |
 | Linux x86_64 | Supported in 1.7.0 on Ubuntu 24.04 with writable ext4 data directories |
-| WSL2 | Source acceptance passed on PR #70. Support begins with 1.7.1 after exact archive and npm acceptance |
+| WSL2 | Supported in 1.7.1 on Ubuntu 24.04 x86_64. Source, exact archive and npm acceptance passed |
 | Native Windows | Not supported; M12 is a feasibility decision, with no implementation commitment |
 | Other AI agents | Common MCP diagnosis and manual tools are possible; automatic cleanup needs a client specific adapter |
 | M9 controlled Homebrew acceptance | Complete; measurement limits remain in the [readiness record](docs/v1/readiness.md) |
@@ -109,7 +109,7 @@ Port-conflict diagnosis and recovery are implemented in `1.4.0`: identify curren
 | Codex desktop cleanup while its server stays alive | Deferred until session revocation and live subagent protection have a separate proof |
 | M5 Cursor | Deferred until its lifecycle and ownership evidence can pass the same safety checks |
 | Other MCP hosts | Manual diagnosis and approval tools are available where the client supports the required MCP approval behavior. Automatic cleanup requires a separate lifecycle adapter and proof of ownership and exit. |
-| M10 through M12 | M10 shipped in 1.7.0; M11 source acceptance passed and exact 1.7.1 artifact acceptance remains; M12 Windows feasibility remains |
+| M10 through M12 | M10 shipped in 1.7.0; M11 completed in 1.7.1; M12 native Windows feasibility remains |
 
 ## Milestones
 
@@ -252,7 +252,7 @@ Run AgentDust and the agent inside one Ubuntu 24.04 WSL2 distribution. Use the e
 
 Acceptance uses controlled fixtures for Claude Code and Codex setup, check and removal; hooks and MCP; doctor, plan and approved apply; opt-in cleanup after normal and abrupt owner exit; and controlled TCP port recovery. These lifecycle fixtures do not launch the Claude Code or Codex client binaries. The exact release archive is checked for version, `/mnt/c` refusal, worker lifecycle and Windows process isolation. The exact npm tarball is installed and its Linux binary is compared with the archive. Launch a Windows PowerShell process through WSL interop, verify it is absent from Linux `/proc` and AgentDust findings, and confirm it stays alive during the inventory. Verify that the default WSL data path uses ext4. Document that stopping WSL stops its worker and that systemd does not keep the distro alive.
 
-Exit: the controlled source matrix passed on PR #70 in a clean WSL2 distribution on GitHub Actions. The exact 1.7.1 archive and npm package must pass the release workflow checks before M11 is complete. WSL2 remains a Linux deployment, not native Windows support.
+Exit: complete. The controlled source matrix passed on PR #70 in a clean WSL2 distribution. The exact 1.7.1 archive and npm package passed release acceptance in [run 38104539057](https://github.com/hamzahamidi/agentdust/actions/runs/38104539057). WSL2 remains a Linux deployment, not native Windows support.
 
 ### M12 Native Windows feasibility spike (S, 4 to 7 days)
 
