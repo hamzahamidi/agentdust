@@ -16,6 +16,12 @@ The branch-scoped [M12 Windows job](../.github/workflows/ci.yml) runs isolated s
 
 The experiment does not use Claude Code or Codex, and it does not prove agent lifecycle attribution or an AgentDust provider. The job reports `follow_up_needed` only when every scope check passes; a completed `no_go` is also a successful experiment. `ERROR_FAIL_SHUTDOWN` is an expected refusal for a target that does not exit. Other Restart Manager errors, runtime failures or setup errors fail the job. A passing result only permits separate feasibility work. Native Windows remains unsupported until the exact target can be stopped gracefully without affecting any other process.
 
+## Result
+
+The probe completed with a no-go in [Windows Actions run 38106774812](https://github.com/hamzahamidi/agentdust/actions/runs/38106774812) at commit `ba045ba542bbbffbe3b52c823b967ccb6cb7ee84`. Restart Manager returned success and the selected target exited with code 0, but the sibling and descendant sharing its console also received `CTRL_C_EVENT`. For the unresponsive target, Restart Manager returned `ERROR_FAIL_SHUTDOWN`; the target stayed alive, while the sibling and descendant again received `CTRL_C_EVENT`. The stale creation-time guard rejected the request before calling Restart Manager.
+
+The Restart Manager path does not meet AgentDust's single-process cleanup contract. Native Windows cleanup remains unsupported. Reopen feasibility only if a different graceful action can target one existing process without signaling its console peers and user demand justifies the work.
+
 ## Microsoft references
 
 1. [Console process groups](https://learn.microsoft.com/en-us/windows/console/console-process-groups)

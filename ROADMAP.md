@@ -22,7 +22,7 @@ An MCP client can use the common diagnosis and manual tools where its client sup
 | macOS x86_64 | Claude Code and Codex | Deferred pending user demand and architecture-specific release checks. |
 | Linux x86_64 | Claude Code and Codex | Supported in 1.7.0 on Ubuntu 24.04 with the data directory on writable ext4. |
 | Linux arm64 | Claude Code and Codex | Deferred pending user demand and architecture-specific safety and release checks. |
-| Windows x86_64 | Claude Code and Codex | Unsupported. M12 probes whether Restart Manager can safely stop one existing console helper. |
+| Windows x86_64 | Claude Code and Codex | Unsupported. M12 found that Restart Manager shutdown signals the selected helper's console peers. |
 | Other MCP clients | Common diagnosis and manual tools where supported | Automatic cleanup needs a client specific lifecycle adapter and separate acceptance. |
 
 The table separates current support from planned targets. A platform and agent pair becomes supported only after its installation, removal, cleanup safety and release checks pass. A host's session end event alone does not prove that a helper is safe to stop. Live, shared, ambiguous and unknown ownership remains protected.
@@ -70,7 +70,7 @@ The table separates current support from planned targets. A platform and agent p
 
 ## Current priority
 
-M10 Linux x86_64 shipped in 1.7.0. M11 WSL2 certification completed in 1.7.1 after source acceptance on PR #70 and exact archive and npm acceptance in release run 38104539057. Journal rotation and retention run from the automatic worker. The next product priority is recording useful cleanups, incorrect proposals, deliberate keeps and successful port recovery during ordinary use. A cleanup count does not measure time, CPU or memory saved. M12 is a bounded native Windows feasibility decision. Diagnosis only or no go is acceptable; a full Windows provider is not committed. Do not schedule Linux arm64 or Intel Mac until there is demand and the shared runtime gates are complete. No multi Mac study is a release gate.
+M10 Linux x86_64 shipped in 1.7.0. M11 WSL2 certification completed in 1.7.1 after source acceptance on PR #70 and exact archive and npm acceptance in release run 38104539057. M12 completed with a no-go for the tested native Windows shutdown path because its control event reached console peers. Journal rotation and retention run from the automatic worker. The next product priority is recording useful cleanups, incorrect proposals, deliberate keeps and successful port recovery during ordinary use. A cleanup count does not measure time, CPU or memory saved. A full Windows provider is not committed. Do not schedule Linux arm64 or Intel Mac until there is demand and the shared runtime gates are complete. No multi Mac study is a release gate.
 
 ## Automatic cleanup in 1.1
 
@@ -98,7 +98,7 @@ Port-conflict diagnosis and recovery are implemented in `1.4.0`: identify curren
 | Codex on macOS arm64 | Hook and MCP integration is available; automatic cleanup waits for exact host exit |
 | Linux x86_64 | Supported in 1.7.0 on Ubuntu 24.04 with writable ext4 data directories |
 | WSL2 | Supported in 1.7.1 on Ubuntu 24.04 x86_64. Source, exact archive and npm acceptance passed |
-| Native Windows | Not supported; M12 tests one no-force Restart Manager shutdown path before any implementation decision |
+| Native Windows | Not supported; M12 no-go because the no-force Restart Manager path signaled sibling and descendant processes in [run 38106774812](https://github.com/hamzahamidi/agentdust/actions/runs/38106774812) |
 | Other AI agents | Common MCP diagnosis and manual tools are possible; automatic cleanup needs a client specific adapter |
 | M9 controlled Homebrew acceptance | Complete; measurement limits remain in the [readiness record](docs/v1/readiness.md) |
 | Plugin/setup guidance | Guidance package `0.8.0` explains setup readiness, agent-guided port recovery and automatic results |
@@ -109,7 +109,7 @@ Port-conflict diagnosis and recovery are implemented in `1.4.0`: identify curren
 | Codex desktop cleanup while its server stays alive | Deferred until session revocation and live subagent protection have a separate proof |
 | M5 Cursor | Deferred until its lifecycle and ownership evidence can pass the same safety checks |
 | Other MCP hosts | Manual diagnosis and approval tools are available where the client supports the required MCP approval behavior. Automatic cleanup requires a separate lifecycle adapter and proof of ownership and exit. |
-| M10 through M12 | M10 shipped in 1.7.0; M11 completed in 1.7.1; M12 Restart Manager feasibility probe is pending |
+| M10 through M12 | M10 shipped in 1.7.0; M11 completed in 1.7.1; M12 completed with a no-go for the tested Windows shutdown path |
 
 ## Milestones
 
@@ -226,7 +226,7 @@ Exit: Claude Desktop package works on a clean account with the required local se
 
 ## Platform expansion
 
-macOS arm64 and Linux x86_64 are shipping platforms. Linux support is limited to Ubuntu 24.04 x86_64 with writable ext4 data directories. WSL2 is supported through the Linux provider. Native Windows remains unsupported while M12 tests one Restart Manager shutdown path. Ordinary-use outcome evidence is the next product priority. Linux arm64 and Intel macOS depend on user demand and architecture-specific safety and packaging checks. Agent support is tested with Claude Code and Codex on each target. Other operating systems and agents stay out of the support claim until their matrix entries pass.
+macOS arm64 and Linux x86_64 are shipping platforms. Linux support is limited to Ubuntu 24.04 x86_64 with writable ext4 data directories. WSL2 is supported through the Linux provider. M12 found that Restart Manager shutdown signals console peers, so native Windows cleanup remains unsupported. Ordinary-use outcome evidence is the next product priority. Linux arm64 and Intel macOS depend on user demand and architecture-specific safety and packaging checks. Agent support is tested with Claude Code and Codex on each target. Other operating systems and agents stay out of the support claim until their matrix entries pass.
 
 The controlled Homebrew acceptance is complete for Claude Code on Apple silicon. Codex automatic cleanup still waits for exact host exit. Field observations on the available Mac continue in parallel with platform work. A multi Mac study is optional confidence evidence.
 
@@ -256,13 +256,13 @@ Exit: complete. The controlled source matrix passed on PR #70 in a clean WSL2 di
 
 ### M12 Native Windows feasibility probe (S, one controlled experiment)
 
-Native Windows stays unsupported while one bounded experiment tests Restart Manager as a possible graceful action for exactly one existing console helper. The probe registers one process by PID and creation time, checks the affected process list, then calls `RmShutdown` without its force flag. Parent, sibling and descendant helpers share an isolated console so the probe can record any control event outside the target. It also checks an unresponsive target and an exited identity. See the [Windows feasibility record](docs/windows-feasibility.md).
+Native Windows remains unsupported. The bounded probe registered one existing console helper by PID and creation time, checked the affected process list, then called `RmShutdown` without its force flag. It found that the selected target exited, but its sibling and descendant also received `CTRL_C_EVENT`. It also checked a mismatched creation time paired with a live PID. The [Windows feasibility record](docs/windows-feasibility.md) includes the exact run and result.
 
-Exit: record the exact Windows Actions run and a yes or no decision. Any `CTRL_C_EVENT` or termination outside the target, forced fallback, ambiguous process list, or stale PID and creation time action is a no-go for cleanup under the current contract. A passing probe only permits a separately estimated feasibility phase for Claude Code and Codex lifecycle attribution, install and removal, and action-time identity checks. It does not approve a Windows provider. WSL2 does not count as native Windows support.
+Exit: no-go for this Restart Manager path. [Windows Actions run 38106774812](https://github.com/hamzahamidi/agentdust/actions/runs/38106774812) recorded `CTRL_C_EVENT` in both the sibling and descendant. Do not implement a provider on this evidence. Reopen only if a different graceful action can target one existing process without signaling peers and demand merits the work. WSL2 does not count as native Windows support.
 
 ## Architecture coverage after the platform baseline
 
-With WSL2 shipped and M12 limited to the Restart Manager probe, ordinary-use outcome evidence remains the next product priority. Rank Linux arm64 and Intel macOS by user demand, shared safety coverage and release cost before adding their build matrices. Each architecture needs the Claude Code and Codex setup, lifecycle and apply gates before it is listed as supported.
+With WSL2 shipped and M12 closed as a no-go for the tested Windows path, ordinary-use outcome evidence remains the next product priority. Rank Linux arm64 and Intel macOS by user demand, shared safety coverage and release cost before adding their build matrices. Each architecture needs the Claude Code and Codex setup, lifecycle and apply gates before it is listed as supported.
 
 ## Deferred capabilities
 

@@ -11,10 +11,14 @@ import uuid
 
 ERROR_MORE_DATA = 234
 ERROR_FAIL_SHUTDOWN = 351
+ERROR_INVALID_PARAMETER = 87
 STILL_ACTIVE = 259
 PROCESS_TERMINATE = 0x0001
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 SYNCHRONIZE = 0x00100000
+WAIT_OBJECT_0 = 0
+WAIT_TIMEOUT = 258
+WAIT_FAILED = 0xFFFFFFFF
 
 DWORD = ctypes.c_uint32
 UINT = ctypes.c_uint32
@@ -246,7 +250,10 @@ def rm_shutdown(pid, created):
 def pid_state(pid, expected_created):
     handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, pid)
     if not handle:
-        return "exited_or_inaccessible"
+        error = ctypes.get_last_error()
+        if error == ERROR_INVALID_PARAMETER:
+            return "exited"
+        raise ctypes.WinError(error)
     try:
         if process_creation_time(handle) != expected_created:
             return "pid_reused"
@@ -261,15 +268,48 @@ def pid_state(pid, expected_created):
 def terminate_owned(pid, expected_created):
     handle = kernel32.OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, pid)
     if not handle:
-        return
+        error = ctypes.get_last_error()
+        if error == ERROR_INVALID_PARAMETER:
+            return
+        raise ctypes.WinError(error)
     try:
-        if process_creation_time(handle) == expected_created:
-            code = DWORD()
-            if kernel32.GetExitCodeProcess(handle, ctypes.byref(code)) and code.value == STILL_ACTIVE:
-                kernel32.TerminateProcess(handle, 137)
-                kernel32.WaitForSingleObject(handle, 5000)
+        if process_creation_time(handle) != expected_created:
+            return
+        code = DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        if code.value != STILL_ACTIVE:
+            return
+        if not kernel32.TerminateProcess(handle, 137):
+            terminate_error = ctypes.get_last_error()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            if code.value == STILL_ACTIVE:
+                raise ctypes.WinError(terminate_error)
+        wait_result = kernel32.WaitForSingleObject(handle, 5000)
+        if wait_result == WAIT_OBJECT_0:
+            return
+        if wait_result == WAIT_TIMEOUT:
+            raise TimeoutError(f"owned helper did not exit after cleanup: {pid}")
+        if wait_result == WAIT_FAILED:
+            raise ctypes.WinError(ctypes.get_last_error())
+        raise OSError(f"WaitForSingleObject returned unexpected status {wait_result}")
     finally:
         kernel32.CloseHandle(handle)
+
+
+def cleanup_owned(owned):
+    failures = []
+    for pid, created in reversed(owned):
+        try:
+            terminate_owned(pid, created)
+        except Exception as error:
+            failures.append((pid, error))
+    return failures
+
+
+def cleanup_failure_message(failures):
+    return "; ".join(f"PID {pid}: {error!r}" for pid, error in failures)
 
 
 def run_probe(directory):
@@ -354,9 +394,16 @@ def run_probe(directory):
             "other_ctrl_c_counts_before": before,
             "other_ctrl_c_counts_after": after,
         }
-    finally:
-        for pid, created in owned:
-            terminate_owned(pid, created)
+    except BaseException as probe_error:
+        cleanup_failures = cleanup_owned(owned)
+        if cleanup_failures:
+            detail = cleanup_failure_message(cleanup_failures)
+            raise RuntimeError(f"probe failed with {probe_error!r}; helper cleanup also failed: {detail}") from probe_error
+        raise
+    else:
+        cleanup_failures = cleanup_owned(owned)
+        if cleanup_failures:
+            raise RuntimeError(f"helper cleanup failed: {cleanup_failure_message(cleanup_failures)}")
 
     target = summary["targeted_shutdown"]
     unresponsive = summary["unresponsive_shutdown"]
