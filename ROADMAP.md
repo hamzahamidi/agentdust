@@ -70,7 +70,9 @@ The table separates current support from planned targets. A platform and agent p
 
 ## Current priority
 
-M10 Linux x86_64 shipped in 1.7.0. M11 WSL2 certification completed in 1.7.1 after source acceptance on PR #70 and exact archive and npm acceptance in release run 38104539057. M12 completed with a no-go for the tested native Windows shutdown path because its control event reached console peers. Journal rotation and retention run from the automatic worker. The next product priority is recording useful cleanups, incorrect proposals, deliberate keeps and successful port recovery during ordinary use. A cleanup count does not measure time, CPU or memory saved. A full Windows provider is not committed. Do not schedule Linux arm64 or Intel Mac until there is demand and the shared runtime gates are complete. No multi Mac study is a release gate.
+M10 Linux x86_64 shipped in 1.7.0. M11 WSL2 certification completed in 1.7.1 after source acceptance on PR #70 and exact archive and npm acceptance in release run 38104539057. M12 completed with a no-go for the tested native Windows shutdown path because its control event reached console peers. Journal rotation and retention run from the automatic worker. The next product priority is recording useful cleanups, incorrect proposals, deliberate keeps and successful port recovery during ordinary use. Review evidence after the next ten substantive sessions on the available Mac; there is no fixed-duration or multi-Mac gate. A cleanup count does not measure time, CPU or memory saved.
+
+A Homebrew upgrade check found that replacing the installed binary does not replace an already-running worker process. `agentdust auto resume` refreshed the worker from 1.4.0 to 1.7.1 without changing its 37 enabled directories. Worker-version status reports whether the running worker matches the CLI build, differs or is an unversioned legacy worker. Run resume from the installed binary after an upgrade mismatch. Automatic restart on upgrade remains deferred. The old worker's termination report was not backfilled into M13 metrics. A full Windows provider is not committed. Do not schedule Linux arm64 or Intel Mac until there is demand and the shared runtime gates are complete.
 
 ## Automatic cleanup in 1.1
 
@@ -104,6 +106,7 @@ Port-conflict diagnosis and recovery are implemented in `1.4.0`: identify curren
 | Plugin/setup guidance | Guidance package `0.8.0` explains setup readiness, agent-guided port recovery and automatic results |
 | Automatic cleanup | Implemented for `1.1.0`; `1.5.0` adds per-result record times; measure value during normal use |
 | M13 local outcome metrics | Included in 1.6.0; history begins when a metrics-enabled build records cleanup results |
+| Worker upgrade visibility | Worker status reports its build; use `agentdust auto resume` after an upgrade mismatch or for a legacy worker |
 | Port-conflict recovery | Implemented in `1.4.0`; measure useful recovery during normal use |
 | M8 directory submission and upstream work | Optional |
 | Codex desktop cleanup while its server stays alive | Deferred until session revocation and live subagent protection have a separate proof |
@@ -258,7 +261,7 @@ Exit: complete. The controlled source matrix passed on PR #70 in a clean WSL2 di
 
 Native Windows remains unsupported. The bounded probe registered one existing console helper by PID and creation time, checked the affected process list, then called `RmShutdown` without its force flag. It found that the selected target exited, but its sibling and descendant also received `CTRL_C_EVENT`. It also checked a mismatched creation time paired with a live PID. The [Windows feasibility record](docs/windows-feasibility.md) includes the exact run and result.
 
-Exit: no-go for this Restart Manager path. [Windows Actions run 38106774812](https://github.com/hamzahamidi/agentdust/actions/runs/38106774812) recorded `CTRL_C_EVENT` in both the sibling and descendant. Do not implement a provider on this evidence. Reopen only if a different graceful action can target one existing process without signaling peers and demand merits the work. WSL2 does not count as native Windows support.
+Exit: no-go for this Restart Manager path. [Windows Actions run 38106774812](https://github.com/hamzahamidi/agentdust/actions/runs/38106774812) recorded `CTRL_C_EVENT` in both the sibling and descendant. The exact-head repeat in [run 38106976385](https://github.com/hamzahamidi/agentdust/actions/runs/38106976385) confirmed the result with the hardened cleanup and API checks. Do not implement a provider on this evidence. Reopen only if a different graceful action can target one existing process without signaling peers and demand merits the work. WSL2 does not count as native Windows support.
 
 ## Architecture coverage after the platform baseline
 

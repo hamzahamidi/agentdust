@@ -1,12 +1,23 @@
 # M6 dogfood record
 
-This record tracks real use after the limited beta. The v1 release gate is one controlled end-to-end run on the maintainer's Mac, recorded in the [readiness record](../v1/readiness.md). Setup checks and scripted acceptance tests do not replace that run. A three-Mac, two-week study is optional confidence evidence after 1.0. Identify each recorded build by its source commit and binary digest.
+This record tracks real use after the limited beta. The v1 release gate is one controlled end-to-end run on the maintainer's Mac, recorded in the [readiness record](../v1/readiness.md). Setup checks and scripted acceptance tests do not replace that run. Review product value after the next ten substantive sessions on the available Mac. There is no multi-Mac or fixed-duration gate. Identify each recorded build by its source commit and binary digest.
 
 On 2026-10-07, only machine A was available. Its setup check passed, but no interactive Claude Code session has been observed. Machines B and C are unavailable; the optional confidence study has not started.
 
 On 2026-10-08, AgentDust `1.4.0` was installed through Homebrew from source commit `c89beae63520550c756c59fd9bab979d4cf90b32`; the installed binary SHA-256 was `a80f676ad2fef62e676e11df97fa590fa1a7a2dd195bba57f6844f715346ec4f`. Automatic cleanup was enabled for 37 exact directory scopes and the worker was running. The bounded report contained no recent cleanup results and one `owned-live` review item. No natural cleanup or port incident was observed during release verification. CI fixtures and installed smoke checks demonstrate controlled behavior only; normal-use product value has not yet been observed.
 
 On 2026-10-09, a read-only status check of the same binary showed 37 enabled directory scopes, a running worker, a ready report, one recent `terminated` result, no review items and no pending work. The bounded report now contains one recent result that was absent from the 2026-10-08 check. The report does not retain a result timestamp or session scenario, so the event cannot be assigned to a specific session or date row. It confirms that an automatic cleanup outcome was recorded, not when it occurred or whether it solved a user problem.
+
+On 2026-10-11, Homebrew installed AgentDust `1.7.1` (binary SHA-256 `c1011d1bd0868db5211f40d7e6e3ebcede3213b657f614082ac9d94416aa7a7e`). Setup check passed. Automatic cleanup remained enabled for 37 directory scopes. The loaded worker was still `1.4.0`, so its historical `terminated` report predates M13 outcome metrics and cannot be counted as useful cleanup evidence. `agentdust auto resume` restarted the worker from the installed `1.7.1` binary. Metrics still reported zero recorded outcomes immediately afterward. No synthetic cleanup was run. Start ordinary-use evidence from this worker build.
+
+For each real incident during the next ten substantive sessions, record the smallest evidence that supports one of these signals:
+
+| Signal | Evidence |
+| --- | --- |
+| Useful cleanup | Confirm an unwanted helper was stopped and how that helped. |
+| Deliberate keep | Record that a helper was intentionally preserved. |
+| Incorrect proposal | Record what AgentDust proposed and why the proposal was wrong. |
+| Port recovery | Confirm the original operation succeeded after cleanup. |
 
 Use labels `A`, `B` and `C` for the machines. Record aggregate counts only. Do not add usernames, serial numbers, process IDs, paths, command text, session IDs, raw hook payloads or transcript content.
 

@@ -35,6 +35,8 @@ fn status_and_a_disabled_worker_create_no_state() {
     let status: Value = serde_json::from_slice(&status.stdout).unwrap();
     assert_eq!(status["enabled"], false);
     assert_eq!(status["worker_running"], false);
+    assert_eq!(status["worker_version"], serde_json::Value::Null);
+    assert_eq!(status["worker_version_status"], "stopped");
     assert_eq!(code(&sandbox.run(&["auto", "worker"])), 0);
     assert!(!sandbox.data.exists());
 }
@@ -82,6 +84,7 @@ async fn mcp_exposes_read_only_status_and_no_policy_mutation() {
         .unwrap();
     let value: Value = serde_json::from_str(&result.content[0].as_text().unwrap().text).unwrap();
     assert_eq!(value["enabled"], false);
+    assert_eq!(value["worker_version_status"], "stopped");
     let metrics = service
         .call_tool(CallToolRequestParams::new("agentdust_metrics"))
         .await
