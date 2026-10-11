@@ -1,5 +1,8 @@
 use thiserror::Error;
 
+const DARWIN_EXECUTABLE_KEY_LEN: usize = b"executable_path=".len();
+const PROCARGS_POINTER_SIZE: usize = std::mem::size_of::<usize>();
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct ProcArgs<'a> {
     pub exec_path: &'a [u8],
@@ -15,6 +18,8 @@ pub enum ParseError {
     NegativeArgc,
     #[error("buffer ends before all arguments were read")]
     Truncated,
+    #[error("buffer has invalid executable path padding")]
+    InvalidPadding,
 }
 
 const VALUE_OPTIONS: [&[u8]; 7] = [
@@ -42,9 +47,14 @@ fn read_args(buf: &[u8]) -> Result<Arguments<'_>, ParseError> {
     let argc = usize::try_from(i32::from_ne_bytes(header)).map_err(|_| ParseError::NegativeArgc)?;
     let mut rest = &buf[4..];
     let exec_path = take_cstr(&mut rest).ok_or(ParseError::Truncated)?;
-    while let [0, tail @ ..] = rest {
-        rest = tail;
+    let padding = (PROCARGS_POINTER_SIZE
+        - (DARWIN_EXECUTABLE_KEY_LEN + exec_path.len() + 1) % PROCARGS_POINTER_SIZE)
+        % PROCARGS_POINTER_SIZE;
+    let (padding_bytes, tail) = rest.split_at_checked(padding).ok_or(ParseError::Truncated)?;
+    if padding_bytes.iter().any(|byte| *byte != 0) {
+        return Err(ParseError::InvalidPadding);
     }
+    rest = tail;
     let mut args = Vec::with_capacity(argc.min(256));
     for _ in 0..argc {
         args.push(take_cstr(&mut rest).ok_or(ParseError::Truncated)?);
