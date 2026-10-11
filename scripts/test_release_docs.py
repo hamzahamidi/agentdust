@@ -15,6 +15,7 @@ README = ROOT / "README.md"
 SECURITY = ROOT / "SECURITY.md"
 RELEASE_DOC = ROOT / "docs" / "release.md"
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
+DRY_RUN_WORKFLOW = ROOT / ".github" / "workflows" / "release-dry-run.yml"
 MAIN_RS = ROOT / "crates" / "agentdust" / "src" / "main.rs"
 SETUP_RS = ROOT / "crates" / "agentdust" / "src" / "setup.rs"
 THREAT_MODEL = ROOT / "docs" / "threat-model.md"
@@ -67,7 +68,8 @@ class ReadmeUsageTest(unittest.TestCase):
         cls.usage = section(cls.text, r"## Using AgentDust " + re.escape(VERSION))
 
     def test_the_section_names_the_supported_release_platform_and_agents(self):
-        self.assertIn("Homebrew targets macOS arm64. npm and release archives support macOS arm64 and Linux x86_64 on Ubuntu 24.04 and WSL2.", self.usage)
+        self.assertIn("Homebrew targets macOS arm64. npm and release archives target macOS arm64 and Linux x86_64 on Ubuntu 24.04.", self.usage)
+        self.assertIn("only if the exact Linux archive and npm package pass the release workflow's WSL2 checks before publication", self.usage)
         self.assertIn("On Linux and WSL2, the data directory must be on writable ext4.", self.usage)
         self.assertIn("In WSL2, the agent and AgentDust must run in the same distribution.", self.usage)
         self.assertIn("AgentDust supports Claude Code and Codex process tracking", self.usage)
@@ -190,6 +192,14 @@ class ReleaseDocTest(unittest.TestCase):
         for needle in ("release-dry-run", "release/toolchain.json", "git tag -a", "HOMEBREW_TAP_TOKEN", "homebrew-agentdust", "[workspace.package]"):
             with self.subTest(needle=needle):
                 self.assertIn(needle, cut)
+
+    def test_toolchain_refresh_names_the_artifact_that_contains_the_record(self):
+        cut = section(self.text, r"## Cut a release")
+        workflow = read(DRY_RUN_WORKFLOW)
+        self.assertIn("build-darwin-arm64-a", cut)
+        self.assertIn("target: darwin-arm64", workflow)
+        self.assertIn("copy: a", workflow)
+        self.assertIn("name: build-${{ matrix.target }}-${{ matrix.copy }}", workflow)
 
     def test_rolling_back_gives_both_ways_out(self):
         back = section(self.text, r"## Roll back")
