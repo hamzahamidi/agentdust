@@ -2,6 +2,8 @@
 
 This page describes what the Claude Code hook records about the agent behind a session, and how `agentdust_core::session` turns the journal into session scopes. Spec sections 3.1 to 3.3 and 4.1 to 4.4 hold the design. The last sections list where the code differs from the spec and what is not built. Nothing here signals a process. The classifier and `doctor` read these results ([doctor](doctor.md)), and `apply` is separate work.
 
+Current implementation: hooks write lifecycle and paired shell events, not process lists. `agentdust doctor` and worker sweeps take ephemeral inventories, read process markers and compare CPU across the idle sample gap. These snapshots are not journal events. Shell records identify agent events, not helper PIDs; markerless helpers cannot gain owned-ended attribution from paired shell records or a transient snapshot alone.
+
 ## What the hook writes
 
 Six events are journaled. Every other event and every other tool writes nothing and creates nothing.
@@ -147,12 +149,12 @@ Each cell is one of two runs. At that load the previous binary is over the 20 ms
 - A missing environment file is created with mode 0600, as a shell `>>` would.
 - The hook records `agent_identity` on `shell_start`, `shell_end` and `session_end` as well as on `session_start`, which is what the spec means by any event with a live agent identity (3.3).
 
-## Not built here
+## Not built in the original M2 implementation
 
 - The known executable list of `setup`. A Claude Code installed with the native installer runs from `~/.local/share/claude/versions/<version>`, which `~/.local/bin/claude` points to on the development machine, and the layout rule finds it. An installation in another layout under another name is journaled with no identity, and its sessions are degraded. The Claude Code of the desktop application runs as `claude` and is found, and so is a `node` process whose script path mentions `claude`.
 - A hook wrapper that is itself a `node` script with `claude` in its path would be taken for the agent, and would end before it, which makes a live session look ended. The tests do not cover this case.
 - `health.json`: the per-agent hook health record of spec 4.4. A degraded scope is derived from the journal.
-- Sampling and `apply`. `session::scopes` is called by `doctor` and by nothing else.
+- Persisted descendant-process sampling and `apply`. The current automatic worker also uses `session::scopes` during reconciliation; live inventory is described in [doctor](doctor.md).
 
 ## Tests
 
