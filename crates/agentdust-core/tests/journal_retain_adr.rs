@@ -33,17 +33,18 @@ struct Row {
     copied: bool,
 }
 
-fn retention_section() -> &'static str {
-    let start = ADR
+fn retention_section(markdown: &str) -> String {
+    let markdown = markdown.replace("\r\n", "\n");
+    let start = markdown
         .find("\n## Retention\n")
         .expect("the ADR has a Retention section");
-    let rest = &ADR[start + 1..];
+    let rest = &markdown[start + 1..];
     let end = rest[3..].find("\n## ").map_or(rest.len(), |at| at + 3);
-    &rest[..end]
+    rest[..end].to_owned()
 }
 
 fn rows() -> Vec<Row> {
-    retention_section()
+    retention_section(ADR)
         .lines()
         .filter(|line| line.starts_with("| G"))
         .map(|line| {
@@ -276,8 +277,14 @@ fn every_test_scenario_is_a_row_of_the_adr_table() {
 }
 
 #[test]
+fn the_retention_adr_section_accepts_windows_line_endings() {
+    let markdown = ADR.replace("\r\n", "\n").replace('\n', "\r\n");
+    assert!(retention_section(&markdown).contains("never visits the active file"));
+}
+
+#[test]
 fn the_adr_names_the_files_the_code_uses() {
-    let section = retention_section();
+    let section = retention_section(ADR);
     for name in [MAINT_FILE, COMPACT_TMP, CORRUPT_PREFIX] {
         assert!(
             section.contains(name),
@@ -288,7 +295,7 @@ fn the_adr_names_the_files_the_code_uses() {
 
 #[test]
 fn the_adr_says_retention_never_visits_the_active_file_and_the_code_does_not() {
-    assert!(retention_section().contains("never visits the active file"));
+    assert!(retention_section(ADR).contains("never visits the active file"));
     let dir = TempDir::private("adr-active");
     plant(&dir, "journal.jsonl", &frame(&expired("old", 1)));
     plant_generation(&dir, STAMP, &[expired("gone", 2), numbered("kept", 3)]);
@@ -301,7 +308,7 @@ fn the_adr_says_retention_never_visits_the_active_file_and_the_code_does_not() {
 
 #[test]
 fn the_adr_says_no_record_moves_and_after_a_run_each_record_is_in_one_file() {
-    assert!(retention_section().contains("A record is never moved to another file"));
+    assert!(retention_section(ADR).contains("A record is never moved to another file"));
     let dir = TempDir::private("adr-no-move");
     plant_generation(&dir, OLDER, &[numbered("a", 1), numbered("b", 2)]);
     plant_generation(

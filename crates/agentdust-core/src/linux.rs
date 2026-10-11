@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::ffi::{CStr, c_char, c_int, c_void};
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read};
@@ -314,26 +314,17 @@ fn network_namespace_inode(proc_root: &Path, process: &str) -> io::Result<u64> {
     Ok(fs::metadata(proc_root.join(process).join("ns/net"))?.ino())
 }
 
-fn require_current_network_namespace(
-    namespace: u64,
-    current_namespace: u64,
-    inodes: &BTreeSet<u64>,
-) -> io::Result<()> {
-    if namespace != current_namespace && !inodes.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "port inventory found a listener in another network namespace",
-        ));
-    }
-    Ok(())
-}
-
 pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
     let provider = LinuxProvider::new()?;
     let current_namespace = network_namespace_inode(Path::new(PROC), "self")?;
-    let mut by_namespace: BTreeMap<u64, Vec<ListenerProcess>> = BTreeMap::new();
+    let inodes = listener_inodes_for_port(Path::new(PROC), "self", port)?;
+    if inodes.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut candidates = Vec::new();
     for pid in list_pids()? {
-        let process = match provider.read(pid) {
+        let mut process = match provider.read(pid) {
             Ok(ProcessRead::Present(identity)) if identity.kernel.uid == current_uid() => {
                 ListenerProcess::identified(identity)
             }
@@ -352,56 +343,17 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
             Err(error) if missing(&error) => continue,
             Err(error) => return Err(error),
         };
-        by_namespace.entry(namespace).or_default().push(process);
-    }
-
-    let mut inodes = BTreeSet::new();
-    let mut candidates = Vec::new();
-    for (namespace, mut identities) in by_namespace {
-        let mut namespace_inodes = None;
-        for process in &mut identities {
-            let pid = process.kernel.pid;
-            if !process.refresh(&provider)? {
-                continue;
-            }
-            let pid_path = pid.to_string();
-            match network_namespace_inode(Path::new(PROC), &pid_path) {
-                Ok(found) if found == namespace => {}
-                Ok(_) => {
-                    return Err(io::Error::other(
-                        "process network namespace changed during inventory",
-                    ));
-                }
-                Err(error) if missing(&error) => continue,
-                Err(error) => return Err(error),
-            }
-            let found = match listener_inodes_for_port(Path::new(PROC), &pid_path, port) {
-                Ok(found) => found,
-                Err(error) if missing(&error) => continue,
-                Err(error) => return Err(error),
-            };
-            if !process.refresh(&provider)?
-                || network_namespace_inode(Path::new(PROC), &pid_path)? != namespace
-            {
-                return Err(io::Error::other(
-                    "process identity or network namespace changed during inventory",
-                ));
-            }
-            namespace_inodes = Some(found);
-            break;
-        }
-        let Some(namespace_inodes) = namespace_inodes else {
-            continue;
-        };
-        if namespace_inodes.is_empty() {
+        if namespace != current_namespace {
             continue;
         }
-        require_current_network_namespace(namespace, current_namespace, &namespace_inodes)?;
-        inodes = namespace_inodes;
-        candidates = identities;
-    }
-    if inodes.is_empty() {
-        return Ok(Vec::new());
+        if !process.refresh(&provider)?
+            || network_namespace_inode(Path::new(PROC), &pid_path)? != current_namespace
+        {
+            return Err(io::Error::other(
+                "process identity or network namespace changed during inventory",
+            ));
+        }
+        candidates.push(process);
     }
 
     let mut found = Vec::new();
@@ -1351,8 +1303,8 @@ mod tests {
 
     use super::{
         LinuxProvider, PidfdOps, ProcStat, SystemdUnitKind, cgroup_unit_component, cgroup_unit_evidence,
-        parse_environment, parse_stat, parse_uid_status, pidfd_signal, process_info,
-        require_current_network_namespace, systemd_unit_is_managed, verify_systemd_unit_lookups,
+        parse_environment, parse_stat, parse_uid_status, pidfd_signal, process_info, systemd_unit_is_managed,
+        verify_systemd_unit_lookups,
     };
     use crate::ancestry::AncestryProvider;
     use crate::apply::signal::SignalResult;
@@ -1630,19 +1582,6 @@ mod tests {
                 io::ErrorKind::PermissionDenied
             );
         }
-    }
-
-    #[test]
-    fn port_inventory_refuses_an_active_listener_outside_the_callers_network_namespace() {
-        let listener = BTreeSet::from([123_u64]);
-        assert_eq!(
-            require_current_network_namespace(2, 1, &listener)
-                .unwrap_err()
-                .kind(),
-            io::ErrorKind::Unsupported
-        );
-        assert!(require_current_network_namespace(2, 1, &BTreeSet::new()).is_ok());
-        assert!(require_current_network_namespace(1, 1, &listener).is_ok());
     }
 
     struct ProcFixture(PathBuf);
