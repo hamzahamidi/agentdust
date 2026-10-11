@@ -70,7 +70,7 @@ The table separates current support from planned targets. A platform and agent p
 
 ## Current priority
 
-M10 Linux x86_64 shipped in 1.7.0 for Claude Code and Codex on Ubuntu 24.04 with writable ext4 data directories. The next P0 is scheduled journal maintenance outside hooks. M11 is a WSL2 certification of the existing Linux package and safety boundary. M12 is a native Windows feasibility spike, not a commitment to Windows signalling. Do not schedule Linux arm64 or Intel Mac until there is demand and the shared runtime gates are complete. Record useful cleanups, incorrect proposals, deliberate keeps and successful port recovery on the available Mac. A cleanup count does not measure time, CPU or memory saved. No multi Mac study is a release gate.
+M10 Linux x86_64 shipped in 1.7.0 for Claude Code and Codex on Ubuntu 24.04 with writable ext4 data directories. Journal rotation and retention run from the automatic worker. M11 is a WSL2 certification of the existing Linux package and safety boundary. M12 is a native Windows feasibility spike, not a commitment to Windows signalling. Do not schedule Linux arm64 or Intel Mac until there is demand and the shared runtime gates are complete. Record useful cleanups, incorrect proposals, deliberate keeps and successful port recovery on the available Mac. A cleanup count does not measure time, CPU or memory saved. No multi Mac study is a release gate.
 
 ## Automatic cleanup in 1.1
 
@@ -97,7 +97,7 @@ Port-conflict diagnosis and recovery are implemented in `1.4.0`: identify curren
 | Claude Code on macOS arm64 | Supported; lifecycle and controlled Homebrew acceptance are recorded |
 | Codex on macOS arm64 | Hook and MCP integration is available; automatic cleanup waits for exact host exit |
 | Linux x86_64 | Supported in 1.7.0 on Ubuntu 24.04 with writable ext4 data directories |
-| WSL2 | Not supported yet; M11 certification is the next platform gate after journal maintenance |
+| WSL2 | Not supported yet; M11 certification is in progress |
 | Native Windows | Not supported; M12 is a feasibility decision, with no implementation commitment |
 | Other AI agents | Common MCP diagnosis and manual tools are possible; automatic cleanup needs a client specific adapter |
 | M9 controlled Homebrew acceptance | Complete; measurement limits remain in the [readiness record](docs/v1/readiness.md) |
@@ -248,9 +248,9 @@ Exit: complete. Ubuntu 24.04 x86_64 acceptance passed for Claude Code and Codex,
 
 ### M11 WSL2 certification with Claude Code and Codex (S, 2 to 4 days)
 
-Run AgentDust and the agent inside one Ubuntu 24.04 WSL2 distribution. Use the existing Linux x86_64 release package and process provider. Keep discovery, identity checks and signals inside the WSL2 Linux process namespace. Reject data directories on `/mnt/c` and other non-ext4 volumes.
+Run AgentDust and the agent inside one Ubuntu 24.04 WSL2 distribution. Use the existing Linux x86_64 release package and process provider. Keep discovery, identity checks and signals inside the WSL2 Linux process namespace. Reject data directories on `/mnt/c` and other non-ext4 volumes. See the [WSL2 runtime limits](docs/wsl2.md).
 
-Acceptance covers Claude Code and Codex setup, check and removal; hooks and MCP; doctor, plan and approved apply; opt-in cleanup after normal and abrupt owner exit; TCP port recovery; npm and archive installation; and systemd user worker start, stop and restart while the distro is running. A Windows host process started from WSL must stay outside Linux inventory and cannot become actionable. Verify that the default WSL data path uses ext4 and that `/mnt/c` fails the journal gate. Document that stopping WSL stops its worker and that systemd does not keep the distro alive.
+Acceptance covers Claude Code and Codex setup, check and removal; hooks and MCP; doctor, plan and approved apply; opt-in cleanup after normal and abrupt owner exit; controlled TCP port recovery; npm and archive installation; and systemd user worker start, stop and restart while the distro is running. Launch a Windows PowerShell process through WSL interop, verify it is absent from Linux `/proc` and AgentDust findings, and keep it outside actionable inventory. Verify that the default WSL data path uses ext4 and that `/mnt/c` fails the journal gate. Document that stopping WSL stops its worker and that systemd does not keep the distro alive.
 
 Exit: the full matrix passes in a clean WSL2 distribution on GitHub Actions and the release package. WSL2 remains a Linux deployment, not native Windows support.
 

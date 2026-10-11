@@ -117,6 +117,7 @@ jobs:
           rm "$HOME/.config/systemd/user/agentdust-automatic.service"
           systemctl --user daemon-reload
           systemd-run --user --scope env TMPDIR="$mount_point/tmp" AGENTDUST_EXT4_TEST_ROOT="$mount_point" AGENTDUST_FIXTURE_SLEEPER="$GITHUB_WORKSPACE/target/debug/fixture-sleeper" cargo test --locked -p agentdust --test linux_automatic -- --ignored --test-threads=1
+          systemd-run --user --scope env TMPDIR="$mount_point/tmp" AGENTDUST_EXT4_TEST_ROOT="$mount_point" AGENTDUST_FIXTURE_LISTENER="$GITHUB_WORKSPACE/target/debug/fixture-listener" cargo test --locked -p agentdust --test linux_port -- --ignored --test-threads=1
           sudo mount -o remount,ro "$mount_point"
           AGENTDUST_EXT4_TEST_ROOT="$mount_point" cargo test --locked -p agentdust-core --test linux_journal_ext4 -- --ignored read_only_ext4_mount_is_not_supported
           AGENTDUST_EXT4_TEST_ROOT="$mount_point" cargo test --locked -p agentdust --test linux_setup_ext4 -- --ignored read_only_ext4_refuses_setup_checks_and_hook_writes_but_allows_removal
@@ -204,11 +205,5 @@ jobs:
       - name: Run the WSL2 Linux acceptance matrix
         shell: pwsh
         run: |
-          $hostFixture = Start-Process -FilePath "$PSHOME\pwsh.exe" -ArgumentList @('-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Seconds 900') -WindowStyle Hidden -PassThru
-          try {
-            wsl.exe --distribution Ubuntu-24.04 --user agentdust -- env "AGENTDUST_WINDOWS_HOST_PID=$($hostFixture.Id)" bash -lc 'cd /home/agentdust/work/agentdust && bash scripts/wsl2_acceptance.sh'
-            if ($LASTEXITCODE -ne 0) { throw 'WSL2 acceptance failed' }
-          }
-          finally {
-            Stop-Process -Id $hostFixture.Id -Force -ErrorAction SilentlyContinue
-          }
+          wsl.exe --distribution Ubuntu-24.04 --user agentdust -- bash -lc 'cd /home/agentdust/work/agentdust && bash scripts/wsl2_acceptance.sh'
+          if ($LASTEXITCODE -ne 0) { throw 'WSL2 acceptance failed' }

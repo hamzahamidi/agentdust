@@ -15,7 +15,7 @@ TAG_GLOB = "v[0-9]+.[0-9]+.[0-9]+"
 VERIFIED_COMMIT = "${{ needs.verify.outputs.commit }}"
 TAP_ON = "env.TAP_ENABLED == 'true'"
 TAP_OFF = "env.TAP_ENABLED != 'true'"
-JOBS = ("verify", "audit", "build", "package", "linux-acceptance", "release", "tap-pr")
+JOBS = ("verify", "audit", "build", "package", "linux-acceptance", "wsl2-acceptance", "release", "tap-pr")
 
 
 def load(path):
@@ -125,8 +125,9 @@ class ReleaseWorkflowTest(unittest.TestCase):
                         {"ubuntu-24.04", "macos-15"},
                     )
                 else:
-                    self.assertIn(job["runs-on"], ("ubuntu-24.04", "macos-15"))
+                    self.assertIn(job["runs-on"], ("ubuntu-24.04", "macos-15", "windows-2025"))
         self.assertEqual(self.jobs["linux-acceptance"]["runs-on"], "ubuntu-24.04")
+        self.assertEqual(self.jobs["wsl2-acceptance"]["runs-on"], "windows-2025")
         self.assertEqual(self.jobs["package"]["runs-on"], "macos-15")
 
     def test_every_job_has_a_timeout(self):
@@ -189,20 +190,31 @@ class GateTest(unittest.TestCase):
         self.assertEqual(step_with(self.verify, "check_release.py reachable")["id"], "main")
 
     def test_nothing_runs_before_the_gate_has_passed(self):
-        for name in ("audit", "build", "package", "linux-acceptance", "release", "tap-pr"):
+        for name in ("audit", "build", "package", "linux-acceptance", "wsl2-acceptance", "release", "tap-pr"):
             with self.subTest(job=name):
                 self.assertIn("verify", needs(self.jobs[name]))
 
     def test_every_later_job_builds_the_commit_the_gate_verified(self):
-        for name in ("audit", "build", "package", "linux-acceptance", "tap-pr"):
+        for name in ("audit", "build", "package", "linux-acceptance", "wsl2-acceptance", "tap-pr"):
             with self.subTest(job=name):
                 checkout = step_with(self.jobs[name], "actions/checkout")
                 self.assertEqual(checkout["with"]["ref"], VERIFIED_COMMIT)
 
     def test_the_release_waits_for_the_audit_the_build_and_the_package(self):
-        self.assertLessEqual({"verify", "audit", "package", "linux-acceptance"}, needs(self.jobs["release"]))
+        self.assertLessEqual(
+            {"verify", "audit", "package", "linux-acceptance", "wsl2-acceptance"},
+            needs(self.jobs["release"]),
+        )
         self.assertLessEqual({"verify", "build"}, needs(self.jobs["package"]))
         self.assertLessEqual({"verify", "package", "release"}, needs(self.jobs["tap-pr"]))
+
+    def test_wsl_acceptance_consumes_the_release_package_before_draft_creation(self):
+        job = self.jobs["wsl2-acceptance"]
+        self.assertIn("verify", needs(job))
+        self.assertIn("package", needs(job))
+        download = step_with(job, "actions/download-artifact")
+        self.assertEqual(download["with"], {"name": "release-files", "path": "dist"})
+        self.assertIn("AGENTDUST_RELEASE_DIST", runs(job))
 
 
 class BuildTest(unittest.TestCase):

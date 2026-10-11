@@ -577,4 +577,5 @@ fn the_live_surveyor_classifies_this_process_as_managed_and_signals_nothing() {
     let model = surveyor.describe(own);
     assert_eq!(model.pid, me);
     assert_eq!(model.class, Class::Managed);
+    assert!(!data.path().join("journal.maint").exists());
 }

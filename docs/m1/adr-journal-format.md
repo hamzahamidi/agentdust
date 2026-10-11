@@ -319,7 +319,7 @@ Grouped by concern.
 
 - Point the benchmark's C2 at `Journal::append`, so that the 16 writer test (S22) runs against the shipped append. The benchmark keeps its own frozen copy of the append until then.
 
-**Rotation, retention and recovery** is built: `Journal::rotate`, `retain` and `prune` in `agentdust_core::journal` follow "Retention" as stated, with the spec's keep rules in `journal::retention` and `journal.maint` for exclusion. `maintain_if_due` now runs during cleanup surveys and automatic worker refreshes, outside hooks. It performs retention on first use and every 24 hours, and rotates the active file when it reaches 1 MB. The worker checks once per minute. Hooks, doctor and status stay read only. [journal-retention.md](journal-retention.md) describes the runtime behavior. One item is left:
+**Rotation, retention and recovery** is built: `Journal::rotate`, `retain` and `prune` in `agentdust_core::journal` follow "Retention" as stated, with the spec's keep rules in `journal::retention` and `journal.maint` for exclusion. `maintain_if_due` runs in the automatic worker at startup and during its one-minute journal refreshes. It performs retention on first use and every 24 hours, and rotates the active file when it reaches 1 MB. Hooks, doctor, status and plan requests never run maintenance. [journal-retention.md](journal-retention.md) describes the runtime behavior. One item is left:
 
 - Persist or carry `RetainReport.degraded`, the sessions whose pinned evidence was dropped. It is returned and not stored.
 

@@ -6,8 +6,6 @@ use crate::cwd::{CwdRelation, RelationContext, relate};
 use crate::doctor::load_sessions;
 use crate::finding::ModelFinding;
 use crate::inventory::{IDLE_SAMPLE_GAP, LiveDetails, SystemClock, take};
-use crate::journal;
-use crate::journal::retention::Policy as RetentionPolicy;
 use crate::journal::volume::SystemVolume;
 use crate::platform::{self, Live, ManagedProcesses, Provider, Source};
 use crate::secret;
@@ -30,13 +28,6 @@ impl LiveSurveyor {
 
 impl Surveyor for LiveSurveyor {
     fn survey(&self) -> io::Result<Vec<Finding>> {
-        journal::maintain_if_due(
-            &self.data_dir,
-            &RetentionPolicy::default(),
-            crate::clock::wall_ms(),
-            &platform::boot_identity()?,
-        )
-        .map_err(io::Error::other)?;
         let secret = secret::load_existing(&self.data_dir).ok();
         let source = Source::new(secret.as_ref())?;
         let provider = Provider::new()?;

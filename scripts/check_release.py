@@ -8,7 +8,7 @@ from pathlib import Path
 
 TAG = re.compile(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
-REQUIRED_CHECKS = ("linux", "macos")
+REQUIRED_CHECKS = ("linux", "macos", "wsl2")
 ACTIONS_APP = "github-actions"
 CI_HINT = "run the ci workflow on this commit (gh workflow run ci.yml --ref main), wait for it to pass, then release again"
 

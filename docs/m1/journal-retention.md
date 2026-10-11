@@ -1,6 +1,6 @@
 # Journal rotation and retention
 
-`agentdust_core::journal` rotates the journal and trims it. AgentDust runs `maintain_if_due` during cleanup surveys and automatic worker refreshes. It runs on first use, every 24 hours, or when the active journal reaches 1 MB. A concurrent maintenance run is skipped. Hooks, doctor and status never run maintenance.
+`agentdust_core::journal` rotates the journal and trims it. The automatic worker runs `maintain_if_due` at startup and once per minute. Maintenance runs on first use, every 24 hours, or when the active journal reaches 1 MB. A concurrent maintenance run is skipped. Hooks, doctor, status and plan requests never run maintenance.
 
 [ADR-1](adr-journal-format.md) explains why appenders take no lock and states the retention algorithm once, with a table of what happens to each kind of generation. [journal-schema.md](journal-schema.md) describes the records and the reader. The spec (section 3.2) is not edited here, and the last section lists where the code differs from it.
 

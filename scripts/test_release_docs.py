@@ -165,7 +165,7 @@ class ReleaseDocTest(unittest.TestCase):
                 self.assertRegex(self.text, rf"(?m)^{re.escape(heading)}$")
 
     def test_every_job_of_the_workflow_is_described(self):
-        self.assertEqual(len(self.jobs), 7)
+        self.assertEqual(len(self.jobs), 8)
         for job in self.jobs:
             with self.subTest(job=job):
                 self.assertIn(f"`{job}`", self.text)

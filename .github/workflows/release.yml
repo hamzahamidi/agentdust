@@ -245,8 +245,53 @@ jobs:
           test "$("$RUNNER_TEMP/npm-prefix/bin/agentdust" version)" = "agentdust $VERSION"
           cmp "$RUNNER_TEMP/agentdust-linux" "$RUNNER_TEMP/npm-prefix/lib/node_modules/agentdust/vendor/linux-x64/agentdust"
 
+  wsl2-acceptance:
+    needs: [verify, package]
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-files
+          path: dist
+      - name: Install Ubuntu 24.04 under WSL2
+        shell: pwsh
+        run: |
+          wsl.exe --version
+          wsl.exe --install --distribution Ubuntu-24.04 --no-launch --web-download
+          if ($LASTEXITCODE -ne 0) { throw 'Ubuntu 24.04 WSL installation failed' }
+      - name: Prepare the ext4 workspace and systemd
+        shell: pwsh
+        run: |
+          $windowsWorkspace = $env:GITHUB_WORKSPACE.Replace('\', '/')
+          $workspaceOutput = & wsl.exe --distribution Ubuntu-24.04 --user root -- wslpath -u $windowsWorkspace
+          if ($LASTEXITCODE -ne 0) { throw 'Could not locate the repository from WSL' }
+          $workspace = ($workspaceOutput -join '').Trim()
+          if ([string]::IsNullOrWhiteSpace($workspace)) { throw 'WSL returned an empty repository path' }
+          wsl.exe --distribution Ubuntu-24.04 --user root -- bash -lc "bash '$workspace/scripts/wsl2_bootstrap.sh' '$workspace'"
+          if ($LASTEXITCODE -ne 0) { throw 'WSL bootstrap failed' }
+          wsl.exe --shutdown
+          wsl.exe --distribution Ubuntu-24.04 --user root -- bash -lc "bash '$workspace/scripts/wsl2_systemd_bootstrap.sh'"
+          if ($LASTEXITCODE -ne 0) { throw 'WSL systemd user manager did not start' }
+      - name: Verify the exact Linux release files in WSL2
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          $windowsDist = ($env:GITHUB_WORKSPACE.Replace('\', '/') + '/dist')
+          $distOutput = & wsl.exe --distribution Ubuntu-24.04 --user root -- wslpath -u $windowsDist
+          if ($LASTEXITCODE -ne 0) { throw 'Could not locate the release artifacts from WSL' }
+          $dist = ($distOutput -join '').Trim()
+          if ([string]::IsNullOrWhiteSpace($dist)) { throw 'WSL returned an empty release artifact path' }
+          wsl.exe --distribution Ubuntu-24.04 --user agentdust -- env "AGENTDUST_RELEASE_DIST=$dist" bash -lc 'cd /home/agentdust/work/agentdust && bash scripts/wsl2_acceptance.sh'
+          if ($LASTEXITCODE -ne 0) { throw 'WSL2 release acceptance failed' }
+
   release:
-    needs: [verify, audit, package, linux-acceptance]
+    needs: [verify, audit, package, linux-acceptance, wsl2-acceptance]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

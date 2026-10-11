@@ -25,11 +25,12 @@ A SemVer prerelease has an identifier such as `1.1.0-rc.1`; GitHub's prerelease 
 
 | Job | Runs on | What it does |
 | --- | --- | --- |
-| `verify` | `ubuntu-24.04` | Refuses a tag that is not `vMAJOR.MINOR.PATCH`, a tag that differs from `version` under `[workspace.package]`, a commit that `origin/main` does not contain, and a commit without a passing `linux` and `macos` check run from GitHub Actions. A commit with no check run at all is refused. The decisions are in `scripts/check_release.py` |
+| `verify` | `ubuntu-24.04` | Refuses a tag that is not `vMAJOR.MINOR.PATCH`, a tag that differs from `version` under `[workspace.package]`, a commit that `origin/main` does not contain, and a commit without passing `linux`, `macos` and `wsl2` check runs from GitHub Actions. A commit with no check run at all is refused. The decisions are in `scripts/check_release.py` |
 | `audit` | `ubuntu-24.04` | `cargo audit` against `Cargo.lock` |
 | `build` | Two copies on `macos-15` and two on `ubuntu-24.04` | Compares each pair's binary and recorded runner toolchain. The macOS copies also pass `scripts/toolchain.py check --include-lock` against `release/toolchain.json` before compiling. |
 | `package` | `macos-15` | Checks both native versions, packages and compares macOS arm64 and Linux x86_64 archives, bundles both binaries with the npm launcher and compares two npm archives, tests the macOS npm install, generates a CycloneDX SBOM, writes `SHA256SUMS`, attests both native binaries and all release files, then checks the Homebrew formula syntax and install smoke test. |
 | `linux-acceptance` | `ubuntu-24.04` | Installs the Linux archive and npm package, checks each version and compares the installed binaries with the independently built Linux executable. The CI job separately exercises the ext4 journal, hook, MCP, port, pidfd and systemd user worker gates. |
+| `wsl2-acceptance` | `windows-2025` | Runs the WSL2 acceptance matrix against the exact Linux archive and npm tarball produced by `package`, including ext4, setup, cleanup, port recovery, systemd and Windows interop boundaries. It must pass before a draft release is created. |
 | `release` | `ubuntu-24.04` | Creates a draft release for the existing tag with both archives, the SBOM and `SHA256SUMS`. It has no checkout of the source and the only write permission in the workflow besides the attestation |
 | `tap-pr` | `ubuntu-24.04` | Uses the `release` environment secret `HOMEBREW_TAP_TOKEN` to open a pull request in the tap with the new formula. A retry reuses the existing branch and skips a duplicate commit or pull request. Without the secret the job prints a notice and does nothing |
 | Homebrew tap recovery | `ubuntu-24.04` | Manually dispatched for a published version. Downloads and verifies its release assets, regenerates the formula, then reuses the version branch or opens its pull request |
@@ -65,14 +66,14 @@ Once, before the first release:
 
 1. Confirm that the tap repository `hamzahamidi/homebrew-agentdust` has a `Formula` directory.
 2. Store a fine-grained token with write access to that repository's contents and pull requests as `HOMEBREW_TAP_TOKEN` in the `release` environment. Without it, `tap-pr` does nothing.
-3. Check in the repository settings that `main` requires the `linux` and `macos` checks and allows squash merges only. The workflow checks that `main` contains the commit. It does not read branch protection.
+3. Check in the repository settings that `main` requires the `linux` and `macos` checks and allows squash merges only. The release workflow also requires a passing `wsl2` check on the tagged commit and checks that `main` contains it. It does not read branch protection.
 4. Rehearse in a fork (last part of this section).
 
 For each release:
 
 1. Merge a pull request that sets `version` under `[workspace.package]` in `Cargo.toml` and the matching `Cargo.lock`. `cargo update --workspace` changes only the versions of the workspace crates in the lock file.
 2. Refresh the toolchain record. Run `gh workflow run release-dry-run.yml --ref main` and wait for it. Download the `build-a` artifact, which holds `toolchain.json` as recorded on that runner, whether the check passed or not. Copy it to `release/toolchain.json`, read the diff (the runner image, Xcode, SDK and Rust should change only on purpose) and merge it. The `cargo_lock_sha256` in it must be the hash of the `Cargo.lock` that will be tagged.
-3. Run CI on the commit to tag: `gh workflow run ci.yml --ref main`, then wait for the `linux` and `macos` jobs (`gh run watch`). CI runs on pull requests and not on pushes to `main`, so a squash merge commit has no check run until this step, and the gate refuses a commit without one.
+3. Run CI on the commit to tag: `gh workflow run ci.yml --ref main`, then wait for the `linux`, `macos` and `wsl2` jobs (`gh run watch`). CI runs on pull requests and not on pushes to `main`, so a squash merge commit has no check run until this step, and the gate refuses a commit without all three successful jobs.
 4. Tag that commit and push the tag: `git tag -a vX.Y.Z -m "agentdust X.Y.Z" <commit>`, then `git push origin vX.Y.Z`.
 5. Watch the run with `gh run watch`. A refusal by `verify` names the reason on the first failing step.
 6. Check the draft release as described in the next section. For the 1.0 candidate, publish it as a prerelease with `gh release edit vX.Y.Z --draft=false --prerelease`. For a release that has passed its acceptance checks, publish it with `gh release edit vX.Y.Z --draft=false`.
