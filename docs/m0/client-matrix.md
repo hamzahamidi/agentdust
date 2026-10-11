@@ -18,6 +18,8 @@ cargo build --release -p agentdust-mcp --example approval_probe
 
 Register `target/release/examples/approval_probe` as an MCP server named `agentdust-probe` in the client under test. The commands in the [README](../../README.md#running-the-development-probe) cover Claude Code and Codex CLI. Start a fresh client session after registration, and remove the `agentdust-probe` server when finished.
 
+The retry path holds at most 128 pending prompts per server. Each prompt expires after 120 seconds. If 128 prompts remain unanswered, restart the probe before continuing.
+
 For every run, record the client name and version, operating system, date, negotiated protocol, tool result, and whether the result used the `legacy`, `retry`, or `none` path. Keep the prompt visible to a person. Do not provide the code to the model in the request.
 
 Run these scenarios separately:

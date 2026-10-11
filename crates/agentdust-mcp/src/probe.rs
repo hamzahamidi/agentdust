@@ -21,6 +21,7 @@ pub const INPUT_KEY: &str = "approval";
 pub const CODE_ALPHABET: &[u8; 25] = code::ALPHABET;
 pub const CODE_LEN: usize = code::LEN;
 const CODE_TTL: std::time::Duration = code::TTL;
+const MAX_PENDING: usize = 128;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
@@ -115,7 +116,14 @@ impl ProbeServer {
             let code = new_code().map_err(internal)?;
             let nonce = hex(&random_bytes::<16>().map_err(internal)?);
             let message = approval_message(&code);
-            self.pending.lock().expect("pending map lock").insert(
+            let mut pending = self.pending.lock().expect("pending map lock");
+            if pending.len() >= MAX_PENDING {
+                return Err(ErrorData::internal_error(
+                    "too many pending probe approvals",
+                    None,
+                ));
+            }
+            pending.insert(
                 nonce.clone(),
                 Pending {
                     code,
@@ -253,4 +261,63 @@ fn hex(bytes: &[u8]) -> String {
 
 fn internal(err: impl std::fmt::Display) -> ErrorData {
     ErrorData::internal_error(err.to_string(), None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_expired_retry_is_reported_and_consumes_its_state() {
+        let server = ProbeServer::default();
+        server.pending.lock().unwrap().insert(
+            "expired-nonce".to_owned(),
+            Pending {
+                code: "ABCD".to_owned(),
+                expires: Instant::now() - std::time::Duration::from_secs(1),
+            },
+        );
+
+        let protocol = ProtocolVersion::V_2026_07_28;
+        let response = server
+            .call_retry_based(
+                CallToolRequestParams::new(TOOL_NAME).with_request_state("expired-nonce"),
+                Some(&protocol),
+            )
+            .unwrap();
+        let CallToolResponse::Complete(result) = response else {
+            panic!("expected an expired result");
+        };
+        let report: ProbeReport = serde_json::from_str(&result.content[0].as_text().unwrap().text).unwrap();
+
+        assert_eq!(report.outcome, Outcome::Expired);
+        assert_eq!(report.path, "retry");
+        assert!(server.pending.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn pending_retry_requests_have_a_fixed_capacity() {
+        let server = ProbeServer::default();
+        let expires = Instant::now() + CODE_TTL;
+        {
+            let mut pending = server.pending.lock().unwrap();
+            for index in 0..MAX_PENDING {
+                pending.insert(
+                    format!("nonce-{index}"),
+                    Pending {
+                        code: "ABCD".to_owned(),
+                        expires,
+                    },
+                );
+            }
+        }
+
+        let protocol = ProtocolVersion::V_2026_07_28;
+        assert!(
+            server
+                .call_retry_based(CallToolRequestParams::new(TOOL_NAME), Some(&protocol))
+                .is_err()
+        );
+        assert_eq!(server.pending.lock().unwrap().len(), MAX_PENDING);
+    }
 }
