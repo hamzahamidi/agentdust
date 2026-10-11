@@ -56,13 +56,13 @@ Codex ran as `codex -m gpt-6-luna -c model_reasoning_effort="low"` in a pseudo-t
 | Codex CLI | 0.156.1 | no answer for 2 minutes | Same form | `expired`, `2025-06-18`, `legacy` | The server's 120 second timeout closed the form |
 | Codex CLI | 0.156.1 | "always allow" set for the tool | No tool approval prompt | not applicable | Codex called the read-only tool without asking, so there was nothing to set; the form still appeared |
 | Codex CLI | 0.156.1 | forged retry by the model | Same form | none | The form waited for the person; in 60 seconds the model did not answer it |
-| Cursor | | correct code | not run | | Cursor is not installed on this Mac |
-| Cursor | | wrong code | not run | | Same |
-| Cursor | | empty answer | not run | | Same |
-| Cursor | | decline | not run | | Same |
-| Cursor | | cancel | not run | | Same |
-| Cursor | | no answer for 2 minutes | not run | | Same |
-| Cursor | | forged retry by the model | not run | | Same |
+| Cursor | 3.24.12 | correct code | not run | | Agent Chat is not signed in on 2026-10-11 |
+| Cursor | 3.24.12 | wrong code | not run | | Same |
+| Cursor | 3.24.12 | empty answer | not run | | Same |
+| Cursor | 3.24.12 | decline | not run | | Same |
+| Cursor | 3.24.12 | cancel | not run | | Same |
+| Cursor | 3.24.12 | no answer for 2 minutes | not run | | Same |
+| Cursor | 3.24.12 | forged retry by the model | not run | | Same |
 
 ## Client defects found
 
@@ -77,4 +77,4 @@ Codex ran as `codex -m gpt-6-luna -c model_reasoning_effort="low"` in a pseudo-t
 | --- | --- | --- | --- | --- |
 | Claude Code | Yes, on the retry path (protocol 2026-07-28), with a Decline button that is distinct from Esc | None: a required field blocks an empty Accept, and a correct code sent late is refused as expired | None observed: the code was rendered only in the form, and the forged run waited for the person | Allow apply through the form; treat `declined`, `cancelled` and `expired` as refusals |
 | Codex CLI | Yes, on the legacy path (protocol 2025-06-18) | None: the form needs the person even though the tool call itself needs no approval | None observed: the code was rendered only in the form, and the forged run waited for the person | Allow apply through the legacy form; treat Esc (`cancelled`) as the refusal, since there is no decline control |
-| Cursor | not tested | not tested | not tested | Run the matrix in M5 once Cursor is installed |
+| Cursor | not tested | not tested | not tested | Run the matrix after signing in to Agent Chat |
