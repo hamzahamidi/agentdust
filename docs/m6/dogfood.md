@@ -10,6 +10,8 @@ On 2026-10-09, a read-only status check of the same binary showed 37 enabled dir
 
 On 2026-10-11, Homebrew installed AgentDust `1.7.1` (binary SHA-256 `c1011d1bd0868db5211f40d7e6e3ebcede3213b657f614082ac9d94416aa7a7e`). Setup check passed. Automatic cleanup remained enabled for 37 directory scopes. The loaded worker was still `1.4.0`, so its historical `terminated` report predates M13 outcome metrics and cannot be counted as useful cleanup evidence. `agentdust auto resume` restarted the worker from the installed `1.7.1` binary. Metrics still reported zero recorded outcomes immediately afterward. No synthetic cleanup was run. Start ordinary-use evidence from this worker build.
 
+Later on 2026-10-11, Homebrew installed AgentDust `1.8.1` (binary SHA-256 `d21f9b3eed9394371e02aac24bfb8b3512156481d89184945cae0208ca7bb33f`). The Claude Code setup check passed. Automatic cleanup remained enabled for 37 exact project scopes. The worker was running and its report was ready, but its version status was `unknown`. The report had no pending work, one recent `terminated` result and one review item. It has no timestamp or session scenario, so the result cannot be attributed to a session or counted as user benefit. `agentdust metrics --json` reported zero events. The worker needs a foreground `agentdust auto resume` in Terminal; the command asks a person to type `CONFIRM` before restarting it. No synthetic cleanup was run.
+
 For each real incident during the next ten substantive sessions, record the smallest evidence that supports one of these signals:
 
 | Signal | Evidence |
