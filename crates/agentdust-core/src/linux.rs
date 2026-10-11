@@ -320,8 +320,11 @@ fn refresh_current_namespace_candidate<P: ProcessProvider + ?Sized>(
     proc_root: &Path,
     current_namespace: u64,
 ) -> io::Result<bool> {
-    if !process.refresh(provider)? {
-        return Ok(false);
+    match process.refresh(provider) {
+        Ok(true) => {}
+        Ok(false) => return Ok(false),
+        Err(error) if not_visible(&error) => return Ok(false),
+        Err(error) => return Err(error),
     }
     let pid_path = process.kernel.pid.to_string();
     match network_namespace_inode(proc_root, &pid_path) {
@@ -331,18 +334,21 @@ fn refresh_current_namespace_candidate<P: ProcessProvider + ?Sized>(
                 "process identity or network namespace changed during inventory",
             ));
         }
-        Err(error) if missing(&error) => return Ok(false),
+        Err(error) if not_visible(&error) => return Ok(false),
         Err(error) => return Err(error),
     }
-    if !process.refresh(provider)? {
-        return Ok(false);
+    match process.refresh(provider) {
+        Ok(true) => {}
+        Ok(false) => return Ok(false),
+        Err(error) if not_visible(&error) => return Ok(false),
+        Err(error) => return Err(error),
     }
     match network_namespace_inode(proc_root, &pid_path) {
         Ok(namespace) if namespace == current_namespace => Ok(true),
         Ok(_) => Err(io::Error::other(
             "process identity or network namespace changed during inventory",
         )),
-        Err(error) if missing(&error) => Ok(false),
+        Err(error) if not_visible(&error) => Ok(false),
         Err(error) => Err(error),
     }
 }
@@ -367,13 +373,13 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
             Ok(ProcessRead::Present(_)) | Ok(ProcessRead::PathUnreadable(_)) | Ok(ProcessRead::Gone) => {
                 continue;
             }
-            Err(error) if missing(&error) => continue,
+            Err(error) if not_visible(&error) => continue,
             Err(error) => return Err(error),
         };
         let pid_path = process.kernel.pid.to_string();
         let namespace = match network_namespace_inode(Path::new(PROC), &pid_path) {
             Ok(namespace) => namespace,
-            Err(error) if missing(&error) => continue,
+            Err(error) if not_visible(&error) => continue,
             Err(error) => return Err(error),
         };
         if namespace != current_namespace {
@@ -390,10 +396,18 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
     for mut process in candidates {
         let pid = process.kernel.pid;
         let pid_path = pid.to_string();
-        if !process.refresh(&provider)? {
-            continue;
+        match process.refresh(&provider) {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(error) if not_visible(&error) => continue,
+            Err(error) => return Err(error),
         }
-        if network_namespace_inode(Path::new(PROC), &pid_path)? != current_namespace {
+        let namespace = match network_namespace_inode(Path::new(PROC), &pid_path) {
+            Ok(namespace) => namespace,
+            Err(error) if not_visible(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        if namespace != current_namespace {
             return Err(io::Error::other(
                 "process network namespace changed during inventory",
             ));
@@ -401,15 +415,26 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
         let fd_dir = Path::new(PROC).join(pid.to_string()).join("fd");
         let descriptors = match fs::read_dir(&fd_dir) {
             Ok(descriptors) => descriptors,
-            Err(error) if missing(&error) => continue,
+            Err(error) if not_visible(&error) => continue,
             Err(error) => return Err(error),
         };
         let mut owns_listener = false;
+        let mut visible = true;
         for descriptor in descriptors {
-            let descriptor = descriptor?;
+            let descriptor = match descriptor {
+                Ok(descriptor) => descriptor,
+                Err(error) if not_visible(&error) => {
+                    visible = false;
+                    break;
+                }
+                Err(error) => return Err(error),
+            };
             let target = match fs::read_link(descriptor.path()) {
                 Ok(target) => target,
-                Err(error) if missing(&error) => continue,
+                Err(error) if not_visible(&error) => {
+                    visible = false;
+                    break;
+                }
                 Err(error) => return Err(error),
             };
             if let Some(inode) = socket_inode(&target)
@@ -419,7 +444,7 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
                 break;
             }
         }
-        if !owns_listener {
+        if !visible || !owns_listener {
             continue;
         }
         if let Some(fresh) = listener_identity(&process.kernel, provider.read(pid)?)? {
@@ -551,6 +576,14 @@ mod listener_process_tests {
         }
     }
 
+    struct DeniedProvider;
+
+    impl ProcessProvider for DeniedProvider {
+        fn read(&self, _pid: i32) -> io::Result<ProcessRead> {
+            Err(io::Error::from(io::ErrorKind::PermissionDenied))
+        }
+    }
+
     fn kernel(start_time_us: u64) -> KernelIdentity {
         KernelIdentity {
             boot_session_uuid: "a23b2a10-71df-4f5d-a941-4a18eaac32a8".into(),
@@ -614,6 +647,21 @@ mod listener_process_tests {
             !refresh_current_namespace_candidate(
                 &mut process,
                 &ScriptedProvider(ProcessRead::Gone),
+                Path::new("/missing-proc-root"),
+                1,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn an_inaccessible_discovery_candidate_is_skipped() {
+        let expected = kernel(100);
+        let mut process = ListenerProcess::identified(identity(expected, "/usr/bin/fixture"));
+        assert!(
+            !refresh_current_namespace_candidate(
+                &mut process,
+                &DeniedProvider,
                 Path::new("/missing-proc-root"),
                 1,
             )
@@ -1334,6 +1382,10 @@ impl crate::inventory::LaunchdSource for SystemdCgroupEvidence {
 
 fn missing(error: &io::Error) -> bool {
     matches!(error.raw_os_error(), Some(libc::ENOENT) | Some(libc::ESRCH))
+}
+
+fn not_visible(error: &io::Error) -> bool {
+    missing(error) || error.kind() == io::ErrorKind::PermissionDenied
 }
 
 #[cfg(test)]
