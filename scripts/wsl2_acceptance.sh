@@ -84,13 +84,25 @@ systemd-run --user --scope env TMPDIR="$TMPDIR" AGENTDUST_EXT4_TEST_ROOT="$AGENT
 
 worker_data="$home/worker-data"
 worker_project="$home/worker-project"
+wait_for_worker() {
+    local attempt
+    for attempt in {1..50}; do
+        if AGENTDUST_DATA_DIR="$worker_data" "$release_binary" auto status | python3 -c 'import json,sys; assert json.load(sys.stdin)["worker_running"]'; then
+            return 0
+        fi
+        sleep 0.1
+    done
+    echo 'automatic worker did not report ready' >&2
+    AGENTDUST_DATA_DIR="$worker_data" "$release_binary" auto status >&2
+    return 1
+}
 install -d -m 700 "$worker_data" "$worker_project"
 AGENTDUST_DATA_DIR="$worker_data" "$release_binary" auto enable --yes "$worker_project"
 systemctl --user is-active --quiet agentdust-automatic.service
-AGENTDUST_DATA_DIR="$worker_data" "$release_binary" auto status | python3 -c 'import json,sys; assert json.load(sys.stdin)["worker_running"]'
+wait_for_worker
 systemctl --user restart agentdust-automatic.service
 systemctl --user is-active --quiet agentdust-automatic.service
-AGENTDUST_DATA_DIR="$worker_data" "$release_binary" auto status | python3 -c 'import json,sys; assert json.load(sys.stdin)["worker_running"]'
+wait_for_worker
 systemctl --user disable --now agentdust-automatic.service
 rm "$HOME/.config/systemd/user/agentdust-automatic.service"
 systemctl --user daemon-reload
