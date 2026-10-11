@@ -23,16 +23,28 @@ const WAIT: Duration = Duration::from_secs(45);
 #[test]
 #[ignore = "requires writable ext4, a user systemd scope, and the fixture sleeper"]
 fn claude_owner_exit_cleans_one_proven_helper_and_preserves_keeps() {
-    check(Agent::Claude);
+    check(Agent::Claude, false);
 }
 
 #[test]
 #[ignore = "requires writable ext4, a user systemd scope, and the fixture sleeper"]
 fn codex_owner_exit_cleans_one_proven_helper_and_preserves_keeps() {
-    check(Agent::Codex);
+    check(Agent::Codex, false);
 }
 
-fn check(agent: Agent) {
+#[test]
+#[ignore = "requires writable ext4, a user systemd scope, and the fixture sleeper"]
+fn claude_abrupt_owner_exit_cleans_one_proven_helper_and_preserves_keeps() {
+    check(Agent::Claude, true);
+}
+
+#[test]
+#[ignore = "requires writable ext4, a user systemd scope, and the fixture sleeper"]
+fn codex_abrupt_owner_exit_cleans_one_proven_helper_and_preserves_keeps() {
+    check(Agent::Codex, true);
+}
+
+fn check(agent: Agent, abrupt: bool) {
     let fixture =
         std::env::var_os("AGENTDUST_FIXTURE_SLEEPER").expect("build fixture-sleeper and provide its path");
     let mount = PathBuf::from(std::env::var_os("AGENTDUST_EXT4_TEST_ROOT").unwrap());
@@ -137,18 +149,23 @@ fn check(agent: Agent) {
         agentdust_core::revalidate::Revalidation::Match
     );
 
-    journal::append(
-        &data,
-        &Record {
-            kind: Kind::SessionEnd,
-            mono_ts: 2,
-            wall_ts: 2,
-            ..start
-        },
-    )
-    .unwrap();
-    drop(owner.0.stdin.take());
-    assert!(owner.0.wait().unwrap().success());
+    if abrupt {
+        owner.0.kill().unwrap();
+        assert!(!owner.0.wait().unwrap().success());
+    } else {
+        journal::append(
+            &data,
+            &Record {
+                kind: Kind::SessionEnd,
+                mono_ts: 2,
+                wall_ts: 2,
+                ..start
+            },
+        )
+        .unwrap();
+        drop(owner.0.stdin.take());
+        assert!(owner.0.wait().unwrap().success());
+    }
 
     assert!(wait_until(
         || automatic::status(&data).ok().is_some_and(|status| {

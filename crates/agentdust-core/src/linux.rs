@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::ffi::{CStr, c_char, c_int, c_void};
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read};
@@ -314,101 +314,142 @@ fn network_namespace_inode(proc_root: &Path, process: &str) -> io::Result<u64> {
     Ok(fs::metadata(proc_root.join(process).join("ns/net"))?.ino())
 }
 
-fn require_current_network_namespace(
-    namespace: u64,
+fn refresh_current_namespace_candidate<P: ProcessProvider + ?Sized>(
+    process: &mut ListenerProcess,
+    provider: &P,
+    proc_root: &Path,
     current_namespace: u64,
-    inodes: &BTreeSet<u64>,
-) -> io::Result<()> {
-    if namespace != current_namespace && !inodes.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "port inventory found a listener in another network namespace",
-        ));
+) -> io::Result<bool> {
+    match process.refresh(provider) {
+        Ok(true) => {}
+        Ok(false) => return Ok(false),
+        Err(error) if not_visible(&error) => return Ok(false),
+        Err(error) => return Err(error),
     }
-    Ok(())
+    let pid_path = process.kernel.pid.to_string();
+    match network_namespace_inode(proc_root, &pid_path) {
+        Ok(namespace) if namespace == current_namespace => {}
+        Ok(_) => {
+            return Err(io::Error::other(
+                "process identity or network namespace changed during inventory",
+            ));
+        }
+        Err(error) if not_visible(&error) => return Ok(false),
+        Err(error) => return Err(error),
+    }
+    match process.refresh(provider) {
+        Ok(true) => {}
+        Ok(false) => return Ok(false),
+        Err(error) if not_visible(&error) => return Ok(false),
+        Err(error) => return Err(error),
+    }
+    match network_namespace_inode(proc_root, &pid_path) {
+        Ok(namespace) if namespace == current_namespace => Ok(true),
+        Ok(_) => Err(io::Error::other(
+            "process identity or network namespace changed during inventory",
+        )),
+        Err(error) if not_visible(&error) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+fn listener_fd_match<I, F>(
+    descriptors: I,
+    inodes: &BTreeSet<u64>,
+    mut read_link: F,
+) -> io::Result<Option<bool>>
+where
+    I: IntoIterator<Item = io::Result<PathBuf>>,
+    F: FnMut(&Path) -> io::Result<PathBuf>,
+{
+    for descriptor in descriptors {
+        let descriptor = match descriptor {
+            Ok(descriptor) => descriptor,
+            Err(error) if missing(&error) => continue,
+            Err(error) if permission_denied(&error) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let target = match read_link(&descriptor) {
+            Ok(target) => target,
+            Err(error) if missing(&error) => continue,
+            Err(error) if permission_denied(&error) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        if socket_inode(&target).is_some_and(|inode| inodes.contains(&inode)) {
+            return Ok(Some(true));
+        }
+    }
+    Ok(Some(false))
+}
+
+fn verified_listener_fd_match<I, F>(descriptors: I, inodes: &BTreeSet<u64>, read_link: F) -> io::Result<bool>
+where
+    I: IntoIterator<Item = io::Result<PathBuf>>,
+    F: FnMut(&Path) -> io::Result<PathBuf>,
+{
+    listener_fd_match(descriptors, inodes, read_link)?.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "listener descriptors became inaccessible during verification",
+        )
+    })
 }
 
 pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
     let provider = LinuxProvider::new()?;
     let current_namespace = network_namespace_inode(Path::new(PROC), "self")?;
-    let mut by_namespace: BTreeMap<u64, Vec<ProcessIdentity>> = BTreeMap::new();
-    for pid in list_pids()? {
-        let identity = match provider.read(pid) {
-            Ok(ProcessRead::Present(identity)) if identity.kernel.uid == current_uid() => identity,
-            Ok(ProcessRead::Present(_)) | Ok(ProcessRead::Gone) => continue,
-            Ok(ProcessRead::PathUnreadable(kernel)) if kernel.uid != current_uid() => continue,
-            Ok(ProcessRead::PathUnreadable(_)) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "listener process identity is unreadable",
-                ));
-            }
-            Err(error) if missing(&error) => continue,
-            Err(error) => return Err(error),
-        };
-        let pid = pid.to_string();
-        let namespace = match network_namespace_inode(Path::new(PROC), &pid) {
-            Ok(namespace) => namespace,
-            Err(error) if missing(&error) => continue,
-            Err(error) => return Err(error),
-        };
-        by_namespace.entry(namespace).or_default().push(identity);
-    }
-
-    let mut inodes = BTreeSet::new();
-    let mut candidates = Vec::new();
-    for (namespace, identities) in by_namespace {
-        let mut namespace_inodes = None;
-        for identity in &identities {
-            let pid = identity.kernel.pid;
-            if revalidate(identity, &provider) != Revalidation::Match {
-                continue;
-            }
-            let pid_path = pid.to_string();
-            match network_namespace_inode(Path::new(PROC), &pid_path) {
-                Ok(found) if found == namespace => {}
-                Ok(_) => {
-                    return Err(io::Error::other(
-                        "process network namespace changed during inventory",
-                    ));
-                }
-                Err(error) if missing(&error) => continue,
-                Err(error) => return Err(error),
-            }
-            let found = match listener_inodes_for_port(Path::new(PROC), &pid_path, port) {
-                Ok(found) => found,
-                Err(error) if missing(&error) => continue,
-                Err(error) => return Err(error),
-            };
-            if revalidate(identity, &provider) != Revalidation::Match
-                || network_namespace_inode(Path::new(PROC), &pid_path)? != namespace
-            {
-                return Err(io::Error::other(
-                    "process identity or network namespace changed during inventory",
-                ));
-            }
-            namespace_inodes = Some(found);
-            break;
-        }
-        let Some(namespace_inodes) = namespace_inodes else {
-            continue;
-        };
-        if namespace_inodes.is_empty() {
-            continue;
-        }
-        require_current_network_namespace(namespace, current_namespace, &namespace_inodes)?;
-        inodes = namespace_inodes;
-        candidates = identities;
-    }
+    let inodes = listener_inodes_for_port(Path::new(PROC), "self", port)?;
     if inodes.is_empty() {
         return Ok(Vec::new());
     }
 
+    let mut candidates = Vec::new();
+    for pid in list_pids()? {
+        let mut process = match provider.read(pid) {
+            Ok(ProcessRead::Present(identity)) if identity.kernel.uid == current_uid() => {
+                ListenerProcess::identified(identity)
+            }
+            Ok(ProcessRead::PathUnreadable(kernel)) if kernel.uid == current_uid() => {
+                ListenerProcess::unreadable(kernel)
+            }
+            Ok(ProcessRead::Present(_)) | Ok(ProcessRead::PathUnreadable(_)) | Ok(ProcessRead::Gone) => {
+                continue;
+            }
+            Err(error) if not_visible(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        let pid_path = process.kernel.pid.to_string();
+        let namespace = match network_namespace_inode(Path::new(PROC), &pid_path) {
+            Ok(namespace) => namespace,
+            Err(error) if not_visible(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        if namespace != current_namespace {
+            continue;
+        }
+        if !refresh_current_namespace_candidate(&mut process, &provider, Path::new(PROC), current_namespace)?
+        {
+            continue;
+        }
+        candidates.push(process);
+    }
+
     let mut found = Vec::new();
-    for identity in candidates {
-        let pid = identity.kernel.pid;
+    for mut process in candidates {
+        let pid = process.kernel.pid;
         let pid_path = pid.to_string();
-        if network_namespace_inode(Path::new(PROC), &pid_path)? != current_namespace {
+        match process.refresh(&provider) {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(error) if not_visible(&error) => continue,
+            Err(error) => return Err(error),
+        }
+        let namespace = match network_namespace_inode(Path::new(PROC), &pid_path) {
+            Ok(namespace) => namespace,
+            Err(error) if not_visible(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        if namespace != current_namespace {
             return Err(io::Error::other(
                 "process network namespace changed during inventory",
             ));
@@ -416,40 +457,20 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
         let fd_dir = Path::new(PROC).join(pid.to_string()).join("fd");
         let descriptors = match fs::read_dir(&fd_dir) {
             Ok(descriptors) => descriptors,
-            Err(error) if missing(&error) => continue,
+            Err(error) if not_visible(&error) => continue,
             Err(error) => return Err(error),
         };
-        let mut owns_listener = false;
-        for descriptor in descriptors {
-            let descriptor = descriptor?;
-            let target = match fs::read_link(descriptor.path()) {
-                Ok(target) => target,
-                Err(error) if missing(&error) => continue,
-                Err(error) => return Err(error),
-            };
-            if let Some(inode) = socket_inode(&target)
-                && inodes.contains(&inode)
-            {
-                owns_listener = true;
-                break;
-            }
-        }
-        if !owns_listener {
+        let descriptor_paths = descriptors.map(|descriptor| descriptor.map(|entry| entry.path()));
+        if listener_fd_match(descriptor_paths, &inodes, |path| fs::read_link(path))? != Some(true) {
             continue;
         }
-        match provider.read(pid)? {
-            ProcessRead::Present(fresh)
-                if fresh == identity
-                    && network_namespace_inode(Path::new(PROC), &pid_path)? == current_namespace =>
-            {
-                found.push(identity)
-            }
-            ProcessRead::Gone => {}
-            _ => {
+        if let Some(fresh) = listener_identity(&process.kernel, provider.read(pid)?)? {
+            if network_namespace_inode(Path::new(PROC), &pid_path)? != current_namespace {
                 return Err(io::Error::other(
                     "listener identity or network namespace changed during inventory",
                 ));
             }
+            found.push(fresh);
         }
     }
     if network_namespace_inode(Path::new(PROC), "self")? != current_namespace {
@@ -473,20 +494,8 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
             Err(error) if missing(&error) => continue,
             Err(error) => return Err(error),
         };
-        let mut still_listening = false;
-        for descriptor in descriptors {
-            let descriptor = descriptor?;
-            let target = match fs::read_link(descriptor.path()) {
-                Ok(target) => target,
-                Err(error) if missing(&error) => continue,
-                Err(error) => return Err(error),
-            };
-            if socket_inode(&target).is_some_and(|inode| current_inodes.contains(&inode)) {
-                still_listening = true;
-                break;
-            }
-        }
-        if !still_listening {
+        let descriptor_paths = descriptors.map(|descriptor| descriptor.map(|entry| entry.path()));
+        if !verified_listener_fd_match(descriptor_paths, &current_inodes, |path| fs::read_link(path))? {
             continue;
         }
         match provider.read(pid)? {
@@ -505,6 +514,225 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
         }
     }
     Ok(stable)
+}
+
+#[derive(Clone)]
+struct ListenerProcess {
+    kernel: KernelIdentity,
+    identity: Option<ProcessIdentity>,
+}
+
+impl ListenerProcess {
+    fn identified(identity: ProcessIdentity) -> Self {
+        Self {
+            kernel: identity.kernel.clone(),
+            identity: Some(identity),
+        }
+    }
+
+    fn unreadable(kernel: KernelIdentity) -> Self {
+        Self {
+            kernel,
+            identity: None,
+        }
+    }
+
+    fn refresh<P: ProcessProvider + ?Sized>(&mut self, provider: &P) -> io::Result<bool> {
+        let read = match provider.read(self.kernel.pid) {
+            Ok(read) => read,
+            Err(error) if missing(&error) => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        match read {
+            ProcessRead::Present(identity) if identity.kernel == self.kernel => {
+                self.identity = Some(identity);
+                Ok(true)
+            }
+            ProcessRead::PathUnreadable(kernel) if self.kernel == kernel => Ok(true),
+            ProcessRead::Present(_) | ProcessRead::PathUnreadable(_) | ProcessRead::Gone => Ok(false),
+        }
+    }
+}
+
+fn listener_identity(expected: &KernelIdentity, read: ProcessRead) -> io::Result<Option<ProcessIdentity>> {
+    match read {
+        ProcessRead::Present(identity) if identity.kernel == *expected => Ok(Some(identity)),
+        ProcessRead::Gone => Ok(None),
+        ProcessRead::PathUnreadable(kernel) if kernel == *expected => Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("listener process identity is unreadable for PID {}", expected.pid),
+        )),
+        ProcessRead::Present(_) | ProcessRead::PathUnreadable(_) => {
+            Err(io::Error::other("listener identity changed during inventory"))
+        }
+    }
+}
+
+#[cfg(test)]
+mod listener_process_tests {
+    use super::*;
+    use crate::identity::IdentityEvidence;
+
+    struct ScriptedProvider(ProcessRead);
+
+    impl ProcessProvider for ScriptedProvider {
+        fn read(&self, _pid: i32) -> io::Result<ProcessRead> {
+            Ok(self.0.clone())
+        }
+    }
+
+    struct DeniedProvider;
+
+    impl ProcessProvider for DeniedProvider {
+        fn read(&self, _pid: i32) -> io::Result<ProcessRead> {
+            Err(io::Error::from(io::ErrorKind::PermissionDenied))
+        }
+    }
+
+    fn kernel(start_time_us: u64) -> KernelIdentity {
+        KernelIdentity {
+            boot_session_uuid: "a23b2a10-71df-4f5d-a941-4a18eaac32a8".into(),
+            pid: 42,
+            start_time_us,
+            uid: 1000,
+        }
+    }
+
+    fn identity(kernel: KernelIdentity, exe_path: &str) -> ProcessIdentity {
+        ProcessIdentity {
+            kernel,
+            evidence: IdentityEvidence {
+                exe_path: PathBuf::from(exe_path),
+            },
+        }
+    }
+
+    #[test]
+    fn unreadable_executable_is_retained_only_as_kernel_identity_during_discovery() {
+        let expected = kernel(100);
+        let mut process = ListenerProcess::unreadable(expected.clone());
+        assert!(
+            process
+                .refresh(&ScriptedProvider(ProcessRead::PathUnreadable(expected)))
+                .unwrap()
+        );
+        assert!(process.identity.is_none());
+    }
+
+    #[test]
+    fn exec_refreshes_path_for_the_same_kernel_process() {
+        let expected = kernel(100);
+        let mut process = ListenerProcess::unreadable(expected.clone());
+        let fresh = identity(expected, "/usr/bin/fixture");
+        assert!(
+            process
+                .refresh(&ScriptedProvider(ProcessRead::Present(fresh.clone())))
+                .unwrap()
+        );
+        assert_eq!(process.identity, Some(fresh));
+    }
+
+    #[test]
+    fn a_reused_pid_does_not_refresh_the_discovered_process() {
+        let expected = kernel(100);
+        let mut process = ListenerProcess::unreadable(expected);
+        assert!(
+            !process
+                .refresh(&ScriptedProvider(ProcessRead::PathUnreadable(kernel(101))))
+                .unwrap()
+        );
+        assert!(process.identity.is_none());
+    }
+
+    #[test]
+    fn an_exited_discovery_candidate_is_skipped() {
+        let expected = kernel(100);
+        let mut process = ListenerProcess::identified(identity(expected, "/usr/bin/fixture"));
+        assert!(
+            !refresh_current_namespace_candidate(
+                &mut process,
+                &ScriptedProvider(ProcessRead::Gone),
+                Path::new("/missing-proc-root"),
+                1,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn an_inaccessible_discovery_candidate_is_skipped() {
+        let expected = kernel(100);
+        let mut process = ListenerProcess::identified(identity(expected, "/usr/bin/fixture"));
+        assert!(
+            !refresh_current_namespace_candidate(
+                &mut process,
+                &DeniedProvider,
+                Path::new("/missing-proc-root"),
+                1,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn a_vanished_descriptor_does_not_hide_a_later_listener_descriptor() {
+        let descriptors = vec![Ok(PathBuf::from("vanished")), Ok(PathBuf::from("listener"))];
+        let matched = listener_fd_match(descriptors, &BTreeSet::from([123]), |path| {
+            if path == Path::new("vanished") {
+                Err(io::Error::from_raw_os_error(libc::ENOENT))
+            } else {
+                Ok(PathBuf::from("socket:[123]"))
+            }
+        })
+        .unwrap();
+        assert_eq!(matched, Some(true));
+    }
+
+    #[test]
+    fn inaccessible_listener_descriptor_fails_final_verification() {
+        let descriptors = vec![Ok(PathBuf::from("listener"))];
+        let error = verified_listener_fd_match(descriptors, &BTreeSet::from([123]), |_| {
+            Err(io::Error::from_raw_os_error(libc::EACCES))
+        })
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn unreadable_identity_of_the_actual_listener_fails_closed() {
+        let expected = kernel(100);
+        let error = listener_identity(&expected, ProcessRead::PathUnreadable(expected.clone())).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn the_verified_listener_identity_keeps_its_executable_evidence() {
+        let expected = kernel(100);
+        let fresh = identity(expected.clone(), "/usr/bin/fixture");
+        assert_eq!(
+            listener_identity(&expected, ProcessRead::Present(fresh.clone())).unwrap(),
+            Some(fresh)
+        );
+    }
+
+    #[test]
+    fn a_gone_listener_is_not_an_identity_error() {
+        assert!(
+            listener_identity(&kernel(100), ProcessRead::Gone)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_reused_pid_cannot_become_a_listener_identity() {
+        let error = listener_identity(
+            &kernel(100),
+            ProcessRead::Present(identity(kernel(101), "/usr/bin/fixture")),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+    }
 }
 
 fn socket_inode(target: &Path) -> Option<u64> {
@@ -1185,9 +1413,16 @@ fn missing(error: &io::Error) -> bool {
     matches!(error.raw_os_error(), Some(libc::ENOENT) | Some(libc::ESRCH))
 }
 
+fn not_visible(error: &io::Error) -> bool {
+    missing(error) || error.kind() == io::ErrorKind::PermissionDenied
+}
+
+fn permission_denied(error: &io::Error) -> bool {
+    error.kind() == io::ErrorKind::PermissionDenied
+}
+
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
     use std::fs;
     use std::io;
     use std::path::PathBuf;
@@ -1197,8 +1432,8 @@ mod tests {
 
     use super::{
         LinuxProvider, PidfdOps, ProcStat, SystemdUnitKind, cgroup_unit_component, cgroup_unit_evidence,
-        parse_environment, parse_stat, parse_uid_status, pidfd_signal, process_info,
-        require_current_network_namespace, systemd_unit_is_managed, verify_systemd_unit_lookups,
+        parse_environment, parse_stat, parse_uid_status, pidfd_signal, process_info, systemd_unit_is_managed,
+        verify_systemd_unit_lookups,
     };
     use crate::ancestry::AncestryProvider;
     use crate::apply::signal::SignalResult;
@@ -1476,19 +1711,6 @@ mod tests {
                 io::ErrorKind::PermissionDenied
             );
         }
-    }
-
-    #[test]
-    fn port_inventory_refuses_an_active_listener_outside_the_callers_network_namespace() {
-        let listener = BTreeSet::from([123_u64]);
-        assert_eq!(
-            require_current_network_namespace(2, 1, &listener)
-                .unwrap_err()
-                .kind(),
-            io::ErrorKind::Unsupported
-        );
-        assert!(require_current_network_namespace(2, 1, &BTreeSet::new()).is_ok());
-        assert!(require_current_network_namespace(1, 1, &listener).is_ok());
     }
 
     struct ProcFixture(PathBuf);

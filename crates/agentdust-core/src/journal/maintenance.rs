@@ -1,4 +1,4 @@
-use std::fs::{self, File, TryLockError};
+use std::fs::{self, File, FileTimes, TryLockError};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -14,6 +14,8 @@ use crate::safe_open::{self, Access, SafeOpenError};
 pub const MAINT_FILE: &str = "journal.maint";
 pub const COMPACT_TMP: &str = "journal.compact.tmp";
 pub const CORRUPT_PREFIX: &str = "journal.jsonl.corrupt-";
+pub const MAINTENANCE_INTERVAL_MS: u64 = 24 * 60 * 60 * 1_000;
+pub const ACTIVE_ROTATE_BYTES: u64 = 1_000_000;
 
 #[derive(Debug, Error)]
 pub enum MaintenanceError {
@@ -127,12 +129,109 @@ pub(super) fn prune(
     };
     let _lock = lock(dir)?;
     probe.reached(MaintenancePoint::Locked);
+    prune_locked(dir, &dir_handle, probe, policy, now_ms, current_boot)
+}
+
+pub(super) fn maintain_if_due(
+    dir: &Path,
+    volume: &dyn VolumeProbe,
+    probe: &dyn MaintenanceProbe,
+    policy: &Policy,
+    now_ms: u64,
+    current_boot: &str,
+) -> Result<Option<PruneReport>, MaintenanceError> {
+    if current_boot.is_empty() {
+        return Err(MaintenanceError::EmptyBoot);
+    }
+    let Some(dir_handle) = prepare(dir, volume)? else {
+        return Ok(None);
+    };
+    let maintenance_path = dir.join(MAINT_FILE);
+    let first_run = match fs::symlink_metadata(&maintenance_path) {
+        Ok(_) => false,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => true,
+        Err(err) => return Err(err.into()),
+    };
+    let lock_file = match lock(dir) {
+        Ok(file) => file,
+        Err(MaintenanceError::Busy) => return Ok(None),
+        Err(err) => return Err(err),
+    };
+    probe.reached(MaintenancePoint::Locked);
+    let Some(rotate_active) = maintenance_due(&lock_file, dir, now_ms, first_run)? else {
+        return Ok(None);
+    };
+    let report = maintain_locked(
+        dir,
+        &dir_handle,
+        probe,
+        policy,
+        now_ms,
+        current_boot,
+        rotate_active,
+    )?;
+    let modified = std::time::UNIX_EPOCH + std::time::Duration::from_millis(now_ms);
+    lock_file.set_times(FileTimes::new().set_modified(modified))?;
+    Ok(Some(report))
+}
+
+fn prune_locked(
+    dir: &Path,
+    dir_handle: &File,
+    probe: &dyn MaintenanceProbe,
+    policy: &Policy,
+    now_ms: u64,
+    current_boot: &str,
+) -> Result<PruneReport, MaintenanceError> {
+    maintain_locked(dir, dir_handle, probe, policy, now_ms, current_boot, true)
+}
+
+fn maintain_locked(
+    dir: &Path,
+    dir_handle: &File,
+    probe: &dyn MaintenanceProbe,
+    policy: &Policy,
+    now_ms: u64,
+    current_boot: &str,
+    rotate_active: bool,
+) -> Result<PruneReport, MaintenanceError> {
     drop(retain::open_sources(dir)?);
     retain::remove_stale_tmp(dir)?;
-    let rotation = rotate_locked(dir, &dir_handle, probe, now_ms)?;
+    let rotation = if rotate_active {
+        rotate_locked(dir, dir_handle, probe, now_ms)?
+    } else {
+        Rotation::Empty
+    };
     let sources = retain::open_sources(dir)?;
-    let retained = retain::retain_locked(dir, &dir_handle, sources, policy, now_ms, current_boot, probe)?;
+    let retained = retain::retain_locked(dir, dir_handle, sources, policy, now_ms, current_boot, probe)?;
     Ok(PruneReport { rotation, retained })
+}
+
+fn maintenance_due(
+    lock_file: &File,
+    dir: &Path,
+    now_ms: u64,
+    first_run: bool,
+) -> Result<Option<bool>, MaintenanceError> {
+    let active = dir.join(ACTIVE_FILE);
+    match safe_open::open_file(&active, Access::Read) {
+        Ok(file) if file.metadata()?.len() >= ACTIVE_ROTATE_BYTES => return Ok(Some(true)),
+        Ok(_) => {}
+        Err(SafeOpenError::Io(err)) if err.kind() == io::ErrorKind::NotFound => {}
+        Err(err) => return Err(refuse(&active, err)),
+    }
+    if first_run {
+        return Ok(Some(false));
+    }
+    let modified = lock_file.metadata()?.modified();
+    let Ok(elapsed) = modified.and_then(|time| {
+        time.duration_since(std::time::UNIX_EPOCH)
+            .map_err(io::Error::other)
+    }) else {
+        return Ok(Some(false));
+    };
+    let previous_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
+    Ok((now_ms.saturating_sub(previous_ms) >= MAINTENANCE_INTERVAL_MS).then_some(false))
 }
 
 fn prepare(dir: &Path, volume: &dyn VolumeProbe) -> Result<Option<File>, MaintenanceError> {
@@ -150,12 +249,7 @@ fn prepare(dir: &Path, volume: &dyn VolumeProbe) -> Result<Option<File>, Mainten
 
 fn lock(dir: &Path) -> Result<File, MaintenanceError> {
     let path = dir.join(MAINT_FILE);
-    match safe_open::open_file(&path, Access::Create) {
-        Ok(_) => {}
-        Err(SafeOpenError::Io(err)) if err.kind() == io::ErrorKind::AlreadyExists => {}
-        Err(err) => return Err(refuse(&path, err)),
-    }
-    let file = safe_open::open_file(&path, Access::Read).map_err(|err| refuse(&path, err))?;
+    let file = safe_open::open_lock_file(&path).map_err(|err| refuse(&path, err))?;
     match file.try_lock() {
         Ok(()) => Ok(file),
         Err(TryLockError::WouldBlock) => Err(MaintenanceError::Busy),

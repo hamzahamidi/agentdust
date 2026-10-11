@@ -117,6 +117,7 @@ jobs:
           rm "$HOME/.config/systemd/user/agentdust-automatic.service"
           systemctl --user daemon-reload
           systemd-run --user --scope env TMPDIR="$mount_point/tmp" AGENTDUST_EXT4_TEST_ROOT="$mount_point" AGENTDUST_FIXTURE_SLEEPER="$GITHUB_WORKSPACE/target/debug/fixture-sleeper" cargo test --locked -p agentdust --test linux_automatic -- --ignored --test-threads=1
+          systemd-run --user --scope env TMPDIR="$mount_point/tmp" AGENTDUST_EXT4_TEST_ROOT="$mount_point" AGENTDUST_FIXTURE_LISTENER="$GITHUB_WORKSPACE/target/debug/fixture-listener" cargo test --locked -p agentdust --test linux_port -- --ignored --test-threads=1
           sudo mount -o remount,ro "$mount_point"
           AGENTDUST_EXT4_TEST_ROOT="$mount_point" cargo test --locked -p agentdust-core --test linux_journal_ext4 -- --ignored read_only_ext4_mount_is_not_supported
           AGENTDUST_EXT4_TEST_ROOT="$mount_point" cargo test --locked -p agentdust --test linux_setup_ext4 -- --ignored read_only_ext4_refuses_setup_checks_and_hook_writes_but_allows_removal
@@ -174,3 +175,35 @@ jobs:
           AGENTDUST_FIXTURE_LISTENER: ${{ github.workspace }}/target/debug/fixture-listener
         run: cargo test --locked -p agentdust --test port -- --ignored --test-threads=1
       - run: cargo test --release -p agentdust --test hook_latency --locked -- --ignored --nocapture --test-threads=1
+
+  wsl2:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Ubuntu 24.04 under WSL2
+        shell: pwsh
+        run: |
+          wsl.exe --version
+          wsl.exe --install --distribution Ubuntu-24.04 --no-launch --web-download
+          if ($LASTEXITCODE -ne 0) { throw 'Ubuntu 24.04 WSL installation failed' }
+      - name: Prepare the ext4 workspace and systemd
+        shell: pwsh
+        run: |
+          $windowsWorkspace = $env:GITHUB_WORKSPACE.Replace('\', '/')
+          $workspaceOutput = & wsl.exe --distribution Ubuntu-24.04 --user root -- wslpath -u $windowsWorkspace
+          if ($LASTEXITCODE -ne 0) { throw 'Could not locate the repository from WSL' }
+          $workspace = ($workspaceOutput -join '').Trim()
+          if ([string]::IsNullOrWhiteSpace($workspace)) { throw 'WSL returned an empty repository path' }
+          wsl.exe --distribution Ubuntu-24.04 --user root -- bash -lc "bash '$workspace/scripts/wsl2_bootstrap.sh' '$workspace'"
+          if ($LASTEXITCODE -ne 0) { throw 'WSL bootstrap failed' }
+          wsl.exe --shutdown
+          wsl.exe --distribution Ubuntu-24.04 --user root -- bash -lc "bash '$workspace/scripts/wsl2_systemd_bootstrap.sh'"
+          if ($LASTEXITCODE -ne 0) { throw 'WSL systemd user manager did not start' }
+      - name: Run the WSL2 Linux acceptance matrix
+        shell: pwsh
+        run: |
+          wsl.exe --distribution Ubuntu-24.04 --user agentdust -- bash -lc 'cd /home/agentdust/work/agentdust && bash scripts/wsl2_acceptance.sh'
+          if ($LASTEXITCODE -ne 0) { throw 'WSL2 acceptance failed' }

@@ -24,8 +24,8 @@ pub use fields::{
 pub use frame::{Class, MAX_FRAME_LEN, RS, decode, encode, scan};
 pub use generations::{Generation, generation_path, generation_stamp, list_generations};
 pub use maintenance::{
-    COMPACT_TMP, CORRUPT_PREFIX, MAINT_FILE, MaintenanceError, MaintenancePoint, MaintenanceProbe,
-    NoMaintenanceProbe, PruneReport, Rotation,
+    ACTIVE_ROTATE_BYTES, COMPACT_TMP, CORRUPT_PREFIX, MAINT_FILE, MAINTENANCE_INTERVAL_MS, MaintenanceError,
+    MaintenancePoint, MaintenanceProbe, NoMaintenanceProbe, PruneReport, Rotation,
 };
 pub use retain::RetainReport;
 pub use volume::{FixedVolume, FsFacts, SystemVolume, VolumeProbe};
@@ -230,6 +230,15 @@ impl<'a> Journal<'a> {
         maintenance::prune(self.dir, self.volume, self.probe, policy, now_ms, current_boot)
     }
 
+    pub fn maintain_if_due(
+        &self,
+        policy: &retention::Policy,
+        now_ms: u64,
+        current_boot: &str,
+    ) -> Result<Option<PruneReport>, MaintenanceError> {
+        maintenance::maintain_if_due(self.dir, self.volume, self.probe, policy, now_ms, current_boot)
+    }
+
     pub fn status(&self) -> io::Result<FsFacts> {
         volume::locate(self.volume, self.dir)
     }
@@ -267,4 +276,13 @@ pub fn prune(
     current_boot: &str,
 ) -> Result<PruneReport, MaintenanceError> {
     Journal::new(dir).prune(policy, now_ms, current_boot)
+}
+
+pub fn maintain_if_due(
+    dir: &Path,
+    policy: &retention::Policy,
+    now_ms: u64,
+    current_boot: &str,
+) -> Result<Option<PruneReport>, MaintenanceError> {
+    Journal::new(dir).maintain_if_due(policy, now_ms, current_boot)
 }

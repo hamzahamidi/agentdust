@@ -1,6 +1,6 @@
 # Journal rotation and retention
 
-`agentdust_core::journal` rotates the journal and trims it. These are library functions for the future CLI and server. The hook never calls them and the binary has no maintenance subcommand.
+`agentdust_core::journal` rotates the journal and trims it. The automatic worker runs `maintain_if_due` at startup and once per minute. Maintenance runs on first use, every 24 hours, or when the active journal reaches 1 MB. A concurrent maintenance run is skipped. Hooks, doctor, status and plan requests never run maintenance.
 
 [ADR-1](adr-journal-format.md) explains why appenders take no lock and states the retention algorithm once, with a table of what happens to each kind of generation. [journal-schema.md](journal-schema.md) describes the records and the reader. The spec (section 3.2) is not edited here, and the last section lists where the code differs from it.
 
@@ -8,9 +8,10 @@
 Journal::rotate(&self, now_ms: u64) -> Result<Rotation, MaintenanceError>
 Journal::retain(&self, policy: &Policy, now_ms: u64, current_boot: &str) -> Result<RetainReport, MaintenanceError>
 Journal::prune(&self, policy: &Policy, now_ms: u64, current_boot: &str) -> Result<PruneReport, MaintenanceError>
+Journal::maintain_if_due(&self, policy: &Policy, now_ms: u64, current_boot: &str) -> Result<Option<PruneReport>, MaintenanceError>
 ```
 
-`prune` is `rotate` followed by `retain` under one lock. The free functions `journal::rotate`, `retain` and `prune` use the system volume. The clock is the `now_ms` argument: it names a generation, it is the age of the age rule, and it names a copy. Nothing else reads time. `Journal::with_probe` installs a `MaintenanceProbe`, which the tests use to hold a run at a named point.
+`prune` is `rotate` followed by `retain` under one lock. `maintain_if_due` runs that operation at the documented interval or size threshold and records its last successful run in the modification time of `journal.maint`. The free functions `journal::rotate`, `retain`, `prune` and `maintain_if_due` use the system volume. The clock is the `now_ms` argument: it names a generation, it is the age of the age rule, and it names a copy. `Journal::with_probe` installs a `MaintenanceProbe`, which the tests use to hold a run at a named point.
 
 ## Files in the data directory
 
@@ -18,7 +19,7 @@ Journal::prune(&self, policy: &Policy, now_ms: u64, current_boot: &str) -> Resul
 | --- | --- | --- |
 | `journal.jsonl` | appenders | The active file. Maintenance renames it and never opens it for writing |
 | `journal.<stamp>.jsonl` | rotation, retention | A closed generation. `<stamp>` is a canonical decimal number, the millisecond of the rotation moved up to the next free number |
-| `journal.maint` | rotation, retention | Empty. Taken with a non-blocking exclusive `flock`. Appenders and readers never open it |
+| `journal.maint` | rotation, retention and runtime maintenance | Empty. Its modification time records the last successful scheduled run. Taken with a non-blocking exclusive `flock`. Appenders and readers never open it |
 | `journal.compact.tmp` | retention | The replacement of one generation, created exclusively with mode 0600 |
 | `journal.jsonl.corrupt-<n>` | retention | A byte for byte copy of a generation that held a line that did not parse, mode 0600 |
 
@@ -27,7 +28,7 @@ A reader reads `journal.jsonl` and every file whose name is exactly `journal.<ca
 ## One rotation
 
 1. Opens the data directory with the safe open rules. A missing directory is left missing and the result is `Rotation::Empty`.
-2. Asks the volume probe about the directory. A volume that is not local APFS returns `UnsupportedFilesystem` and creates nothing.
+2. Asks the volume probe about the directory. macOS requires local APFS and Linux requires writable ext4. Other volumes return `UnsupportedFilesystem` and create nothing.
 3. Creates `journal.maint` exclusively when it is missing, opens it with the safe open rules and takes the lock without blocking. A held lock is `Busy`.
 4. Opens `journal.jsonl` for reading with the safe open rules. A missing or empty file is `Rotation::Empty`.
 5. Renames it to `journal.<stamp>.jsonl`, taking the next free stamp when the name is taken, even by a dangling symlink, and syncs the directory. Nothing is truncated and the inode is kept.
@@ -76,7 +77,7 @@ The size of a record is its whole frame: the JSON bytes plus the 0x1E and the 0x
 | --- | --- | --- |
 | `Busy` | Another run holds `journal.maint` | Nothing |
 | `EmptyBoot` | `current_boot` is empty, which would make every record look like an earlier boot | Nothing, and the check precedes any file access |
-| `UnsupportedFilesystem(facts)` | The volume is not local APFS | Nothing is created |
+| `UnsupportedFilesystem(facts)` | The volume is outside the supported APFS and ext4 gates | Nothing is created |
 | `Refused { path, source }` | The data directory, the lock file, the active file or a generation is a symlink, a FIFO, a directory, hard linked, has a loose mode or another owner | Nothing, except that `journal.maint` may have been created. A FIFO is refused without blocking |
 | `Io` | Any other failure, such as a permission error on a generation or a taken `journal.compact.tmp` directory | Generations already visited stay as they were left. The one that failed is intact |
 
@@ -95,6 +96,7 @@ A run that fails on a generation never deletes it. A reader reports an unsafe ge
 | `journal_retain_rules.rs` | The rules of spec 3.2 through generation files |
 | `journal_retain_interleave.rs` | Real rotation and retention around a paused writer, around a writer that resumes between the scan and the replacement, around a run that holds the lock, and around a paused reader |
 | `journal_retain_stress.rs` | Three writer threads, a straggler and a rotator, with a reader that checks every record acknowledged before it began |
+| `journal_maintenance_due.rs` | First run, 24 hour interval, 1 MB active journal threshold, concurrent maintenance skip, and missing directory behavior |
 | `crates/agentdust/tests/hook_never_prunes.rs` | The hook rotates, compacts and deletes nothing, takes no lock and has no maintenance command |
 | `crates/agentdust-testkit/tests/journal_stress.rs` | The same with real processes (macOS only) |
 
@@ -132,7 +134,8 @@ The mutation checks below were run once each, and each makes the named tests fai
 
 ## Limits
 
-- Nothing calls `prune` yet. The CLI and the server decide the cadence, and each run that finds bytes in the active file adds one generation.
+- Runtime calls `maintain_if_due` outside hooks. A successful run applies the 14 day and 20 MB policy. Between maintenance opportunities, readers still load the journal contents that exist on disk.
+- Retention never edits the active `journal.jsonl`. The worker rotates it at the 1 MB threshold; its 24-hour run only retains already closed generations. A smaller active journal can keep records older than 14 days, including records from earlier boots, until a later rotation. The age policy is not a hard bound on every journal record.
 - The whole journal is read into memory. At the default limit that is about 20 MB of frames and the same again for their records. A journal of that size was not measured.
 - `degraded` is returned and not stored. `doctor` does not read it: it derives degraded sessions from records that carry no agent identity and counts tags that no session explains ([doctor](../m2/doctor.md)).
 - Copies are never deleted by retention.
@@ -145,7 +148,7 @@ The mutation checks below were run once each, and each makes the named tests fai
 
 ## Where this differs from the spec
 
-- Spec 3.2 says every reader, writer and rotator takes `journal.lock`. Only rotation and retention take `journal.maint`, and the file name is new.
+- Spec 3.2 says every reader, writer and rotator takes `journal.lock`. Rotation, retention and scheduled maintenance take `journal.maint`; readers, appenders and hooks do not.
 - Spec 3.2 says records from earlier boots are pruned first. They are dropped on every run, because no process of an earlier boot can be signalled.
 - The limit of "20 MB" is 20,000,000 bytes of frames of records that parse.
 - Spec 3.2 says provenance is marked degraded. The mark is a list in the report.

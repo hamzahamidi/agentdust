@@ -24,7 +24,7 @@ Releases follow [Semantic Versioning](docs/release.md#semantic-versioning): comp
 | Process identity, named session markers read from another process, `KERN_PROCARGS2` parser (fuzzed) | Built |
 | Claude Code and Codex hooks that record session and shell events in a local journal | Built |
 | `agentdust setup codex` | Six user hooks, native MCP registration, diff, consent, check and removal ([Codex support and limits](docs/codex.md)) |
-| Journal rotation and retention, as library functions that nothing runs yet | Built |
+| Journal rotation and retention | Runs in the automatic worker when due; hooks, doctor, status and plan requests do not run maintenance |
 | MCP approval probe: a typed-code form that changes nothing | Built |
 | Reproducible release pipeline | The GitHub Actions dry run built two identical binaries, packaged a deterministic tarball, and verified the binary, tarball and SBOM attestations ([M0 report](docs/m0/report.md), [0.1.0 run](https://github.com/hamzahamidi/agentdust/actions/runs/37249711505)) |
 | Homebrew distribution | Available from the [AgentDust tap](https://github.com/hamzahamidi/homebrew-agentdust) for macOS on Apple silicon |
@@ -45,7 +45,7 @@ agentdust port 3000
 agentdust port 3000 --resolve --json
 ```
 
-A port number does not grant permission to stop its listener. Live, kept, unknown and managed processes remain protected. Results cover current-user-visible IPv4/IPv6 TCP listeners. `no_visible_listener` is an observation, not a guarantee that a bind will succeed. See [port conflict recovery](docs/port-conflicts.md).
+A port number does not grant permission to stop its listener. Live, kept, unknown and managed processes remain protected. Results cover current-user-visible IPv4/IPv6 TCP listeners. A process may be omitted when its identity or socket descriptors cannot be read. `no_visible_listener` is an observation, not a guarantee that a bind will succeed. See [port conflict recovery](docs/port-conflicts.md).
 
 ## Connect Codex
 

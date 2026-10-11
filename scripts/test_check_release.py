@@ -78,7 +78,7 @@ def page(*runs):
     return json.dumps({"total_count": len(runs), "check_runs": list(runs)})
 
 
-GREEN = page(check_run("linux", run_id=1), check_run("macos", run_id=2))
+GREEN = page(check_run("linux", run_id=1), check_run("macos", run_id=2), check_run("wsl2", run_id=3))
 
 
 class TagTest(unittest.TestCase):
@@ -212,11 +212,11 @@ class ReachabilityTest(unittest.TestCase):
 
 
 class ChecksTest(unittest.TestCase):
-    def problems(self, text, required=("linux", "macos")):
+    def problems(self, text, required=check_release.REQUIRED_CHECKS):
         return check_release.check_run_problems(text, COMMIT, required)
 
-    def test_the_required_checks_are_the_two_ci_jobs(self):
-        self.assertEqual(check_release.REQUIRED_CHECKS, ("linux", "macos"))
+    def test_the_required_checks_are_the_three_ci_jobs(self):
+        self.assertEqual(check_release.REQUIRED_CHECKS, ("linux", "macos", "wsl2"))
 
     def test_the_ci_workflow_has_a_job_for_each_required_check_and_does_not_rename_it(self):
         text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
@@ -226,32 +226,41 @@ class ChecksTest(unittest.TestCase):
                 self.assertIsNotNone(match)
                 self.assertNotIn("\n    name:", "\n" + match.group(1))
 
-    def test_both_checks_green_on_the_commit_pass(self):
+    def test_all_checks_green_on_the_commit_pass(self):
         self.assertEqual(self.problems(GREEN), [])
 
     def test_a_commit_without_any_check_run_fails_for_every_required_check(self):
         problems = self.problems(page())
-        self.assertEqual(len(problems), 2)
+        self.assertEqual(len(problems), 3)
         self.assertIn("linux", problems[0])
         self.assertIn("macos", problems[1])
+        self.assertIn("wsl2", problems[2])
 
     def test_a_missing_required_check_fails(self):
-        problems = self.problems(page(check_run("linux")))
+        problems = self.problems(page(check_run("linux"), check_run("macos")))
         self.assertEqual(len(problems), 1)
-        self.assertIn("macos", problems[0])
+        self.assertIn("wsl2", problems[0])
 
     def test_every_conclusion_but_success_fails(self):
         for conclusion in ("failure", "cancelled", "skipped", "neutral", "timed_out", "action_required", "stale", None):
             with self.subTest(conclusion=conclusion):
-                text = page(check_run("linux", run_id=1), check_run("macos", conclusion=conclusion, run_id=2))
+                text = page(
+                    check_run("linux", run_id=1),
+                    check_run("macos", run_id=2),
+                    check_run("wsl2", conclusion=conclusion, run_id=3),
+                )
                 problems = self.problems(text)
                 self.assertEqual(len(problems), 1)
-                self.assertIn("macos", problems[0])
+                self.assertIn("wsl2", problems[0])
 
     def test_a_check_that_is_still_running_fails_even_with_a_success_conclusion_field(self):
         for status in ("in_progress", "queued", "waiting"):
             with self.subTest(status=status):
-                text = page(check_run("linux", run_id=1), check_run("macos", status=status, run_id=2))
+                text = page(
+                    check_run("linux", run_id=1),
+                    check_run("macos", run_id=2),
+                    check_run("wsl2", status=status, run_id=3),
+                )
                 self.assertEqual(len(self.problems(text)), 1)
 
     def test_the_newest_run_of_a_check_decides(self):
@@ -259,12 +268,14 @@ class ChecksTest(unittest.TestCase):
             check_run("linux", run_id=1),
             check_run("macos", conclusion="failure", run_id=2),
             check_run("macos", run_id=3),
+            check_run("wsl2", run_id=4),
         )
         self.assertEqual(self.problems(recovered), [])
         regressed = page(
             check_run("linux", run_id=1),
             check_run("macos", run_id=2),
             check_run("macos", conclusion="failure", run_id=3),
+            check_run("wsl2", run_id=4),
         )
         self.assertEqual(len(self.problems(regressed)), 1)
 
@@ -273,38 +284,63 @@ class ChecksTest(unittest.TestCase):
             check_run("linux", run_id=1),
             check_run("macos", conclusion="failure", run_id=9),
             check_run("macos", run_id=4),
+            check_run("wsl2", run_id=10),
         )
         self.assertEqual(len(self.problems(text)), 1)
 
     def test_a_check_run_from_another_app_does_not_count(self):
-        text = page(check_run("linux", run_id=1), check_run("macos", app="some-other-app", run_id=2))
+        text = page(
+            check_run("linux", run_id=1),
+            check_run("macos", run_id=2),
+            check_run("wsl2", app="some-other-app", run_id=3),
+        )
         problems = self.problems(text)
         self.assertEqual(len(problems), 1)
-        self.assertIn("macos", problems[0])
+        self.assertIn("wsl2", problems[0])
 
     def test_a_check_run_without_an_app_does_not_count(self):
-        forged = check_run("macos", run_id=2)
+        forged = check_run("wsl2", run_id=3)
         del forged["app"]
-        self.assertEqual(len(self.problems(page(check_run("linux", run_id=1), forged))), 1)
+        self.assertEqual(
+            len(self.problems(page(check_run("linux", run_id=1), check_run("macos", run_id=2), forged))),
+            1,
+        )
 
     def test_a_check_run_for_another_commit_does_not_count(self):
-        text = page(check_run("linux", run_id=1), check_run("macos", run_id=2, sha="b" * 40))
-        self.assertEqual(len(self.problems(text)), 1)
+        text = page(
+            check_run("linux", run_id=1),
+            check_run("macos", run_id=2),
+            check_run("wsl2", run_id=3, sha="b" * 40),
+        )
+        problems = self.problems(text)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("wsl2", problems[0])
 
     def test_other_checks_are_ignored(self):
         text = page(
             check_run("linux", run_id=1),
             check_run("macos", run_id=2),
-            check_run("docs", conclusion="failure", run_id=3),
+            check_run("wsl2", run_id=3),
+            check_run("docs", conclusion="failure", run_id=4),
         )
         self.assertEqual(self.problems(text), [])
 
     def test_pages_written_one_after_another_are_all_read(self):
-        text = page(check_run("linux", run_id=1)) + "\n" + page(check_run("macos", run_id=2))
+        text = (
+            page(check_run("linux", run_id=1))
+            + "\n"
+            + page(check_run("macos", run_id=2))
+            + "\n"
+            + page(check_run("wsl2", run_id=3))
+        )
         self.assertEqual(self.problems(text), [])
 
     def test_an_array_of_pages_is_read(self):
-        pages = [json.loads(page(check_run("linux", run_id=1))), json.loads(page(check_run("macos", run_id=2)))]
+        pages = [
+            json.loads(page(check_run("linux", run_id=1))),
+            json.loads(page(check_run("macos", run_id=2))),
+            json.loads(page(check_run("wsl2", run_id=3))),
+        ]
         self.assertEqual(self.problems(json.dumps(pages)), [])
 
     def test_input_that_is_not_check_run_json_is_refused(self):
@@ -369,13 +405,14 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual((code, out), (1, ""))
         self.assertIn("main", err)
 
-    def test_checks_exits_0_when_both_required_checks_passed(self):
+    def test_checks_exits_0_when_all_required_checks_passed(self):
         runs = self.path / "runs.json"
         runs.write_text(GREEN, encoding="utf-8")
         code, out, err = run_main("checks", "--commit", COMMIT, "--runs", str(runs))
         self.assertEqual((code, err), (0, ""))
         self.assertIn("linux", out)
         self.assertIn("macos", out)
+        self.assertIn("wsl2", out)
 
     def test_checks_exits_1_and_lists_every_problem_when_there_are_no_check_runs(self):
         runs = self.path / "runs.json"
@@ -384,6 +421,7 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual((code, out), (1, ""))
         self.assertIn("linux", err)
         self.assertIn("macos", err)
+        self.assertIn("wsl2", err)
         self.assertIn("ci.yml", err)
 
     def test_checks_exits_1_on_a_file_that_is_not_json(self):

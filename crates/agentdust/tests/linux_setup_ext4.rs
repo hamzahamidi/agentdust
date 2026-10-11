@@ -136,12 +136,19 @@ async fn claude_codex_setup_hooks_and_mcp_work_on_ext4() {
         assert!(tools.iter().any(|tool| tool.name == name), "missing {name}");
     }
     assert!(tools.iter().all(|tool| tool.name != "agentdust_disk"));
+    let plan_tool = tools.iter().find(|tool| tool.name == "agentdust_plan").unwrap();
+    assert_eq!(plan_tool.annotations.as_ref().unwrap().read_only_hint, Some(true));
     let doctor = service
         .call_tool(CallToolRequestParams::new("agentdust_doctor"))
         .await
         .unwrap();
     let doctor: serde_json::Value = serde_json::from_str(&doctor.content[0].as_text().unwrap().text).unwrap();
     assert!(doctor.get("cgroup_unit_evidence").is_some());
+    let _plan = service
+        .call_tool(CallToolRequestParams::new("agentdust_plan"))
+        .await
+        .unwrap();
+    assert!(!data.join("journal.maint").exists());
     service.cancel().await.unwrap();
 
     let codex_remove = run_with_path(

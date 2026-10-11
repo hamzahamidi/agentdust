@@ -1,0 +1,2 @@
+*.sh text eol=lf
+fuzz/seeds/** -text

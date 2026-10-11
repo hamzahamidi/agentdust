@@ -2,10 +2,11 @@
 
 mod journal_support;
 
-use std::fs::{self, OpenOptions};
+use std::fs::{self, FileTimes, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::PathBuf;
+use std::time::UNIX_EPOCH;
 
 use agentdust_core::clock;
 use agentdust_core::journal::volume::{SystemVolume, VolumeProbe};
@@ -67,6 +68,24 @@ fn ext4_journal_append_rotation_and_torn_tail_recovery() {
         ["session-0", "session-1", "session-2", "after-rotation"]
     );
     assert_eq!(recovered.torn_frames, 1);
+
+    OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(dir.join("journal.maint"))
+        .unwrap()
+        .set_times(FileTimes::new().set_modified(UNIX_EPOCH))
+        .unwrap();
+    let maintained = journal
+        .maintain_if_due(
+            &agentdust_core::journal::retention::Policy::default(),
+            now + 12,
+            &boot,
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(maintained.rotation, Rotation::Empty);
+    assert!(dir.join("journal.jsonl").exists());
 
     fs::remove_dir_all(&dir).unwrap();
 }

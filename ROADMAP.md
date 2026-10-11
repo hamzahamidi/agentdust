@@ -22,7 +22,7 @@ An MCP client can use the common diagnosis and manual tools where its client sup
 | macOS x86_64 | Claude Code and Codex | Deferred until after M12 native Windows and architecture-specific release checks. |
 | Linux x86_64 | Claude Code and Codex | Supported in 1.7.0 on Ubuntu 24.04 with the data directory on writable ext4. |
 | Linux arm64 | Claude Code and Codex | Deferred until after M12 native Windows and architecture-specific safety and release checks. |
-| Windows x86_64 | Claude Code and Codex | Planned after WSL2. |
+| Windows x86_64 | Claude Code and Codex | Unsupported. A feasibility spike must prove a safe single-process termination contract before implementation is planned. |
 | Other MCP clients | Common diagnosis and manual tools where supported | Automatic cleanup needs a client specific lifecycle adapter and separate acceptance. |
 
 The table separates current support from planned targets. A platform and agent pair becomes supported only after its installation, removal, cleanup safety and release checks pass. A host's session end event alone does not prove that a helper is safe to stop. Live, shared, ambiguous and unknown ownership remains protected.
@@ -47,7 +47,7 @@ The table separates current support from planned targets. A platform and agent p
 8. End-to-end acceptance: before 1.0, run one controlled check on the maintainer's Mac with the exact v1 release candidate installed from Homebrew. Confirm `command -v agentdust` resolves to the formula install and `agentdust version` matches the `v1.0.0` tag. Record the archive checksum and formula `sha256`; do not change the tag, assets or formula between the check and stable promotion. Discover a live Claude session, decline one approval and verify zero signals, then approve a harness-created stale helper and verify only that PID receives SIGTERM. A three-Mac, two-week study is optional confidence evidence after 1.0, not a release gate.
 9. Multi-agent isolation: the v1 target matrix covers three concurrent Claude Code sessions and foreground and background subagents in one session. Fixtures cover interleaved events, resume, `/clear` and abrupt exit. List a Claude Code version as supported for the lifecycle and attribution behavior represented in its fixtures only after those exact fixtures pass replay. Process signalling safety is established separately by the apply tests. Parent-ended/child-live, child-ended/parent-live, unrelated-session-live and ambiguous/shared ownership cases are covered. A helper is owned-live while any attributed owner is live, and owned-ended only after all attributed owners are proven gone. An unrelated live session does not change the candidate's classification. Ambiguous ownership stays non-actionable. After typed approval, apply revalidates owner liveness and process identity inside the per-process critical section before signaling. Agent Teams remain experimental and unsupported in v1.
 
-## Decisions made
+## Original v1 decisions
 
 | Area | Decision |
 | --- | --- |
@@ -62,7 +62,7 @@ The table separates current support from planned targets. A platform and agent p
 | Actionable classes | Owned-ended (one batch code) and suspect (one typed code per item). At most 10 items per apply call in total. Managed and unknown are never actionable. Likely-owned stays report-only until its precision is measured |
 | Install | Homebrew formula that installs the attested prebuilt binary, then `agentdust setup` |
 | Platform | macOS arm64 first |
-| Journal | One O_APPEND file framed with RS, no lock for appenders and readers, an append recheck, 64 KiB frame cap, local APFS only |
+| Journal | One O_APPEND file framed with RS, no lock for appenders and readers, an append recheck, 64 KiB frame cap, local APFS on macOS and writable ext4 on Linux |
 
 ## Open decisions
 
@@ -70,7 +70,7 @@ The table separates current support from planned targets. A platform and agent p
 
 ## Current priority
 
-M10 Linux x86_64 shipped in 1.7.0 for Claude Code and Codex on Ubuntu 24.04 with writable ext4 data directories. WSL2 is next, reusing the Linux provider while keeping Windows host processes outside its inventory. Native Windows follows the Linux and WSL2 safety gates. Linux arm64 and Intel Mac remain deferred until after M12, then require architecture-specific safety and package checks. Use the available Mac for field observations in parallel: useful cleanups, incorrect proposals, deliberate keeps and whether port recovery lets the requested server start. A cleanup count does not measure time, CPU or memory saved. No multi Mac study is a release gate.
+M10 Linux x86_64 shipped in 1.7.0 for Claude Code and Codex on Ubuntu 24.04 with writable ext4 data directories. Journal rotation and retention run from the automatic worker. M11 is a WSL2 certification of the existing Linux package and safety boundary. M12 is a native Windows feasibility spike, not a commitment to Windows signalling. Do not schedule Linux arm64 or Intel Mac until there is demand and the shared runtime gates are complete. Record useful cleanups, incorrect proposals, deliberate keeps and successful port recovery on the available Mac. A cleanup count does not measure time, CPU or memory saved. No multi Mac study is a release gate.
 
 ## Automatic cleanup in 1.1
 
@@ -97,7 +97,8 @@ Port-conflict diagnosis and recovery are implemented in `1.4.0`: identify curren
 | Claude Code on macOS arm64 | Supported; lifecycle and controlled Homebrew acceptance are recorded |
 | Codex on macOS arm64 | Hook and MCP integration is available; automatic cleanup waits for exact host exit |
 | Linux x86_64 | Supported in 1.7.0 on Ubuntu 24.04 with writable ext4 data directories |
-| WSL2 and native Windows | Not supported; M11 WSL2 is next, followed by M12 native Windows |
+| WSL2 | Not supported yet; M11 certification is in progress |
+| Native Windows | Not supported; M12 is a feasibility decision, with no implementation commitment |
 | Other AI agents | Common MCP diagnosis and manual tools are possible; automatic cleanup needs a client specific adapter |
 | M9 controlled Homebrew acceptance | Complete; measurement limits remain in the [readiness record](docs/v1/readiness.md) |
 | Plugin/setup guidance | Guidance package `0.8.0` explains setup readiness, agent-guided port recovery and automatic results |
@@ -107,8 +108,8 @@ Port-conflict diagnosis and recovery are implemented in `1.4.0`: identify curren
 | M8 directory submission and upstream work | Optional |
 | Codex desktop cleanup while its server stays alive | Deferred until session revocation and live subagent protection have a separate proof |
 | M5 Cursor | Deferred until its lifecycle and ownership evidence can pass the same safety checks |
-| Other MCP hosts | Common manual tools can be evaluated after Claude Code and Codex pass the Linux baseline |
-| M10 through M12 | M10 Linux x86_64 shipped in 1.7.0; M11 WSL2 is next; M12 native Windows remains |
+| Other MCP hosts | Manual diagnosis and approval tools are available where the client supports the required MCP approval behavior. Automatic cleanup requires a separate lifecycle adapter and proof of ownership and exit. |
+| M10 through M12 | M10 Linux x86_64 shipped in 1.7.0; M11 WSL2 certification remains; M12 Windows feasibility remains |
 
 ## Milestones
 
@@ -245,33 +246,31 @@ PR #68 added the Linux process provider, Claude Code and Codex setup, lifecycle 
 
 Exit: complete. Ubuntu 24.04 x86_64 acceptance passed for Claude Code and Codex, including setup, removal, lifecycle, approval, cleanup, port recovery, metrics, pidfd identity and race checks, ext4 journal checks, and native and npm release package installation.
 
-### M11 WSL2 with Claude Code and Codex (M)
+### M11 WSL2 certification with Claude Code and Codex (S, 2 to 4 days)
 
-* Run AgentDust and Claude Code or Codex inside the same WSL2 distribution. Use the Linux process provider and release archive.
-* Keep process discovery and signalling inside that distribution. Do not inspect or signal Windows host processes.
-* Check hook setup, journal permissions, terminal approval and MCP approval in a clean WSL2 distribution. Reject data locations whose file system does not meet the journal guarantees.
+Run AgentDust and the agent inside one Ubuntu 24.04 WSL2 distribution. Use the existing Linux x86_64 release package and process provider. Keep discovery, identity checks and signals inside the WSL2 Linux process namespace. Reject data directories on `/mnt/c` and other non-ext4 volumes. See the [WSL2 runtime limits](docs/wsl2.md).
 
-Exit: both agents pass setup, doctor, plan and approved apply in a clean WSL2 distribution, and tests prove that a Windows host process cannot become actionable.
+Acceptance uses controlled fixtures for Claude Code and Codex setup, check and removal; hooks and MCP; doctor, plan and approved apply; opt-in cleanup after normal and abrupt owner exit; and controlled TCP port recovery. These lifecycle fixtures do not launch the Claude Code or Codex client binaries. The exact release archive is checked for version, `/mnt/c` refusal, worker lifecycle and Windows process isolation. The exact npm tarball is installed and its Linux binary is compared with the archive. Launch a Windows PowerShell process through WSL interop, verify it is absent from Linux `/proc` and AgentDust findings, and confirm it stays alive during the inventory. Verify that the default WSL data path uses ext4. Document that stopping WSL stops its worker and that systemd does not keep the distro alive.
 
-### M12 Native Windows x86_64 with Claude Code and Codex
+Exit: the controlled source matrix passes in a clean WSL2 distribution on GitHub Actions. The exact archive and npm package pass the package checks listed above. WSL2 remains a Linux deployment, not native Windows support.
 
-Windows needs a process provider, identity revalidation, fixture harness, setup paths and release artifacts. The same acceptance matrix covers manual approval, automatic ownership, port recovery and local metrics. WSL2 support does not count as native Windows support. Estimate the work after a process identity prototype.
+### M12 Native Windows feasibility spike (S, 4 to 7 days)
+
+Do not implement a Windows process provider until a prototype answers whether AgentDust can identify one process exactly, revalidate it immediately before action, prove its session ownership, map TCP listeners, and stop only that process with a graceful action. Test Windows process handles and creation identity, Claude Code and Codex lifecycle evidence, install and removal behavior, and console control event scope. `TerminateProcess` is forceful and does not meet the current graceful single-process contract by itself. WSL2 does not count as native Windows support.
+
+Exit: record the prototype, tests and a yes or no decision. A yes opens a separately estimated implementation milestone with manual approval and automatic cleanup as separate gates. A no leaves Windows unsupported or diagnosis only. Do not claim safe cleanup until per-process graceful termination and identity revalidation pass.
 
 ## Architecture coverage after the platform baseline
 
-After M12, add Linux arm64 and Intel macOS. Build `aarch64-unknown-linux-gnu` and `x86_64-apple-darwin` artifacts, then run the same Claude Code and Codex setup, lifecycle and apply matrix on each architecture before listing it as supported.
+After the WSL2 and Windows feasibility decisions, rank Linux arm64 and Intel macOS by user demand, shared safety coverage and release cost. Build `aarch64-unknown-linux-gnu` or `x86_64-apple-darwin` artifacts only when the demand justifies the ongoing matrix. Each architecture needs the Claude Code and Codex setup, lifecycle and apply gates before it is listed as supported.
 
 ## Deferred capabilities
 
-Immediate per-chat Codex cleanup while a shared host remains alive, the Cursor adapter, process-group signals, `SIGKILL`, UDP and non-listening socket conflicts, persisted plans.
+Immediate per-chat Codex cleanup while a shared host remains alive, the Cursor adapter, process-group signals, `SIGKILL`, UDP and non-listening socket conflicts, persisted plans, disk deletion or quarantine, daemons, scheduled cleanup, self-update, remote MCP transport.
 
 ## Optional external work
 
 The M8 plugin directory submission and upstream issue comment are optional. Neither is required for v1.
-
-## Not in v1
-
-Disk deletion or quarantine (1.x, rebuildable caches only), Linux and Windows, daemons, scheduled cleanup, self-update, any network access, remote MCP transport.
 
 ## Risks
 
@@ -290,6 +289,6 @@ Disk deletion or quarantine (1.x, rebuildable caches only), Linux and Windows, d
 ## Cross-cutting rules
 
 - Test layers: unit and property tests, recorded fixtures, live process-tree tests, MCP contract tests, packaged install acceptance, release-artifact smoke tests.
-- One CI run per change, no scheduled workflows. Linux jobs for lint and unit tests, one macOS job for build, hook benchmark and live tests.
+- One CI run per change, no scheduled workflows. Linux CI runs lint, unit and property tests, fuzz seed replay, ext4, systemd, pidfd, port, automatic cleanup and npm checks. macOS CI runs full tests, package checks, hook latency, automatic cleanup and port recovery. M11 adds a Windows hosted runner that provisions Ubuntu 24.04 under WSL2 and runs the WSL acceptance matrix.
 - No new runtime dependency without an allowlist line explaining why.
 - Every milestone ends with a measured exit criterion, not a feature list.
