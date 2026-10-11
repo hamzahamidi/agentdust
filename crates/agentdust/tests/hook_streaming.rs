@@ -1,23 +1,37 @@
 #![cfg(any(target_os = "linux", target_os = "macos"))]
 
-mod common;
-
-use std::fs;
+use std::fs::{self, DirBuilder};
 use std::io::{self, Read, Write};
+use std::os::unix::fs::DirBuilderExt;
 use std::os::unix::process::ExitStatusExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use agentdust_core::journal::{self, Kind};
-use common::private_dir;
 
 const MIB: usize = 1024 * 1024;
 const MAX_RESIDENT_BYTES: usize = 64 * MIB;
 const PREFIX: &[u8] = br#"{"session_id":"streaming","hook_event_name":"PostToolUse","tool_name":"Bash","tool_use_id":"toolu_streaming","tool_response":{"stdout":""#;
 const SUFFIX: &[u8] = b"\"}}";
 const SENTINEL: &[u8] = b"streamed-response-sentinel-";
+
+fn private_dir(name: &str) -> PathBuf {
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "agentdust-hook-stream-{name}-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&dir)
+        .unwrap();
+    dir
+}
 
 #[test]
 #[ignore = "runs the release hook with streamed 1, 10 and 100 MiB payloads"]
