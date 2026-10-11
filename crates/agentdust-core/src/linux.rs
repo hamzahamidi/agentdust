@@ -382,6 +382,19 @@ where
     Ok(Some(false))
 }
 
+fn verified_listener_fd_match<I, F>(descriptors: I, inodes: &BTreeSet<u64>, read_link: F) -> io::Result<bool>
+where
+    I: IntoIterator<Item = io::Result<PathBuf>>,
+    F: FnMut(&Path) -> io::Result<PathBuf>,
+{
+    listener_fd_match(descriptors, inodes, read_link)?.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "listener descriptors became inaccessible during verification",
+        )
+    })
+}
+
 pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
     let provider = LinuxProvider::new()?;
     let current_namespace = network_namespace_inode(Path::new(PROC), "self")?;
@@ -482,7 +495,7 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
             Err(error) => return Err(error),
         };
         let descriptor_paths = descriptors.map(|descriptor| descriptor.map(|entry| entry.path()));
-        if listener_fd_match(descriptor_paths, &current_inodes, |path| fs::read_link(path))? != Some(true) {
+        if !verified_listener_fd_match(descriptor_paths, &current_inodes, |path| fs::read_link(path))? {
             continue;
         }
         match provider.read(pid)? {
@@ -666,13 +679,23 @@ mod listener_process_tests {
         let descriptors = vec![Ok(PathBuf::from("vanished")), Ok(PathBuf::from("listener"))];
         let matched = listener_fd_match(descriptors, &BTreeSet::from([123]), |path| {
             if path == Path::new("vanished") {
-                Err(io::Error::from(io::ErrorKind::NotFound))
+                Err(io::Error::from_raw_os_error(libc::ENOENT))
             } else {
                 Ok(PathBuf::from("socket:[123]"))
             }
         })
         .unwrap();
         assert_eq!(matched, Some(true));
+    }
+
+    #[test]
+    fn inaccessible_listener_descriptor_fails_final_verification() {
+        let descriptors = vec![Ok(PathBuf::from("listener"))];
+        let error = verified_listener_fd_match(descriptors, &BTreeSet::from([123]), |_| {
+            Err(io::Error::from_raw_os_error(libc::EACCES))
+        })
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
     }
 
     #[test]
