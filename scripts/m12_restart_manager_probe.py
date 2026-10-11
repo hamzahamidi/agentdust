@@ -118,7 +118,11 @@ def worker(role, directory, mode, spawn_child):
             child = subprocess.Popen([
                 sys.executable, str(Path(__file__).resolve()), "--worker", "descendant", str(directory), "stay", "0"
             ], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0)
-            wait_ready(directory / "ready-descendant.json", 15)
+            write_json(directory / "identity-descendant.json", {
+                "pid": child.pid,
+                "created": process_creation_time(child._handle),
+            })
+            wait_ready(directory / "ready-descendant.json", 10)
 
         write_json(directory / f"ready-{role}.json", {
             "role": role,
@@ -145,18 +149,36 @@ def wait_ready(path, timeout):
     raise TimeoutError(f"worker did not become ready: {path}")
 
 
-def launch_worker(directory, role, mode, spawn_child=False):
+def launch_worker(directory, role, mode, owned, spawn_child=False):
     process = subprocess.Popen([
         sys.executable, str(Path(__file__).resolve()), "--worker", role, str(directory), mode,
         "1" if spawn_child else "0",
     ], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0)
     try:
-        ready = wait_ready(Path(directory) / f"ready-{role}.json", 15)
+        created = process_creation_time(process._handle)
     except BaseException:
         process.terminate()
         process.wait(timeout=5)
         raise
-    return process, ready
+    owned.append((process.pid, created))
+    ready_path = Path(directory) / f"ready-{role}.json"
+    descendant_identity = Path(directory) / "identity-descendant.json"
+    descendant_registered = False
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        if spawn_child and not descendant_registered and descendant_identity.exists():
+            identity = json.loads(descendant_identity.read_text(encoding="utf-8"))
+            owned.append((identity["pid"], identity["created"]))
+            descendant_registered = True
+        if ready_path.exists():
+            ready = json.loads(ready_path.read_text(encoding="utf-8"))
+            if ready["pid"] != process.pid or ready["created"] != created:
+                raise RuntimeError(f"worker identity changed before readiness: {role}")
+            return process, ready
+        if process.poll() is not None:
+            raise RuntimeError(f"worker exited before readiness: {role}")
+        time.sleep(0.05)
+    raise TimeoutError(f"worker did not become ready: {ready_path}")
 
 
 def event_count(directory, role):
@@ -263,12 +285,12 @@ def run_probe(directory):
     owned = []
     summary = {"targeted_shutdown": {}, "unresponsive_shutdown": {}, "stale_identity": {}}
     try:
-        target, target_record = launch_worker(directory, "target", "exit", spawn_child=True)
-        owned.append((target.pid, target_record["created"]))
-        descendant_record = wait_ready(Path(directory) / "ready-descendant.json", 15)
-        owned.append((descendant_record["pid"], descendant_record["created"]))
-        sibling, sibling_record = launch_worker(directory, "sibling", "stay")
-        owned.append((sibling.pid, sibling_record["created"]))
+        target, target_record = launch_worker(directory, "target", "exit", owned, spawn_child=True)
+        descendant_identity = wait_ready(Path(directory) / "identity-descendant.json", 5)
+        descendant_record = wait_ready(Path(directory) / "ready-descendant.json", 5)
+        if (descendant_identity["pid"], descendant_identity["created"]) != (descendant_record["pid"], descendant_record["created"]):
+            raise RuntimeError("descendant identity changed before readiness")
+        sibling, sibling_record = launch_worker(directory, "sibling", "stay", owned)
 
         before = {role: event_count(directory, role) for role in ("parent", "sibling", "descendant")}
         processes, shutdown_code, shutdown_guard = rm_shutdown(target.pid, target_record["created"])
@@ -294,8 +316,7 @@ def run_probe(directory):
             "descendant_state": pid_state(descendant_record["pid"], descendant_record["created"]),
         }
 
-        unresponsive, unresponsive_record = launch_worker(directory, "unresponsive", "stay")
-        owned.append((unresponsive.pid, unresponsive_record["created"]))
+        unresponsive, unresponsive_record = launch_worker(directory, "unresponsive", "stay", owned)
         before = {role: event_count(directory, role) for role in ("parent", "sibling", "descendant")}
         processes, shutdown_code, shutdown_guard = rm_shutdown(unresponsive.pid, unresponsive_record["created"])
         time.sleep(0.5)
@@ -310,6 +331,8 @@ def run_probe(directory):
             "target_ctrl_c_count": event_count(directory, "unresponsive"),
             "other_ctrl_c_counts_before": before,
             "other_ctrl_c_counts_after": after,
+            "sibling_state": pid_state(sibling.pid, sibling_record["created"]),
+            "descendant_state": pid_state(descendant_record["pid"], descendant_record["created"]),
         }
 
         stale_created = target_record["created"]
@@ -350,6 +373,9 @@ def run_probe(directory):
                              and unresponsive.get("shutdown_attempted") is True
                              and unresponsive.get("target_state") == "alive"
                              and unresponsive.get("target_ctrl_c_count", 0) > 0
+                             and unresponsive.get("shutdown_code") in (0, ERROR_FAIL_SHUTDOWN)
+                             and unresponsive.get("sibling_state") == "alive"
+                             and unresponsive.get("descendant_state") == "alive"
                              and unresponsive.get("other_ctrl_c_counts_before") == unresponsive.get("other_ctrl_c_counts_after"))
     expected_stale = (stale.get("state") == "alive"
                        and stale.get("requested_created") != stale.get("live_created")
