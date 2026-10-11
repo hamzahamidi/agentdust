@@ -331,37 +331,37 @@ fn require_current_network_namespace(
 pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
     let provider = LinuxProvider::new()?;
     let current_namespace = network_namespace_inode(Path::new(PROC), "self")?;
-    let mut by_namespace: BTreeMap<u64, Vec<ProcessIdentity>> = BTreeMap::new();
+    let mut by_namespace: BTreeMap<u64, Vec<ListenerProcess>> = BTreeMap::new();
     for pid in list_pids()? {
-        let identity = match provider.read(pid) {
-            Ok(ProcessRead::Present(identity)) if identity.kernel.uid == current_uid() => identity,
-            Ok(ProcessRead::Present(_)) | Ok(ProcessRead::Gone) => continue,
-            Ok(ProcessRead::PathUnreadable(kernel)) if kernel.uid != current_uid() => continue,
-            Ok(ProcessRead::PathUnreadable(_)) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "listener process identity is unreadable",
-                ));
+        let process = match provider.read(pid) {
+            Ok(ProcessRead::Present(identity)) if identity.kernel.uid == current_uid() => {
+                ListenerProcess::identified(identity)
+            }
+            Ok(ProcessRead::PathUnreadable(kernel)) if kernel.uid == current_uid() => {
+                ListenerProcess::unreadable(kernel)
+            }
+            Ok(ProcessRead::Present(_)) | Ok(ProcessRead::PathUnreadable(_)) | Ok(ProcessRead::Gone) => {
+                continue;
             }
             Err(error) if missing(&error) => continue,
             Err(error) => return Err(error),
         };
-        let pid = pid.to_string();
-        let namespace = match network_namespace_inode(Path::new(PROC), &pid) {
+        let pid_path = process.kernel.pid.to_string();
+        let namespace = match network_namespace_inode(Path::new(PROC), &pid_path) {
             Ok(namespace) => namespace,
             Err(error) if missing(&error) => continue,
             Err(error) => return Err(error),
         };
-        by_namespace.entry(namespace).or_default().push(identity);
+        by_namespace.entry(namespace).or_default().push(process);
     }
 
     let mut inodes = BTreeSet::new();
     let mut candidates = Vec::new();
-    for (namespace, identities) in by_namespace {
+    for (namespace, mut identities) in by_namespace {
         let mut namespace_inodes = None;
-        for identity in &identities {
-            let pid = identity.kernel.pid;
-            if revalidate(identity, &provider) != Revalidation::Match {
+        for process in &mut identities {
+            let pid = process.kernel.pid;
+            if !process.refresh(&provider)? {
                 continue;
             }
             let pid_path = pid.to_string();
@@ -380,7 +380,7 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
                 Err(error) if missing(&error) => continue,
                 Err(error) => return Err(error),
             };
-            if revalidate(identity, &provider) != Revalidation::Match
+            if !process.refresh(&provider)?
                 || network_namespace_inode(Path::new(PROC), &pid_path)? != namespace
             {
                 return Err(io::Error::other(
@@ -405,9 +405,12 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
     }
 
     let mut found = Vec::new();
-    for identity in candidates {
-        let pid = identity.kernel.pid;
+    for mut process in candidates {
+        let pid = process.kernel.pid;
         let pid_path = pid.to_string();
+        if !process.refresh(&provider)? {
+            continue;
+        }
         if network_namespace_inode(Path::new(PROC), &pid_path)? != current_namespace {
             return Err(io::Error::other(
                 "process network namespace changed during inventory",
@@ -439,12 +442,18 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
         }
         match provider.read(pid)? {
             ProcessRead::Present(fresh)
-                if fresh == identity
+                if fresh.kernel == process.kernel
                     && network_namespace_inode(Path::new(PROC), &pid_path)? == current_namespace =>
             {
-                found.push(identity)
+                found.push(fresh)
             }
             ProcessRead::Gone => {}
+            ProcessRead::PathUnreadable(kernel) if kernel == process.kernel => {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!("listener process identity is unreadable for PID {pid}"),
+                ));
+            }
             _ => {
                 return Err(io::Error::other(
                     "listener identity or network namespace changed during inventory",
@@ -505,6 +514,44 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
         }
     }
     Ok(stable)
+}
+
+#[derive(Clone)]
+struct ListenerProcess {
+    kernel: KernelIdentity,
+    identity: Option<ProcessIdentity>,
+}
+
+impl ListenerProcess {
+    fn identified(identity: ProcessIdentity) -> Self {
+        Self {
+            kernel: identity.kernel.clone(),
+            identity: Some(identity),
+        }
+    }
+
+    fn unreadable(kernel: KernelIdentity) -> Self {
+        Self {
+            kernel,
+            identity: None,
+        }
+    }
+
+    fn refresh(&mut self, provider: &LinuxProvider) -> io::Result<bool> {
+        let read = match provider.read(self.kernel.pid) {
+            Ok(read) => read,
+            Err(error) if missing(&error) => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        match read {
+            ProcessRead::Present(identity) if identity.kernel == self.kernel => {
+                self.identity = Some(identity);
+                Ok(true)
+            }
+            ProcessRead::PathUnreadable(kernel) if self.kernel == kernel => Ok(true),
+            ProcessRead::Present(_) | ProcessRead::PathUnreadable(_) | ProcessRead::Gone => Ok(false),
+        }
+    }
 }
 
 fn socket_inode(target: &Path) -> Option<u64> {

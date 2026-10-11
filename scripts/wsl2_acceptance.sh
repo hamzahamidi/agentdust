@@ -23,6 +23,22 @@ if ! command -v cargo >/dev/null 2>&1; then
 fi
 
 cd "$repo"
+python3 - <<'PY'
+from pathlib import Path
+import subprocess
+
+for path in sorted(Path("fuzz/seeds").rglob("*")):
+    if not path.is_file():
+        continue
+    expected = subprocess.check_output(
+        ["git", "rev-parse", f"HEAD:{path.as_posix()}"], text=True
+    ).strip()
+    actual = subprocess.check_output(
+        ["git", "hash-object", "--no-filters", str(path)], text=True
+    ).strip()
+    if actual != expected:
+        raise SystemExit(f"fuzz seed bytes differ from Git: {path}")
+PY
 cargo test --workspace --exclude agentdust --locked
 cargo test --locked -p agentdust --bin agentdust systemd_tests
 cargo test --locked -p agentdust --test linux_cli

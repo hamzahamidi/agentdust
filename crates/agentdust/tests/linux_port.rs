@@ -116,7 +116,7 @@ fn check_resolution(survivor: bool) {
     guard.write().unwrap();
     drop(guard);
 
-    let live = report(&data, &home, &project, port);
+    let live = report(&data, &home, &project, port, &identity);
     assert_eq!(live["listeners"][0]["finding"]["class"], "owned-live");
     assert!(helper.0.try_wait().unwrap().is_none());
     owner.0.kill().unwrap();
@@ -134,7 +134,7 @@ fn check_resolution(survivor: bool) {
         }
         guard.write().unwrap();
         drop(guard);
-        let skipped = report(&data, &home, &project, port);
+        let skipped = report(&data, &home, &project, port, &identity);
         assert_eq!(skipped["listeners"][0]["result"], "skipped");
         assert!(helper.0.try_wait().unwrap().is_none());
     }
@@ -145,14 +145,14 @@ fn check_resolution(survivor: bool) {
     guard.policy.keep.clear();
     guard.write().unwrap();
     drop(guard);
-    let result = report(&data, &home, &project, port);
+    let result = report(&data, &home, &project, port, &identity);
     assert_eq!(
         result["listeners"][0]["result"],
         if survivor { "survivor" } else { "terminated" }
     );
     if survivor {
         assert_eq!(result["state"], "listening");
-        let again = report(&data, &home, &project, port);
+        let again = report(&data, &home, &project, port, &identity);
         assert_eq!(again["listeners"][0]["result"], "handled_elsewhere");
         assert!(helper.0.try_wait().unwrap().is_none());
     } else {
@@ -172,13 +172,19 @@ fn check_resolution(survivor: bool) {
     fs::remove_dir_all(root).unwrap();
 }
 
-fn report(data: &Path, home: &Path, project: &Path, port: u16) -> Value {
+fn report(
+    data: &Path,
+    home: &Path,
+    project: &Path,
+    port: u16,
+    expected_identity: &agentdust_core::identity::ProcessIdentity,
+) -> Value {
     let direct = LinuxListeners
         .listeners(port)
         .expect("controlled listener inventory");
     assert!(
-        !direct.is_empty(),
-        "the controlled listener is missing: {direct:?}"
+        direct.contains(expected_identity),
+        "the controlled listener identity is missing: {direct:?}"
     );
     let output = Command::new(env!("CARGO_BIN_EXE_agentdust"))
         .args(["port", &port.to_string(), "--resolve", "--json"])
