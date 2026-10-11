@@ -1293,7 +1293,6 @@ fn missing(error: &io::Error) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
     use std::fs;
     use std::io;
     use std::path::PathBuf;
