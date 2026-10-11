@@ -55,7 +55,7 @@ The table separates current support from planned targets. A platform and agent p
 | Language | Rust, one binary, Tokio only in the MCP subcommand |
 | Interface | One MCP server with `agentdust_doctor`, `agentdust_plan`, `agentdust_apply`, `agentdust_disk`, `agentdust_port`, and read-only `agentdust_auto_status`, plus a CLI |
 | Agents | Claude Code first, including concurrent sessions and subagents; Codex native hooks and host-exit cleanup; Agent Teams experimental; Cursor deferred |
-| Provenance | Layered evidence: event-driven process sampling, a journal of paired shell calls per adapter, and an environment tag on Claude Code as additive evidence only |
+| Provenance | Bounded worker reconciliation and on-demand diagnosis take ephemeral live inventory snapshots and two-point CPU samples. Process markers and journal-derived exact owner identities establish ownership; shell-call records do not identify spawned helper PIDs. Production does not persist process snapshots as journal `sample` records. |
 | Authorization | Manual MCP elicitation with a typed one-time code, or locally enabled directory policy for proven ended-session leftovers; fail closed |
 | Plan state | Canonical plan in server memory with an opaque ID. `plan.json` is for inspection. A server restart invalidates plans |
 | Actions in 0.1 | SIGTERM to one exactly revalidated PID. No process-group signals, no SIGKILL |
@@ -95,7 +95,7 @@ Port-conflict diagnosis and recovery are implemented in `1.4.0`: identify curren
 
 | Scope | State |
 | --- | --- |
-| M0 through M3, M6, M7 and M13 | Implemented for the documented macOS arm64 scope |
+| M0 through M3, M6, M7 and M13 | Implemented for the documented macOS arm64 scope. M2 uses ephemeral live inventory with marker-based ownership; independent persisted descendant attribution is outside this support scope. Suspect-threshold validation awaits the labeled process corpus in issue #17. |
 | Claude Code on macOS arm64 | Supported; lifecycle and controlled Homebrew acceptance are recorded |
 | Codex on macOS arm64 | Hook and MCP integration is available; automatic cleanup waits for exact host exit |
 | Linux x86_64 | Supported in 1.7.0 on Ubuntu 24.04 with writable ext4 data directories |
@@ -144,7 +144,7 @@ Exit: primitives and storage survive unit, property, fuzz and concurrency tests,
 
 - Process inventory and classifier (owned-ended, likely-owned, suspect, managed, unknown). Listening-port evidence was outside M2 and shipped separately in 1.4.0.
 - Suspect rules: parent is launchd or the launcher chain is dead, same UID, older than the age threshold, idle, not managed by launchd or Homebrew services, and not on a deny list (system processes, the agent that is asking, the AgentDust server itself).
-- Claude Code adapter: `SessionStart` environment tag through `CLAUDE_ENV_FILE`, `PreToolUse` and `PostToolUse` with a Bash matcher paired by `tool_use_id`, event-driven process sampling.
+- Claude Code adapter: `SessionStart` environment tag through `CLAUDE_ENV_FILE`, `PreToolUse` and `PostToolUse` with a Bash matcher paired by `tool_use_id`. Doctor and worker reconciliation take ephemeral live inventory snapshots and compare CPU across the idle sample gap. Ownership comes from readable process markers and journal-derived exact owner identities; snapshots are not persisted and do not independently attribute descendants.
 - Acceptance cases: fresh session, resumed session, after `/clear`, subagent Bash, `CLAUDE_ENV_FILE` missing, abrupt termination, normal session end.
 - Sanitised, typed, redacted `doctor` output.
 

@@ -2,6 +2,8 @@
 
 This page describes how `agentdust doctor` finds the processes of a user, gives each one a class and prints the result. Spec sections 3.4, 3.5, 5 and 7.2 hold the design, and S1, S15 and S19 of section 9.1 are the safety requirements it serves. The last sections list where the code differs from the spec and what is not built. Nothing here signals a process: the command reads and prints, and no code path of it can call `kill`.
 
+Current implementation: `agentdust doctor` and automatic worker sweeps take ephemeral live inventory snapshots and compare CPU across the idle sample gap. The worker sweeps at startup, after policy or exact owner state changes, and while bounded work remains pending. Neither path emits or depends on persisted `Kind::Sample` records. The classifier uses readable process markers and journal-derived owner scopes. Paired shell events do not identify helper PIDs or provide independent descendant ownership.
+
 ## The command
 
 | Command | Output |
@@ -198,13 +200,13 @@ The live tests start tagged and untagged trees with the harness, orphan some of 
 
 ## The fixture corpus
 
-`crates/agentdust-testkit/tests/classify_fixtures.rs` classifies all 22 fixtures of `fixtures/m1`. For each one it starts the plan through the harness, turns the journal events into records with the identity of the stand-in agent and a tag key for each `session_start`, and gives the tag to the process group whose children a `sample` event names. Every sample in the corpus names all the live children of its group, so none is skipped. The k-th `session_start` belongs to the k-th stand-in agent and later ones to the last, which is how the resumed fixture gets two scopes. The five record-only fixtures get recorded attributes (PID 1, another user's daemon, a launchd job with a helper, a Homebrew service, an app and its helper), because a test cannot start them.
+`crates/agentdust-testkit/tests/classify_fixtures.rs` classifies all 22 fixtures of `fixtures/m1`. For each one it starts the plan through the harness, turns the journal events into records with the identity of the stand-in agent and a tag key for each `session_start`, and gives the tag to the process group whose children a fixture `sample` event names. These sample events are test inputs; production hooks do not emit them. Every fixture sample names all the live children of its group, so none is skipped. The k-th `session_start` belongs to the k-th stand-in agent and later ones to the last, which is how the resumed fixture gets two scopes. The five record-only fixtures get recorded attributes (PID 1, another user's daemon, a launchd job with a helper, a Homebrew service, an app and its helper), because a test cannot start them.
 
 All observed processes get their labelled class. The three claims of success criterion 5 of the roadmap hold, and the evidence of each protected case is the one that protects it: the launchd job and the service by `managed.launchd`, the job's helper by `managed.launchd_child`, the app helper by its system path and the other user's daemon by its user.
 
 ## Where this differs from the spec
 
-- Release 0.1 has no event driven sampling, so the tag is the only ownership evidence. Spec 3.4 also lets "sampled as a descendant" make owned-ended.
+- The original M2 doctor took an ephemeral snapshot on demand. Production hooks did not persist descendant-process samples; the automatic worker was added later. Candidate ownership used readable session tags and journal-derived exact owner identities. Spec 3.4 also let a separately sampled descendant make a process owned-ended; that attribution rule was not implemented.
 - Spec 3.4 says "the launcher chain is dead". On macOS the kernel reparents the children of an exited process to launchd at once, so the chain is dead exactly when the parent is PID 1. A parent that is missing from the snapshot is not evidence: the listing is not atomic, and a false suspect can be signalled.
 - A direct child of a launchd job is managed. The spec says a PID that matches a loaded job. `launchctl list` names only the main PID, and the fixture `launchd_job_lookalike` labels the helper managed. The rule stops at one parent. A walk through every ancestor would make everything under an application such as a terminal managed, so the result would depend on where the tool was started from. Only a process whose parent is PID 1 can be a suspect, so a longer rule would protect no more suspects than this one.
 - `/usr` covers `/usr/local`, so a tool installed there on an Intel Mac is managed and never listed. Homebrew on Apple silicon is in `/opt/homebrew` and is not covered. Over-protection is the safe error.
@@ -216,9 +218,9 @@ All observed processes get their labelled class. The three claims of success cri
 - The doctor refuses unsafe trusted state and reports it. It does not correct a wrong directory mode as spec 7.3 says for commands that write.
 - Missing launchctl list or executable path: the spec is silent. Both keep a finding out of every actionable class.
 
-## Not built here
+## Not built in the original M2 implementation
 
-- The `likely-owned` class, listening ports, event driven sampling, `agentdust status`, `health.json`, the support bundle and the MCP tool `agentdust_doctor`. The report and its JSON view are what the tool will return.
+- The `likely-owned` class, listening ports, persistent descendant-process samples, `agentdust status`, `health.json`, the support bundle and the MCP tool `agentdust_doctor`. The report and its JSON view are what the tool will return.
 - Plan and apply.
 - A live test with a busy process. The harness fixture only sleeps, so the idleness boundary has table tests and no live case. A flag that burns CPU would add one.
 - The thresholds are not bounded from below by the corpus (see above).
