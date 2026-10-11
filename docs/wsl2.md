@@ -1,5 +1,7 @@
 # WSL2 runtime limits
 
+AgentDust 1.7.1 supports WSL2 as a Linux deployment. Use the Linux x86_64 package inside Ubuntu 24.04. The agent and AgentDust must run in the same distribution, and the data directory must be on writable ext4. The exact release archive and npm package pass WSL2 checks in the release workflow before publication.
+
 AgentDust runs as a Linux process inside one Ubuntu 24.04 WSL2 distribution. The agent and AgentDust must run in that same distribution so process discovery, identity checks and signals use one Linux process namespace.
 
 Keep the AgentDust data directory on the distribution's writable ext4 filesystem, such as a directory under `/home`. AgentDust refuses setup when the data directory is on `/mnt/c` or another unsupported filesystem.
