@@ -4,7 +4,9 @@ fn buffer(argc: i32, exec_path: &[u8], strings: &[&[u8]]) -> Vec<u8> {
     let mut buf = argc.to_ne_bytes().to_vec();
     buf.extend_from_slice(exec_path);
     buf.push(0);
-    buf.extend([0, 0, 0]);
+    let alignment = std::mem::size_of::<usize>();
+    let padding = (alignment - (b"executable_path=".len() + exec_path.len() + 1) % alignment) % alignment;
+    buf.extend(std::iter::repeat_n(0, padding));
     for s in strings {
         buf.extend_from_slice(s);
         buf.push(0);
