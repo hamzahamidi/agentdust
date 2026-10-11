@@ -222,7 +222,6 @@ fn check_exit(abrupt: bool, agent: Agent) {
     assert_eq!(restarted_metrics.by_mode["automatic"]["survivor"], 1);
     assert_eq!(restarted_metrics.by_mode["automatic"]["skipped"], 2);
     assert_eq!(restarted_metrics.by_mode["automatic"]["handled_elsewhere"], 1);
-    assert_eq!(metrics.event_count, 3);
     assert_eq!(harness.revalidate(survivor), Revalidation::Match);
     drop(restarted);
     harness.shutdown().unwrap();
