@@ -182,8 +182,10 @@ fn report(data: &Path, home: &Path, project: &Path, port: u16) -> Value {
         .unwrap();
     assert!(
         output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
+        "status: {}; stdout: {}; stderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
     );
     serde_json::from_slice(&output.stdout).unwrap()
 }
