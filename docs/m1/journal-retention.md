@@ -135,6 +135,7 @@ The mutation checks below were run once each, and each makes the named tests fai
 ## Limits
 
 - Runtime calls `maintain_if_due` outside hooks. A successful run applies the 14 day and 20 MB policy. Between maintenance opportunities, readers still load the journal contents that exist on disk.
+- Retention never edits the active `journal.jsonl`. The worker rotates it at the 1 MB threshold; its 24-hour run only retains already closed generations. A smaller active journal can keep records older than 14 days, including records from earlier boots, until a later rotation. The age policy is not a hard bound on every journal record.
 - The whole journal is read into memory. At the default limit that is about 20 MB of frames and the same again for their records. A journal of that size was not measured.
 - `degraded` is returned and not stored. `doctor` does not read it: it derives degraded sessions from records that carry no agent identity and counts tags that no session explains ([doctor](../m2/doctor.md)).
 - Copies are never deleted by retention.

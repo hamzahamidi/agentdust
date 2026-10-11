@@ -314,6 +314,39 @@ fn network_namespace_inode(proc_root: &Path, process: &str) -> io::Result<u64> {
     Ok(fs::metadata(proc_root.join(process).join("ns/net"))?.ino())
 }
 
+fn refresh_current_namespace_candidate<P: ProcessProvider + ?Sized>(
+    process: &mut ListenerProcess,
+    provider: &P,
+    proc_root: &Path,
+    current_namespace: u64,
+) -> io::Result<bool> {
+    if !process.refresh(provider)? {
+        return Ok(false);
+    }
+    let pid_path = process.kernel.pid.to_string();
+    match network_namespace_inode(proc_root, &pid_path) {
+        Ok(namespace) if namespace == current_namespace => {}
+        Ok(_) => {
+            return Err(io::Error::other(
+                "process identity or network namespace changed during inventory",
+            ));
+        }
+        Err(error) if missing(&error) => return Ok(false),
+        Err(error) => return Err(error),
+    }
+    if !process.refresh(provider)? {
+        return Ok(false);
+    }
+    match network_namespace_inode(proc_root, &pid_path) {
+        Ok(namespace) if namespace == current_namespace => Ok(true),
+        Ok(_) => Err(io::Error::other(
+            "process identity or network namespace changed during inventory",
+        )),
+        Err(error) if missing(&error) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
 pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
     let provider = LinuxProvider::new()?;
     let current_namespace = network_namespace_inode(Path::new(PROC), "self")?;
@@ -346,12 +379,9 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
         if namespace != current_namespace {
             continue;
         }
-        if !process.refresh(&provider)?
-            || network_namespace_inode(Path::new(PROC), &pid_path)? != current_namespace
+        if !refresh_current_namespace_candidate(&mut process, &provider, Path::new(PROC), current_namespace)?
         {
-            return Err(io::Error::other(
-                "process identity or network namespace changed during inventory",
-            ));
+            continue;
         }
         candidates.push(process);
     }
@@ -574,6 +604,21 @@ mod listener_process_tests {
                 .unwrap()
         );
         assert!(process.identity.is_none());
+    }
+
+    #[test]
+    fn an_exited_discovery_candidate_is_skipped() {
+        let expected = kernel(100);
+        let mut process = ListenerProcess::identified(identity(expected, "/usr/bin/fixture"));
+        assert!(
+            !refresh_current_namespace_candidate(
+                &mut process,
+                &ScriptedProvider(ProcessRead::Gone),
+                Path::new("/missing-proc-root"),
+                1,
+            )
+            .unwrap()
+        );
     }
 
     #[test]
