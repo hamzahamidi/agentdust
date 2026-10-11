@@ -52,7 +52,9 @@ The last directory removal stops and removes the worker. An unavailable director
 | `agentdust auto disable` | Stops cleanup, removes the worker registration and clears directory permissions. Retains keeps |
 | `agentdust auto keep PID` | Resolves the current PID and protects that exact boot, start time and user identity from manual and automatic cleanup |
 | `agentdust auto unkeep PID` | Removes stored keeps for that PID. Does not signal anything |
-| `agentdust auto status` | Reads policy, worker liveness and the latest report without changing them |
+| `agentdust auto status` | Reads policy, worker liveness and version, and the latest report without changing them |
+
+Status reports `worker_version_status` as `same`, `different`, `unknown` for a legacy worker or `stopped`. After upgrading AgentDust, check `agentdust version` and run `agentdust auto resume` from the installed binary if status says `different` or `unknown` while cleanup is enabled. Resume re-registers the worker and retains the enabled directories and keeps.
 
 A later process with the same PID does not inherit a keep. There are no executable patterns, age rules or resource thresholds in the automatic policy. Before removing the Claude hooks with `agentdust setup --remove`, run `agentdust auto disable` to remove the separately installed worker.
 
@@ -83,7 +85,7 @@ The worker processes at most ten attempts per survey round and sixteen rounds pe
 
 ## Results through Claude Code
 
-The read-only `agentdust_auto_status` MCP tool returns enabled state, the apply switch, directory and keep counts, worker liveness, recent results and review items. It cannot enable, resume, broaden policy or remove keeps. The optional cleanup skill explains results and uses the existing plan/apply flow for items needing approval.
+The read-only `agentdust_auto_status` MCP tool returns enabled state, the apply switch, directory and keep counts, worker liveness and version, recent results and review items. It cannot enable, resume, broaden policy or remove keeps. The optional cleanup skill explains results and uses the existing plan/apply flow for items needing approval.
 
 `terminated` means the exact target disappeared within the exit check. `survivor` means the signal was sent but the process remained alive. Neither triggers another automatic signal. `kept`, `skipped` and `approval_required` describe work that remains untouched. A background worker does not open an approval dialog after Claude exits. The next user interaction can review those items.
 
@@ -103,6 +105,6 @@ Each recorded outcome is one private JSONL row with a schema version, Unix epoch
 
 The policy allows at most 128 directories and 256 keeps. The worker refuses a journal watch with more than 4,096 recorded identities. Attempt storage holds at most 16,384 outstanding receipts. Policy and report files are limited to 64 KiB. Storage failure, unsupported journal data, or unavailable ownership prevents automatic action.
 
-On macOS, opt-in installs a LaunchAgent at `~/Library/LaunchAgents/com.agentdust.automatic.plist`. On Linux, opt-in installs the user unit `~/.config/systemd/user/agentdust-automatic.service` and enables it with `systemctl --user`. Both run `agentdust auto worker` with the selected data directory and restart after failure. Linux automatic cleanup needs a running systemd user manager and a writable ext4 data directory. The worker refuses a disabled policy and only one worker can hold its lock. Installed binary paths use the stable Homebrew path on macOS and the selected global npm binary on Linux.
+On macOS, opt-in installs a LaunchAgent at `~/Library/LaunchAgents/com.agentdust.automatic.plist`. On Linux, opt-in installs the user unit `~/.config/systemd/user/agentdust-automatic.service` and enables it with `systemctl --user`. Both run `agentdust auto worker` with the selected data directory and restart after failure. Linux automatic cleanup needs a running systemd user manager and a writable ext4 data directory. The worker refuses a disabled policy and only one worker can hold its lock. Installed binary paths use the stable Homebrew path on macOS and the selected global npm binary on Linux. Replacing an installed binary does not replace a worker process that is already running.
 
 Programs running as the same user can manipulate that user's files or signal processes directly. CLI checks and MCP permissions constrain AgentDust's supported interfaces; they do not create a security boundary against arbitrary same-user shell access.

@@ -9,6 +9,8 @@ use std::time::Duration;
 
 use agentdust_core::automatic::{self, PolicyGuard};
 use agentdust_core::class::Class;
+use agentdust_core::platform::Provider;
+use agentdust_core::provider::{ProcessProvider, ProcessRead};
 use agentdust_core::session::{Liveness, LivenessProbe};
 use apply_support::{item, kernel};
 use scratch::TempDir;
@@ -20,7 +22,66 @@ fn absent_policy_is_disabled_and_read_only() {
     let status = automatic::status(&dir).unwrap();
     assert_eq!(status["enabled"], false);
     assert_eq!(status["worker_running"], false);
+    assert_eq!(status["worker_version"], serde_json::Value::Null);
+    assert_eq!(status["worker_version_status"], "stopped");
     assert!(!dir.exists());
+}
+
+fn current_kernel_identity() -> agentdust_core::identity::KernelIdentity {
+    let provider = Provider::new().unwrap();
+    match provider.read(std::process::id() as i32).unwrap() {
+        ProcessRead::Present(process) => process.kernel,
+        result => panic!("current process identity is unavailable: {result:?}"),
+    }
+}
+
+#[test]
+fn status_reports_the_running_worker_build() {
+    let dir = TempDir::private("auto-worker-version");
+    let _guard = PolicyGuard::acquire(&dir).unwrap();
+    let identity = current_kernel_identity();
+    automatic::write_worker_identity(&dir, &identity).unwrap();
+    let bytes = fs::read(dir.join("automatic/worker.json")).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<agentdust_core::identity::KernelIdentity>(&bytes).unwrap(),
+        identity
+    );
+
+    let status = automatic::status(&dir).unwrap();
+    assert_eq!(status["worker_running"], true);
+    assert_eq!(status["worker_version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(status["worker_version_status"], "same");
+}
+
+#[test]
+fn status_marks_a_legacy_worker_build_unknown() {
+    let dir = TempDir::private("auto-worker-version-legacy");
+    let _guard = PolicyGuard::acquire(&dir).unwrap();
+    let identity = current_kernel_identity();
+    let path = dir.join("automatic/worker.json");
+    fs::write(&path, serde_json::to_vec(&identity).unwrap()).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let status = automatic::status(&dir).unwrap();
+    assert_eq!(status["worker_running"], true);
+    assert_eq!(status["worker_version"], serde_json::Value::Null);
+    assert_eq!(status["worker_version_status"], "unknown");
+}
+
+#[test]
+fn status_marks_a_different_worker_build() {
+    let dir = TempDir::private("auto-worker-version-outdated");
+    let _guard = PolicyGuard::acquire(&dir).unwrap();
+    automatic::write_worker_identity(&dir, &current_kernel_identity()).unwrap();
+    let path = dir.join("automatic/worker.json");
+    let mut record: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    record["worker_version"] = serde_json::json!("0.0.0");
+    fs::write(path, serde_json::to_vec(&record).unwrap()).unwrap();
+
+    let status = automatic::status(&dir).unwrap();
+    assert_eq!(status["worker_running"], true);
+    assert_eq!(status["worker_version"], "0.0.0");
+    assert_eq!(status["worker_version_status"], "different");
 }
 
 #[test]

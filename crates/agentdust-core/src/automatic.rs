@@ -19,6 +19,7 @@ use crate::secret;
 pub const DIRECTORY: &str = "automatic";
 const MAX_BYTES: u64 = 64 * 1024;
 const POLICY_FILE: &str = "policy.json";
+const WORKER_FILE: &str = "worker.json";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -33,6 +34,17 @@ pub struct PolicyGuard {
     dir: PathBuf,
     pub policy: Policy,
     _lock: IdentityLock,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct WorkerRecord {
+    #[serde(flatten)]
+    identity: KernelIdentity,
+    worker_version: String,
+}
+
+struct WorkerInfo {
+    version: Option<String>,
 }
 
 fn error(error: impl std::fmt::Display) -> io::Error {
@@ -219,6 +231,9 @@ pub fn prune_attempts(dir: &Path, probe: &dyn crate::session::LivenessProbe) -> 
 
 pub fn status(dir: &Path) -> io::Result<serde_json::Value> {
     let policy = read(dir)?;
+    let worker = worker_info(dir);
+    let worker_running = worker.is_some();
+    let worker_version = worker.as_ref().and_then(|worker| worker.version.as_deref());
     let mut report = serde_json::Value::Null;
     if fs::symlink_metadata(dir.join(DIRECTORY)).is_ok() {
         match safe_open::open_file(&dir.join(DIRECTORY).join("results.json"), Access::Read) {
@@ -240,7 +255,9 @@ pub fn status(dir: &Path) -> io::Result<serde_json::Value> {
         "apply_enabled": matches!(config::apply_switch(dir), ApplySwitch::Enabled),
         "project_count": policy.projects.len(),
         "keep_count": policy.keep.len(),
-        "worker_running": worker_running(dir),
+        "worker_running": worker_running,
+        "worker_version": worker_version,
+        "worker_version_status": worker_version_status(worker_running, worker_version),
         "last_report": report,
     }))
 }
@@ -248,33 +265,44 @@ pub fn status(dir: &Path) -> io::Result<serde_json::Value> {
 pub fn write_worker_identity(dir: &Path, identity: &KernelIdentity) -> io::Result<()> {
     safe_open::check_dir(&dir.join(DIRECTORY)).map_err(error)?;
     write_atomic(
-        &dir.join(DIRECTORY).join("worker.json"),
-        &serde_json::to_vec(identity).map_err(error)?,
+        &dir.join(DIRECTORY).join(WORKER_FILE),
+        &serde_json::to_vec(&WorkerRecord {
+            identity: identity.clone(),
+            worker_version: env!("CARGO_PKG_VERSION").to_owned(),
+        })
+        .map_err(error)?,
         0o600,
     )
     .map_err(error)
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn worker_running(dir: &Path) -> bool {
+fn worker_info(dir: &Path) -> Option<WorkerInfo> {
     use crate::session::{Liveness, LivenessProbe, ProviderLiveness};
-    let Ok(file) = safe_open::open_file(&dir.join(DIRECTORY).join("worker.json"), Access::Read) else {
-        return false;
-    };
+    let file = safe_open::open_file(&dir.join(DIRECTORY).join(WORKER_FILE), Access::Read).ok()?;
     let mut bytes = Vec::new();
-    if file.take(1025).read_to_end(&mut bytes).is_err() {
-        return false;
-    }
-    let Ok(identity) = serde_json::from_slice::<KernelIdentity>(&bytes) else {
-        return false;
+    file.take(1025).read_to_end(&mut bytes).ok()?;
+    let (identity, version) = match serde_json::from_slice::<WorkerRecord>(&bytes) {
+        Ok(record) => (record.identity, Some(record.worker_version)),
+        Err(_) => (serde_json::from_slice::<KernelIdentity>(&bytes).ok()?, None),
     };
-    let Ok(provider) = crate::platform::Provider::new() else {
-        return false;
-    };
-    ProviderLiveness(&provider).probe(&identity) == Liveness::Alive
+    let provider = crate::platform::Provider::new().ok()?;
+    (ProviderLiveness(&provider).probe(&identity) == Liveness::Alive).then_some(WorkerInfo { version })
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn worker_running(_dir: &Path) -> bool {
-    false
+fn worker_info(_dir: &Path) -> Option<WorkerInfo> {
+    None
+}
+
+fn worker_version_status(running: bool, version: Option<&str>) -> &'static str {
+    if !running {
+        "stopped"
+    } else if version.is_none() {
+        "unknown"
+    } else if version == Some(env!("CARGO_PKG_VERSION")) {
+        "same"
+    } else {
+        "different"
+    }
 }
