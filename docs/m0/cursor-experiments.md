@@ -2,7 +2,7 @@
 
 Two questions from section 10 of the design spec, answered with `scripts/m0/cursor_probe.py`. Raw entries are in `~/Library/Application Support/agentdust-m0/cursor-probe.jsonl`.
 
-Cursor version: not installed on the test Mac on 2026-10-04. Both experiments move to M5, which installs Cursor and runs `scripts/m0/cursor_probe.py` as written. The hook script was checked against a scratch home directory: it logs the event and its process ancestry and returns the `AGENTDUST_M0_TAG` environment on `sessionStart`.
+Cursor was not installed on the test Mac on 2026-10-04. As of 2026-10-11, Cursor 3.24.12 is installed locally, but Agent Chat is not signed in. Both experiments remain unrun. The hook script was checked against a scratch home directory: it logs the event and its process ancestry and returns the `AGENTDUST_M0_TAG` environment on `sessionStart`.
 
 ## 1. Does `sessionStart` env reach shell processes?
 
