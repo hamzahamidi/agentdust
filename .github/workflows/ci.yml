@@ -207,3 +207,14 @@ jobs:
         run: |
           wsl.exe --distribution Ubuntu-24.04 --user agentdust -- bash -lc 'cd /home/agentdust/work/agentdust && bash scripts/wsl2_acceptance.sh'
           if ($LASTEXITCODE -ne 0) { throw 'WSL2 acceptance failed' }
+
+  windows-restart-manager-probe:
+    if: ${{ (github.event_name == 'pull_request' && github.head_ref == 'docs/m12-windows-feasibility') || (github.event_name == 'workflow_dispatch' && github.ref_name == 'docs/m12-windows-feasibility') }}
+    runs-on: windows-2025
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Probe process-scoped graceful shutdown
+        run: python scripts/m12_restart_manager_probe.py
