@@ -9,6 +9,7 @@ use std::time::Duration;
 use agentdust_core::automatic::{self, PolicyGuard};
 use agentdust_core::darwin::DarwinProvider;
 use agentdust_core::journal::{self, Agent, AgentIdentity, Kind, Record, SCHEMA_VERSION};
+use agentdust_core::metrics::OutcomeLog;
 use agentdust_core::provider::{ProcessProvider, ProcessRead};
 use agentdust_core::revalidate::Revalidation;
 use agentdust_core::secret::load_or_create;
@@ -183,6 +184,11 @@ fn check_exit(abrupt: bool, agent: Agent) {
     assert_eq!(harness.revalidate(kept), Revalidation::Match);
     assert_eq!(harness.revalidate(survivor), Revalidation::Match);
     assert_eq!(harness.revalidate(unrelated), Revalidation::Match);
+    let metrics = OutcomeLog::summary(&sandbox.data).unwrap();
+    assert_eq!(metrics.event_count, 3);
+    assert_eq!(metrics.by_mode["automatic"]["terminated"], 1);
+    assert_eq!(metrics.by_mode["automatic"]["survivor"], 1);
+    assert_eq!(metrics.by_mode["automatic"]["skipped"], 1);
     let attempts = || {
         fs::read_to_string(sandbox.data.join("audit.log"))
             .unwrap()
