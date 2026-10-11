@@ -126,7 +126,9 @@ jobs:
         with:
           tool: cargo-deny,cargo-audit,cargo-fuzz@0.13.2
       - run: cargo deny check
+      - run: cargo deny --manifest-path fuzz/Cargo.toml --config deny-fuzz.toml --locked check
       - run: cargo audit
+      - run: cargo audit -f fuzz/Cargo.lock
       - run: rustup toolchain install "$FUZZ_TOOLCHAIN" --profile minimal
       - name: Build every fuzz target and replay its seeds
         run: |
