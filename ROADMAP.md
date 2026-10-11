@@ -269,7 +269,7 @@ With WSL2 shipped and M12 closed as a no-go for the tested Windows path, ordinar
 
 ## Deferred capabilities
 
-Immediate per-chat Codex cleanup while a shared host remains alive, the Cursor adapter, process-group signals, `SIGKILL`, UDP and non-listening socket conflicts, persisted plans, disk deletion or quarantine, daemons, scheduled cleanup, self-update, remote MCP transport.
+Immediate per-chat Codex cleanup while a shared host remains alive, the Cursor adapter, process-group signals, `SIGKILL`, UDP and non-listening socket conflicts, persisted plans, disk deletion or quarantine, additional daemon services, time-based cleanup scans, self-update, remote MCP transport.
 
 ## Optional external work
 
