@@ -138,6 +138,7 @@ jobs:
             test -d "fuzz/seeds/$target"
             cargo "+$FUZZ_TOOLCHAIN" fuzz run "$target" "fuzz/seeds/$target" --target x86_64-unknown-linux-gnu -- -runs=0
           done
+      - run: cargo test --release --locked -p agentdust --test hook_streaming -- --ignored --nocapture --test-threads=1
 
   macos:
     runs-on: macos-15
@@ -177,6 +178,7 @@ jobs:
           AGENTDUST_FIXTURE_LISTENER: ${{ github.workspace }}/target/debug/fixture-listener
         run: cargo test --locked -p agentdust --test port -- --ignored --test-threads=1
       - run: cargo test --release -p agentdust --test hook_latency --locked -- --ignored --nocapture --test-threads=1
+      - run: cargo test --release --locked -p agentdust --test hook_streaming -- --ignored --nocapture --test-threads=1
 
   wsl2:
     runs-on: windows-2025
