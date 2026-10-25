@@ -108,6 +108,10 @@ impl WalkOptions {
     }
 }
 
+fn device_id(device: libc::dev_t) -> u64 {
+    u64::try_from(device).unwrap_or_default()
+}
+
 pub fn report(config: &Path, project: &Path) -> DiskReport {
     let mut scanner = Scanner {
         started: Instant::now(),
@@ -266,11 +270,11 @@ impl Scanner {
             result.skipped.special_files += 1;
             return;
         }
-        if metadata.st_dev as u64 != device {
+        if device_id(metadata.st_dev) != device {
             result.skipped.other_filesystems += 1;
             return;
         }
-        if self.seen.contains(&(metadata.st_dev as u64, metadata.st_ino)) {
+        if self.seen.contains(&(device_id(metadata.st_dev), metadata.st_ino)) {
             result.skipped.duplicate_inodes += 1;
             return;
         }
@@ -295,7 +299,7 @@ impl Scanner {
     fn walk_directory(&mut self, file: &File, entry: WalkEntry<'_>, result: &mut RootReport) {
         let child = open_at(file.as_raw_fd(), entry.name).and_then(|child| {
             let actual = child.metadata()?;
-            if actual.dev() != entry.metadata.st_dev as u64 || actual.ino() != entry.metadata.st_ino {
+            if actual.dev() != device_id(entry.metadata.st_dev) || actual.ino() != entry.metadata.st_ino {
                 return Err(io::Error::other("directory changed"));
             }
             Ok((child, actual))
@@ -316,7 +320,7 @@ impl Scanner {
     }
 
     fn add_file(&mut self, category: Category, metadata: &libc::stat, result: &mut RootReport) {
-        self.seen.insert((metadata.st_dev as u64, metadata.st_ino));
+        self.seen.insert((device_id(metadata.st_dev), metadata.st_ino));
         let usage = &mut result.usage[category as usize];
         usage.files += 1;
         usage.logical_bytes = usage.logical_bytes.saturating_add(metadata.st_size.max(0) as u64);
