@@ -19,6 +19,14 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Install coverage.py
+        run: python3 -m pip install 'coverage>=7,<8'
+      - name: Run Python tests with coverage
+        run: |
+          coverage run --branch --source=scripts --omit='scripts/test_*.py,scripts/m0/cursor_probe.py,scripts/m12_restart_manager_probe.py' -m unittest discover -s scripts -p 'test_*.py'
+          coverage report --show-missing
+          mkdir -p coverage
+          coverage xml -o coverage/python-coverage.xml
       - name: Analyze with SonarCloud
         uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         env:
@@ -27,5 +35,9 @@ jobs:
           args: >-
             -Dsonar.organization=hamzahamidi-1
             -Dsonar.projectKey=hamzahamidi_agentdust
-            -Dsonar.sources=.
+            -Dsonar.sources=crates,scripts
+            -Dsonar.tests=crates,scripts
+            -Dsonar.exclusions=**/tests/**,scripts/test_*.py,scripts/m0/cursor_probe.py,scripts/m12_restart_manager_probe.py
+            -Dsonar.test.inclusions=**/tests/**,scripts/test_*.py,scripts/m0/cursor_probe.py,scripts/m12_restart_manager_probe.py
+            -Dsonar.python.coverage.reportPaths=coverage/python-coverage.xml
             -Dsonar.qualitygate.wait=true
