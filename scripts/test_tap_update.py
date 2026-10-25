@@ -209,7 +209,7 @@ class TapUpdateTest(unittest.TestCase):
             )
         self.assertEqual((1, ""), (code, out.getvalue()))
         self.assertIn("0.9.9", err.getvalue())
-        self.assertEqual(self.files(), [])
+        self.assertEqual([], self.files())
 
     def test_the_script_runs_as_a_program(self):
         formula = self.make_formula("0.1.0")
