@@ -27,8 +27,6 @@ SPEC_ROW = re.compile(r"^\|\s*(S\d+)\s*\|", re.ASCII)
 CITATION = re.compile(r"\bS\d+\b", re.ASCII)
 SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")
 STATUS = re.compile(r"(?:implemented|planned m\d+)", re.IGNORECASE | re.ASCII)
-REQUIREMENT_SEPARATOR = re.compile(r"[ \t]*,[ \t]*|[ \t]+")
-REQUIREMENT_ID = re.compile(r"S\d+", re.ASCII)
 RESIDUAL = re.compile(r"^\*\*Residual risk\.\*\*")
 BULLET = re.compile(r"^\s*[-*]\s+\S")
 
@@ -171,14 +169,53 @@ def check_citations(model_text, known):
     return problems
 
 
+def consume_horizontal_space(value, position):
+    while position < len(value) and value[position] in " \t":
+        position += 1
+    return position
+
+
+def consume_requirement_identifier(value, position):
+    if position >= len(value) or value[position] != "S":
+        return None
+    position += 1
+    digit_start = position
+    while position < len(value) and "0" <= value[position] <= "9":
+        position += 1
+    return position if position > digit_start else None
+
+
+def consume_requirement_separator(value, position):
+    separator_start = position
+    position = consume_horizontal_space(value, position)
+    has_whitespace = position > separator_start
+    if position < len(value) and value[position] == ",":
+        return consume_horizontal_space(value, position + 1)
+    return position if has_whitespace else None
+
+
+def is_requirement_list(value):
+    if not value:
+        return False
+    position = 0
+    while position < len(value):
+        position = consume_requirement_identifier(value, position)
+        if position is None:
+            return False
+        if position == len(value):
+            return True
+        position = consume_requirement_separator(value, position)
+        if position is None or position == len(value):
+            return False
+    return False
+
+
 def check_requirement(number, row, columns):
     column = columns.get("requirement")
     if column is None:
         return []
     requirement = row[column] if column < len(row) else ""
-    identifiers = REQUIREMENT_SEPARATOR.split(requirement)
-    valid_identifiers = all(REQUIREMENT_ID.fullmatch(identifier) for identifier in identifiers)
-    if requirement.lower() == "none" or valid_identifiers:
+    if requirement.lower() == "none" or is_requirement_list(requirement):
         return []
     return [f'line {number}: requirement "{requirement}" is not "none" or a list of S-ids']
 
