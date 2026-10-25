@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo=/home/agentdust/work/agentdust
 home=/home/agentdust
-target=/home/agentdust/target
+target="$repo/target"
 export HOME="$home"
 export CARGO_TARGET_DIR="$target"
 export TMPDIR="$home/tmp"
