@@ -58,7 +58,7 @@ fn parse_stat(bytes: &[u8]) -> io::Result<ProcStat> {
     let fields: Vec<&[u8]> = bytes
         .get(close + 1..)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "invalid proc stat fields"))?
-        .split(|byte| byte.is_ascii_whitespace())
+        .split(u8::is_ascii_whitespace)
         .filter(|field| !field.is_empty())
         .collect();
     if fields.len() <= 19 {
@@ -91,7 +91,7 @@ fn parse_uid_status(status: &[u8]) -> io::Result<u32> {
         .find(|line| line.starts_with(b"Uid:"))
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "proc status has no Uid field"))?;
     let fields: Vec<&[u8]> = line[4..]
-        .split(|byte| byte.is_ascii_whitespace())
+        .split(u8::is_ascii_whitespace)
         .filter(|field| !field.is_empty())
         .collect();
     if fields.len() != 4 {
@@ -283,7 +283,7 @@ fn listener_inodes_for_port(proc_root: &Path, process: &str, port: u16) -> io::R
             .filter(|line| !line.is_empty())
         {
             let fields: Vec<&[u8]> = line
-                .split(|byte| byte.is_ascii_whitespace())
+                .split(u8::is_ascii_whitespace)
                 .filter(|part| !part.is_empty())
                 .collect();
             if fields.len() < 10 {
@@ -402,75 +402,11 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
     if inodes.is_empty() {
         return Ok(Vec::new());
     }
-
-    let mut candidates = Vec::new();
-    for pid in list_pids()? {
-        let mut process = match provider.read(pid) {
-            Ok(ProcessRead::Present(identity)) if identity.kernel.uid == current_uid() => {
-                ListenerProcess::identified(identity)
-            }
-            Ok(ProcessRead::PathUnreadable(kernel)) if kernel.uid == current_uid() => {
-                ListenerProcess::unreadable(kernel)
-            }
-            Ok(ProcessRead::Present(_)) | Ok(ProcessRead::PathUnreadable(_)) | Ok(ProcessRead::Gone) => {
-                continue;
-            }
-            Err(error) if not_visible(&error) => continue,
-            Err(error) => return Err(error),
-        };
-        let pid_path = process.kernel.pid.to_string();
-        let namespace = match network_namespace_inode(Path::new(PROC), &pid_path) {
-            Ok(namespace) => namespace,
-            Err(error) if not_visible(&error) => continue,
-            Err(error) => return Err(error),
-        };
-        if namespace != current_namespace {
-            continue;
-        }
-        if !refresh_current_namespace_candidate(&mut process, &provider, Path::new(PROC), current_namespace)?
-        {
-            continue;
-        }
-        candidates.push(process);
-    }
-
+    let candidates = listener_candidates(&provider, current_namespace)?;
     let mut found = Vec::new();
-    for mut process in candidates {
-        let pid = process.kernel.pid;
-        let pid_path = pid.to_string();
-        match process.refresh(&provider) {
-            Ok(true) => {}
-            Ok(false) => continue,
-            Err(error) if not_visible(&error) => continue,
-            Err(error) => return Err(error),
-        }
-        let namespace = match network_namespace_inode(Path::new(PROC), &pid_path) {
-            Ok(namespace) => namespace,
-            Err(error) if not_visible(&error) => continue,
-            Err(error) => return Err(error),
-        };
-        if namespace != current_namespace {
-            return Err(io::Error::other(
-                "process network namespace changed during inventory",
-            ));
-        }
-        let fd_dir = Path::new(PROC).join(pid.to_string()).join("fd");
-        let descriptors = match fs::read_dir(&fd_dir) {
-            Ok(descriptors) => descriptors,
-            Err(error) if not_visible(&error) => continue,
-            Err(error) => return Err(error),
-        };
-        let descriptor_paths = descriptors.map(|descriptor| descriptor.map(|entry| entry.path()));
-        if listener_fd_match(descriptor_paths, &inodes, |path| fs::read_link(path))? != Some(true) {
-            continue;
-        }
-        if let Some(fresh) = listener_identity(&process.kernel, provider.read(pid)?)? {
-            if network_namespace_inode(Path::new(PROC), &pid_path)? != current_namespace {
-                return Err(io::Error::other(
-                    "listener identity or network namespace changed during inventory",
-                ));
-            }
-            found.push(fresh);
+    for process in candidates {
+        if let Some(identity) = matching_listener(process, &provider, current_namespace, &inodes)? {
+            found.push(identity);
         }
     }
     if network_namespace_inode(Path::new(PROC), "self")? != current_namespace {
@@ -481,39 +417,129 @@ pub fn tcp_listeners(port: u16) -> io::Result<Vec<ProcessIdentity>> {
     let current_inodes = listener_inodes_for_port(Path::new(PROC), "self", port)?;
     let mut stable = Vec::new();
     for identity in found {
-        let pid = identity.kernel.pid;
-        let pid_path = pid.to_string();
-        if network_namespace_inode(Path::new(PROC), &pid_path)? != current_namespace {
-            return Err(io::Error::other(
-                "process network namespace changed during inventory",
-            ));
-        }
-        let fd_dir = Path::new(PROC).join(&pid_path).join("fd");
-        let descriptors = match fs::read_dir(fd_dir) {
-            Ok(descriptors) => descriptors,
-            Err(error) if missing(&error) => continue,
-            Err(error) => return Err(error),
-        };
-        let descriptor_paths = descriptors.map(|descriptor| descriptor.map(|entry| entry.path()));
-        if !verified_listener_fd_match(descriptor_paths, &current_inodes, |path| fs::read_link(path))? {
-            continue;
-        }
-        match provider.read(pid)? {
-            ProcessRead::Present(fresh)
-                if fresh == identity
-                    && network_namespace_inode(Path::new(PROC), &pid_path)? == current_namespace =>
-            {
-                stable.push(identity)
-            }
-            ProcessRead::Gone => {}
-            _ => {
-                return Err(io::Error::other(
-                    "listener identity or network namespace changed during inventory",
-                ));
-            }
+        if let Some(identity) = verify_listener(identity, &provider, current_namespace, &current_inodes)? {
+            stable.push(identity);
         }
     }
     Ok(stable)
+}
+
+fn listener_candidates(provider: &LinuxProvider, current_namespace: u64) -> io::Result<Vec<ListenerProcess>> {
+    let mut candidates = Vec::new();
+    for pid in list_pids()? {
+        let Some(mut process) = listener_process(pid, provider)? else {
+            continue;
+        };
+        let pid_path = process.kernel.pid.to_string();
+        let namespace = match network_namespace_inode(Path::new(PROC), &pid_path) {
+            Ok(namespace) => namespace,
+            Err(error) if not_visible(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        if namespace != current_namespace {
+            continue;
+        }
+        if !refresh_current_namespace_candidate(&mut process, provider, Path::new(PROC), current_namespace)? {
+            continue;
+        }
+        candidates.push(process);
+    }
+    Ok(candidates)
+}
+
+fn listener_process(pid: i32, provider: &LinuxProvider) -> io::Result<Option<ListenerProcess>> {
+    match provider.read(pid) {
+        Ok(ProcessRead::Present(identity)) if identity.kernel.uid == current_uid() => {
+            Ok(Some(ListenerProcess::identified(identity)))
+        }
+        Ok(ProcessRead::PathUnreadable(kernel)) if kernel.uid == current_uid() => {
+            Ok(Some(ListenerProcess::unreadable(kernel)))
+        }
+        Ok(ProcessRead::Present(_)) | Ok(ProcessRead::PathUnreadable(_)) | Ok(ProcessRead::Gone) => Ok(None),
+        Err(error) if not_visible(&error) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+fn matching_listener(
+    mut process: ListenerProcess,
+    provider: &LinuxProvider,
+    current_namespace: u64,
+    inodes: &BTreeSet<u64>,
+) -> io::Result<Option<ProcessIdentity>> {
+    let pid = process.kernel.pid;
+    let pid_path = pid.to_string();
+    match process.refresh(provider) {
+        Ok(true) => {}
+        Ok(false) => return Ok(None),
+        Err(error) if not_visible(&error) => return Ok(None),
+        Err(error) => return Err(error),
+    }
+    let namespace = match network_namespace_inode(Path::new(PROC), &pid_path) {
+        Ok(namespace) => namespace,
+        Err(error) if not_visible(&error) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    if namespace != current_namespace {
+        return Err(io::Error::other(
+            "process network namespace changed during inventory",
+        ));
+    }
+    let fd_dir = Path::new(PROC).join(&pid_path).join("fd");
+    let descriptors = match fs::read_dir(&fd_dir) {
+        Ok(descriptors) => descriptors,
+        Err(error) if not_visible(&error) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let descriptor_paths = descriptors.map(|descriptor| descriptor.map(|entry| entry.path()));
+    if listener_fd_match(descriptor_paths, inodes, |path| fs::read_link(path))? != Some(true) {
+        return Ok(None);
+    }
+    let Some(identity) = listener_identity(&process.kernel, provider.read(pid)?)? else {
+        return Ok(None);
+    };
+    if network_namespace_inode(Path::new(PROC), &pid_path)? != current_namespace {
+        return Err(io::Error::other(
+            "listener identity or network namespace changed during inventory",
+        ));
+    }
+    Ok(Some(identity))
+}
+
+fn verify_listener(
+    identity: ProcessIdentity,
+    provider: &LinuxProvider,
+    current_namespace: u64,
+    inodes: &BTreeSet<u64>,
+) -> io::Result<Option<ProcessIdentity>> {
+    let pid = identity.kernel.pid;
+    let pid_path = pid.to_string();
+    if network_namespace_inode(Path::new(PROC), &pid_path)? != current_namespace {
+        return Err(io::Error::other(
+            "process network namespace changed during inventory",
+        ));
+    }
+    let descriptors = match fs::read_dir(Path::new(PROC).join(&pid_path).join("fd")) {
+        Ok(descriptors) => descriptors,
+        Err(error) if missing(&error) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let descriptor_paths = descriptors.map(|descriptor| descriptor.map(|entry| entry.path()));
+    if !verified_listener_fd_match(descriptor_paths, inodes, |path| fs::read_link(path))? {
+        return Ok(None);
+    }
+    match provider.read(pid)? {
+        ProcessRead::Present(fresh)
+            if fresh == identity
+                && network_namespace_inode(Path::new(PROC), &pid_path)? == current_namespace =>
+        {
+            Ok(Some(identity))
+        }
+        ProcessRead::Gone => Ok(None),
+        _ => Err(io::Error::other(
+            "listener identity or network namespace changed during inventory",
+        )),
+    }
 }
 
 #[derive(Clone)]

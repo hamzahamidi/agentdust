@@ -1,0 +1,9 @@
+[run]
+branch = True
+parallel = True
+source = ${COVERAGE_SOURCE_DIR}
+omit =
+    ${COVERAGE_SOURCE_DIR}/test_*.py
+    ${COVERAGE_SOURCE_DIR}/m0/cursor_probe.py
+    ${COVERAGE_SOURCE_DIR}/m12_restart_manager_probe.py
+patch = subprocess

@@ -115,6 +115,26 @@ class PackageTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.path / "dist" / f"{NAME}.tar.gz").exists())
 
+    def test_a_binary_outside_the_checkout_is_rejected(self):
+        outside = self.path.parent / f"{self.path.name}-outside"
+        outside.write_bytes(b"outside binary")
+        self.addCleanup(outside.unlink, missing_ok=True)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--binary", str(outside),
+                "--version", "0.1.0",
+                "--out-dir", str(self.path / "dist"),
+            ],
+            cwd=self.path,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("path escapes its allowed directory", result.stderr)
+        self.assertFalse((self.path / "dist" / f"{NAME}.tar.gz").exists())
+
     def test_linux_archive_uses_its_platform_name_and_the_native_binary(self):
         tarball, _ = self.package(target="linux-x64")
         self.assertEqual(tarball.name, "agentdust-0.1.0-linux-x64.tar.gz")

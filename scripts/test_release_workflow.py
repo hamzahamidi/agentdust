@@ -136,7 +136,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
                 self.assertIsInstance(job["timeout-minutes"], int)
 
     def test_two_releases_of_one_tag_never_run_side_by_side(self):
-        self.assertEqual(self.doc["concurrency"]["cancel-in-progress"], False)
+        self.assertFalse(self.doc["concurrency"]["cancel-in-progress"])
         self.assertIn("github.ref", self.doc["concurrency"]["group"])
 
     def test_every_script_the_workflow_runs_exists(self):
@@ -298,7 +298,7 @@ class PackageTest(unittest.TestCase):
         self.assertIn('epoch="$(git log -1 --format=%ct)"', self.script)
 
     def test_the_checksum_lists_the_tarball_and_is_verified(self):
-        self.assertIn("shasum -a 256 *.tar.gz *.tgz *-sbom.cdx.json > SHA256SUMS", self.script)
+        self.assertIn("shasum -a 256 ./*.tar.gz ./*.tgz ./*-sbom.cdx.json > SHA256SUMS", self.script)
         self.assertIn("shasum -a 256 -c SHA256SUMS", self.script)
 
     def test_the_binary_and_the_tarball_are_attested(self):
@@ -318,8 +318,8 @@ class PackageTest(unittest.TestCase):
         self.assertEqual(sbom["with"]["format"], "cyclonedx-json")
         self.assertEqual(sbom["with"]["output-file"], "dist/agentdust-${{ env.VERSION }}-sbom.cdx.json")
         self.assertEqual(sbom["with"]["syft-version"], "v1.54.0")
-        self.assertEqual(sbom["with"]["upload-artifact"], False)
-        self.assertEqual(sbom["with"]["upload-release-assets"], False)
+        self.assertFalse(sbom["with"]["upload-artifact"])
+        self.assertFalse(sbom["with"]["upload-release-assets"])
         release_files = step_with(self.package, "actions/upload-artifact")
         self.assertEqual(release_files["with"]["name"], "release-files")
         self.assertEqual(release_files["with"]["path"], "dist")
@@ -446,6 +446,7 @@ class TapJobTest(unittest.TestCase):
         env = {
             **os.environ,
             "FORMULA": str(formula),
+            "GITHUB_WORKSPACE": str(root),
             "GH_TOKEN": "test-token",
             "PATH": f"{fake_bin}:{os.environ['PATH']}",
             "PR_MARKER": str(pr_marker),
@@ -495,7 +496,7 @@ class TapJobTest(unittest.TestCase):
         command = runs(self.tap)
         self.assertIn("bash scripts/create_tap_pr.sh", command)
         helper = (ROOT / "scripts/create_tap_pr.sh").read_text(encoding="utf-8")
-        self.assertIn('python3 scripts/tap_update.py --tap "$TAP_DIR" --formula "$FORMULA" --version "$VERSION"', helper)
+        self.assertIn('python3 scripts/tap_update.py --root "$GITHUB_WORKSPACE" --tap "$TAP_DIR" --formula "$FORMULA" --version "$VERSION"', helper)
         self.assertIn('merge --no-edit "origin/$base"', helper)
         self.assertIn("gh pr create", helper)
         recovery = (WORKFLOWS / "homebrew-tap-recovery.yml").read_text(encoding="utf-8")

@@ -29,7 +29,7 @@ fn captured_m6_fixtures() -> Vec<(PathBuf, Vec<Vec<u8>>)> {
         .map(|entry| entry.unwrap().path())
         .filter(|path| {
             path.file_name()
-                .and_then(|name| name.to_str())
+                .and_then(std::ffi::OsStr::to_str)
                 .is_some_and(|name| name.starts_with("claude-2.1.292-") && name.ends_with(".jsonl"))
         })
         .collect();

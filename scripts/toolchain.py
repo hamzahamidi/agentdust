@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from workspace_paths import resolve_within
+
 
 def output(*command: str) -> str:
     try:
@@ -36,6 +38,10 @@ def main() -> None:
     parser.add_argument("--allow-missing", action="store_true")
     parser.add_argument("--include-lock", action="store_true")
     args = parser.parse_args()
+    try:
+        args.expected = resolve_within(args.expected, (Path.cwd(),))
+    except ValueError as error:
+        parser.error(str(error))
 
     current = record()
     if args.mode == "record":

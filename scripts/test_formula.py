@@ -28,6 +28,7 @@ class FormulaTest(unittest.TestCase):
                 "--url", url,
                 "--out", str(self.path / out),
             ],
+            cwd=self.path,
             capture_output=True,
             text=True,
         )
@@ -72,6 +73,27 @@ class FormulaTest(unittest.TestCase):
         formula, out = self.write("deep/er/agentdust.rb")
         self.assertTrue(formula.is_file())
         self.assertEqual(out.strip(), str(formula))
+
+    def test_a_tarball_outside_the_checkout_is_rejected(self):
+        outside = self.path.parent / f"{self.path.name}-outside.tar.gz"
+        outside.write_bytes(b"outside tarball")
+        self.addCleanup(outside.unlink, missing_ok=True)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--tarball", str(outside),
+                "--version", "0.1.0",
+                "--url", URL,
+                "--out", str(self.path / "agentdust.rb"),
+            ],
+            cwd=self.path,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("path escapes its allowed directory", result.stderr)
+        self.assertFalse((self.path / "agentdust.rb").exists())
 
 
 if __name__ == "__main__":

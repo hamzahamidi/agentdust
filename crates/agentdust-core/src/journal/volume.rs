@@ -137,27 +137,6 @@ fn linux_facts(name: &[u8], filesystem_magic: u64, mount_options: &[u8]) -> FsFa
     }
 }
 
-#[cfg(all(test, target_os = "linux"))]
-mod linux_tests {
-    use super::linux_facts;
-
-    #[test]
-    fn ext4_is_the_only_supported_linux_journal_filesystem() {
-        assert!(linux_facts(b"ext4", 0xef53, b"rw,relatime").supported);
-        assert!(!linux_facts(b"xfs", 0x5846_5342, b"rw,relatime").supported);
-        assert!(!linux_facts(b"btrfs", 0x9123_683e, b"rw,relatime").supported);
-        assert!(!linux_facts(b"overlay", 0, b"rw,relatime").supported);
-    }
-
-    #[test]
-    fn read_only_or_mismatched_ext4_facts_are_not_supported() {
-        assert!(!linux_facts(b"ext4", 0xef53, b"ro,relatime").supported);
-        let facts = linux_facts(b"ext4", 0, b"rw,relatime");
-        assert_eq!(facts.name, "unknown");
-        assert!(!facts.local && !facts.supported);
-    }
-}
-
 #[cfg(target_os = "linux")]
 fn mount_filesystem(path: &Path) -> io::Result<Option<(Vec<u8>, Vec<u8>)>> {
     use std::io::Read;
@@ -263,4 +242,25 @@ pub fn locate(probe: &dyn VolumeProbe, dir: &Path) -> io::Result<FsFacts> {
         }
     }
     probe.probe(Path::new("."))
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_tests {
+    use super::linux_facts;
+
+    #[test]
+    fn ext4_is_the_only_supported_linux_journal_filesystem() {
+        assert!(linux_facts(b"ext4", 0xef53, b"rw,relatime").supported);
+        assert!(!linux_facts(b"xfs", 0x5846_5342, b"rw,relatime").supported);
+        assert!(!linux_facts(b"btrfs", 0x9123_683e, b"rw,relatime").supported);
+        assert!(!linux_facts(b"overlay", 0, b"rw,relatime").supported);
+    }
+
+    #[test]
+    fn read_only_or_mismatched_ext4_facts_are_not_supported() {
+        assert!(!linux_facts(b"ext4", 0xef53, b"ro,relatime").supported);
+        let facts = linux_facts(b"ext4", 0, b"rw,relatime");
+        assert_eq!(facts.name, "unknown");
+        assert!(!facts.local && !facts.supported);
+    }
 }

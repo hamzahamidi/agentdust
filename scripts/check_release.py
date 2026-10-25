@@ -6,7 +6,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-TAG = re.compile(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
+TAG = re.compile(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", re.ASCII)
 OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 REQUIRED_CHECKS = ("linux", "macos", "wsl2")
 ACTIONS_APP = "github-actions"

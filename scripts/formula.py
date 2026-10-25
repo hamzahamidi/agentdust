@@ -2,6 +2,8 @@ import argparse
 import hashlib
 from pathlib import Path
 
+from workspace_paths import resolve_within
+
 TEMPLATE = """class Agentdust < Formula
   desc "Finds and cleans processes that AI coding agents leave behind"
   homepage "https://github.com/hamzahamidi/agentdust"
@@ -31,10 +33,16 @@ def main() -> None:
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args()
 
-    sha256 = hashlib.sha256(args.tarball.read_bytes()).hexdigest()
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(TEMPLATE.format(url=args.url, version=args.version, sha256=sha256))
-    print(args.out)
+    root = Path.cwd()
+    try:
+        tarball = resolve_within(args.tarball, (root,))
+        output = resolve_within(args.out, (root,))
+    except ValueError as error:
+        parser.error(str(error))
+    sha256 = hashlib.sha256(tarball.read_bytes()).hexdigest()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(TEMPLATE.format(url=args.url, version=args.version, sha256=sha256))
+    print(output)
 
 
 if __name__ == "__main__":

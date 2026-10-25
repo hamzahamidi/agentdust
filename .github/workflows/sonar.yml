@@ -1,0 +1,46 @@
+name: SonarCloud
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install coverage.py
+        run: python3 -m pip install 'coverage>=7.10.3,<8'
+      - name: Run Python tests with coverage
+        env:
+          COVERAGE_SOURCE_DIR: ${{ github.workspace }}/scripts
+        run: |
+          coverage run --rcfile=.coveragerc -m unittest discover -s scripts -p 'test_*.py'
+          coverage combine --rcfile=.coveragerc
+          coverage report --show-missing
+          mkdir -p coverage
+          coverage xml -o coverage/python-coverage.xml
+      - name: Analyze with SonarCloud
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >-
+            -Dsonar.organization=hamzahamidi-1
+            -Dsonar.projectKey=hamzahamidi_agentdust
+            -Dsonar.sources=crates,scripts
+            -Dsonar.tests=crates,scripts
+            -Dsonar.exclusions=**/tests/**,scripts/test_*.py,scripts/m0/cursor_probe.py,scripts/m12_restart_manager_probe.py
+            -Dsonar.test.inclusions=**/tests/**,scripts/test_*.py,scripts/m0/cursor_probe.py,scripts/m12_restart_manager_probe.py
+            -Dsonar.python.coverage.reportPaths=coverage/python-coverage.xml
+            -Dsonar.qualitygate.wait=true

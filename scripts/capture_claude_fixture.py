@@ -46,15 +46,32 @@ def _label(value: Any, namespace: str, key: bytes) -> str | None:
     return f"{namespace}-{digest}"
 
 
+def _decode_event(payload: bytes) -> dict[str, Any] | None:
+    try:
+        event = json.loads(payload, object_pairs_hook=_object_without_duplicates)
+    except (RecursionError, ValueError):
+        return None
+    return event if isinstance(event, dict) else None
+
+
+def _copy_label(record: dict[str, Any], event: dict[str, Any], field: str, namespace: str, key: bytes) -> None:
+    label = _label(event.get(field), namespace, key)
+    if label is not None:
+        record[field] = label
+
+
+def _copy_allowlisted_value(record: dict[str, Any], event: dict[str, Any], field: str, allowed: set[str]) -> None:
+    value = event.get(field)
+    if isinstance(value, str):
+        record[field] = value if value in allowed else "other"
+
+
 def normalise(payload: bytes, key: bytes) -> dict[str, Any] | None:
     """Return an allowlisted record. Values outside the allowlist are discarded."""
     if len(payload) > MAX_INPUT_BYTES:
         return None
-    try:
-        event = json.loads(payload, object_pairs_hook=_object_without_duplicates)
-    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError, ValueError):
-        return None
-    if not isinstance(event, dict):
+    event = _decode_event(payload)
+    if event is None:
         return None
 
     name = event.get("hook_event_name")
@@ -65,22 +82,11 @@ def normalise(payload: bytes, key: bytes) -> dict[str, Any] | None:
         "hook_event_name": name,
         "session_id": _label(event.get("session_id"), "session", key),
     }
-    agent_ref = _label(event.get("agent_id"), "agent", key)
-    tool_ref = _label(event.get("tool_use_id"), "tool", key)
-    if agent_ref is not None:
-        record["agent_id"] = agent_ref
-    if tool_ref is not None:
-        record["tool_use_id"] = tool_ref
-
-    source = event.get("source")
-    if isinstance(source, str):
-        record["source"] = source if source in ALLOWED_SOURCES else "other"
-    reason = event.get("reason")
-    if isinstance(reason, str):
-        record["reason"] = reason if reason in ALLOWED_REASONS else "other"
-    tool_name = event.get("tool_name")
-    if isinstance(tool_name, str):
-        record["tool_name"] = tool_name if tool_name in ALLOWED_TOOLS else "other"
+    _copy_label(record, event, "agent_id", "agent", key)
+    _copy_label(record, event, "tool_use_id", "tool", key)
+    _copy_allowlisted_value(record, event, "source", ALLOWED_SOURCES)
+    _copy_allowlisted_value(record, event, "reason", ALLOWED_REASONS)
+    _copy_allowlisted_value(record, event, "tool_name", ALLOWED_TOOLS)
     if "agent_type" in event:
         record["agent_type_present"] = isinstance(event["agent_type"], str)
     if isinstance(event.get("stop_hook_active"), bool):
@@ -165,29 +171,32 @@ def _read_bounded_stdin() -> bytes | None:
     return None if oversized else bytes(content)
 
 
-def main() -> int:
+def _capture_from_environment() -> None:
+    payload = _read_bounded_stdin()
+    output_path = os.environ.get("AGENTDUST_FIXTURE_CAPTURE_PATH")
+    key_path = os.environ.get("AGENTDUST_FIXTURE_KEY_FILE")
+    if (
+        payload is None
+        or not output_path
+        or not key_path
+        or not Path(output_path).is_absolute()
+        or not Path(key_path).is_absolute()
+    ):
+        return
+    key = _read_key(key_path)
+    if key is None:
+        return
+    record = normalise(payload, key)
+    if record is not None:
+        _append_private(output_path, record)
+
+
+def main() -> None:
     try:
-        payload = _read_bounded_stdin()
-        output_path = os.environ.get("AGENTDUST_FIXTURE_CAPTURE_PATH")
-        key_path = os.environ.get("AGENTDUST_FIXTURE_KEY_FILE")
-        if (
-            payload is None
-            or not output_path
-            or not key_path
-            or not Path(output_path).is_absolute()
-            or not Path(key_path).is_absolute()
-        ):
-            return 0
-        key = _read_key(key_path)
-        if key is None:
-            return 0
-        record = normalise(payload, key)
-        if record is not None:
-            _append_private(output_path, record)
+        _capture_from_environment()
     except (OSError, RecursionError, ValueError, TypeError):
         pass
-    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

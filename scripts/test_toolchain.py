@@ -111,6 +111,14 @@ class ToolchainTest(unittest.TestCase):
         result = self.check()
         self.assertNotEqual(result.returncode, 0)
 
+    def test_an_expected_record_outside_the_checkout_is_rejected(self):
+        outside = self.path.parent / f"{self.path.name}-expected.json"
+        outside.write_text("{}", encoding="utf-8")
+        self.addCleanup(outside.unlink, missing_ok=True)
+        result = self.run_script("check", "--expected", str(outside))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("path escapes its allowed directory", result.stderr)
+
     def test_a_missing_expected_file_is_accepted_only_when_allowed(self):
         result = self.check("--allow-missing")
         self.assertEqual(result.returncode, 0)
