@@ -71,7 +71,7 @@ Once, before the first release:
 
 For each release:
 
-1. Merge a pull request that sets `version` under `[workspace.package]` in `Cargo.toml` and the matching `Cargo.lock`. `cargo update --workspace` changes only the versions of the workspace crates in the lock file.
+1. Merge a pull request that sets `version` under `[workspace.package]` in `Cargo.toml` and updates `Cargo.lock`. `cargo update --workspace` changes only the versions of the workspace crates in that lock file. The fuzz workspace has a separate lockfile for its local path dependencies, so update it with `cargo update --manifest-path fuzz/Cargo.toml -p agentdust-core -p agentdust-agents`.
 2. Refresh the toolchain record. Run `gh workflow run release-dry-run.yml --ref main` and wait for it. Download the `build-darwin-arm64-a` artifact, which holds `toolchain.json` as recorded on that runner, whether the check passed or not. Copy it to `release/toolchain.json`, read the diff (the runner image, Xcode, SDK and Rust should change only on purpose) and merge it. The `cargo_lock_sha256` in it must be the hash of the `Cargo.lock` that will be tagged.
 3. Run CI on the commit to tag: `gh workflow run ci.yml --ref main`, then wait for the `linux`, `macos` and `wsl2` jobs (`gh run watch`). CI runs on pull requests and not on pushes to `main`, so a squash merge commit has no check run until this step, and the gate refuses a commit without all three successful jobs.
 4. Tag that commit and push the tag: `git tag -a vX.Y.Z -m "agentdust X.Y.Z" <commit>`, then `git push origin vX.Y.Z`.
