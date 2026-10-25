@@ -177,7 +177,8 @@ def check_requirement(number, row, columns):
         return []
     requirement = row[column] if column < len(row) else ""
     identifiers = REQUIREMENT_SEPARATOR.split(requirement)
-    if requirement.lower() == "none" or all(REQUIREMENT_ID.fullmatch(identifier) for identifier in identifiers):
+    valid_identifiers = all(REQUIREMENT_ID.fullmatch(identifier) for identifier in identifiers)
+    if requirement.lower() == "none" or valid_identifiers:
         return []
     return [f'line {number}: requirement "{requirement}" is not "none" or a list of S-ids']
 
