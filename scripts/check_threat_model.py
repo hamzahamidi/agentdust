@@ -28,7 +28,6 @@ CITATION = re.compile(r"\bS\d+\b", re.ASCII)
 SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")
 STATUS = re.compile(r"(?:implemented|planned m\d+)", re.IGNORECASE | re.ASCII)
 RESIDUAL = re.compile(r"^\*\*Residual risk\.\*\*")
-BULLET = re.compile(r"^\s*[-*]\s+\S")
 
 
 def heading_title(line):
@@ -132,6 +131,16 @@ def check_headings(model_text):
     ]
 
 
+def is_bullet(line):
+    content = line.lstrip()
+    return (
+        len(content) > 2
+        and content[0] in "-*"
+        and content[1].isspace()
+        and bool(content[2:].strip())
+    )
+
+
 def check_residual(model_text):
     present = sections(model_text)
     problems = []
@@ -142,7 +151,7 @@ def check_residual(model_text):
         marker = next((i for i, line in enumerate(lines) if RESIDUAL.match(line)), None)
         if marker is None:
             problems.append(f'section "{title}" has no "Residual risk." part')
-        elif not any(BULLET.match(line) for line in lines[marker + 1 :]):
+        elif not any(is_bullet(line) for line in lines[marker + 1 :]):
             problems.append(f'section "{title}" lists nothing under "Residual risk."')
     return problems
 
