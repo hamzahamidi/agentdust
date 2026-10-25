@@ -20,10 +20,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Install coverage.py
-        run: python3 -m pip install 'coverage>=7,<8'
+        run: python3 -m pip install 'coverage>=7.10.3,<8'
       - name: Run Python tests with coverage
+        env:
+          COVERAGE_SOURCE_DIR: ${{ github.workspace }}/scripts
         run: |
-          coverage run --branch --source=scripts --omit='scripts/test_*.py,scripts/m0/cursor_probe.py,scripts/m12_restart_manager_probe.py' -m unittest discover -s scripts -p 'test_*.py'
+          coverage run --rcfile=.coveragerc -m unittest discover -s scripts -p 'test_*.py'
+          coverage combine --rcfile=.coveragerc
           coverage report --show-missing
           mkdir -p coverage
           coverage xml -o coverage/python-coverage.xml
