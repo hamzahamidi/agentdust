@@ -159,7 +159,7 @@ fn mount_filesystem(path: &Path) -> io::Result<Option<(Vec<u8>, Vec<u8>)>> {
         .filter(|line| !line.is_empty())
     {
         let fields: Vec<&[u8]> = line
-            .split(|byte| byte.is_ascii_whitespace())
+            .split(u8::is_ascii_whitespace)
             .filter(|field| !field.is_empty())
             .collect();
         let Some(separator) = fields.iter().position(|field| *field == b"-") else {

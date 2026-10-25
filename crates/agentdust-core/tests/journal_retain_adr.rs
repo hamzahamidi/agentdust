@@ -224,7 +224,7 @@ fn observe(plant_it: Plant) -> (Outcome, bool) {
     let path = dir.join(generation_name(STAMP));
     let before = fs::symlink_metadata(&path)
         .ok()
-        .filter(|m| m.is_file())
+        .filter(fs::Metadata::is_file)
         .map(|_| (fs::read(&path).unwrap(), inode_of(&path)));
     let files = without_lock(snapshot(&dir));
 
