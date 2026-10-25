@@ -27,10 +27,8 @@ SPEC_ROW = re.compile(r"^\|\s*(S\d+)\s*\|", re.ASCII)
 CITATION = re.compile(r"\bS\d+\b", re.ASCII)
 SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")
 STATUS = re.compile(r"(?:implemented|planned m\d+)", re.IGNORECASE | re.ASCII)
-REQUIREMENT = re.compile(
-    r"S\d+(?:[ \t]*,[ \t]*S\d+|[ \t]+S\d+)*",
-    re.ASCII,
-)
+REQUIREMENT_SEPARATOR = re.compile(r"[ \t]*,[ \t]*|[ \t]+")
+REQUIREMENT_ID = re.compile(r"S\d+", re.ASCII)
 RESIDUAL = re.compile(r"^\*\*Residual risk\.\*\*")
 BULLET = re.compile(r"^\s*[-*]\s+\S")
 
@@ -178,7 +176,8 @@ def check_requirement(number, row, columns):
     if column is None:
         return []
     requirement = row[column] if column < len(row) else ""
-    if requirement.lower() == "none" or REQUIREMENT.fullmatch(requirement):
+    identifiers = REQUIREMENT_SEPARATOR.split(requirement)
+    if requirement.lower() == "none" or all(REQUIREMENT_ID.fullmatch(identifier) for identifier in identifiers):
         return []
     return [f'line {number}: requirement "{requirement}" is not "none" or a list of S-ids']
 
