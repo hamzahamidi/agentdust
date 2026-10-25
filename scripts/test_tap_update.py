@@ -57,7 +57,7 @@ class TapUpdateTest(unittest.TestCase):
 
     def test_the_first_release_creates_the_formula(self):
         written = self.update("0.1.0")
-        self.assertEqual([FORMULA], written)
+        self.assertEqual(written, [FORMULA])
         self.assertEqual([FORMULA], self.files())
         self.assertEqual(self.read(FORMULA), self.make_formula("0.1.0").read_text(encoding="utf-8"))
 

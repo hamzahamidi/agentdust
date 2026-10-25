@@ -23,12 +23,12 @@ DEFAULT_SPEC = "docs/superpowers/specs/2026-10-03-agentdust-design.md"
 FENCE = re.compile(r"^\s*(?:```|~~~)")
 SECTION_91 = re.compile(r"^#{2,3}\s+9\.1\b")
 ANY_HEADING = re.compile(r"^#{1,3}\s")
-SPEC_ROW = re.compile(r"^\|\s*(S[0-9]+)\s*\|", re.ASCII)
-CITATION = re.compile(r"\bS[0-9]+\b", re.ASCII)
+SPEC_ROW = re.compile(r"^\|\s*(S\d+)\s*\|", re.ASCII)
+CITATION = re.compile(r"\bS\d+\b", re.ASCII)
 SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")
-STATUS = re.compile(r"(?:implemented|planned m[0-9]+)", re.IGNORECASE | re.ASCII)
+STATUS = re.compile(r"(?:implemented|planned m\d+)", re.IGNORECASE | re.ASCII)
 REQUIREMENT = re.compile(
-    r"S[0-9]+(?:[ \t]*,[ \t]*S[0-9]+|[ \t]+S[0-9]+)*",
+    r"S\d+(?:[ \t]*,[ \t]*S\d+|[ \t]+S\d+)*",
     re.ASCII,
 )
 RESIDUAL = re.compile(r"^\*\*Residual risk\.\*\*")
