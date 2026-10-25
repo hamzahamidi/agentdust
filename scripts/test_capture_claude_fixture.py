@@ -2,6 +2,8 @@ import json
 import os
 import runpy
 import stat
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -47,6 +49,77 @@ class CaptureClaudeFixtureTest(unittest.TestCase):
             self.assertNotIn(private_value, encoded)
         self.assertNotIn("agent_transcript_path", result)
         self.assertNotIn("last_assistant_message", result)
+
+    def test_allowlisted_values_are_kept_and_unknown_strings_are_collapsed(self):
+        payload = {
+            "hook_event_name": "PreToolUse",
+            "source": "fork",
+            "reason": "unknown-reason",
+            "tool_name": "Bash",
+        }
+
+        result = normalise(json.dumps(payload).encode(), KEY)
+
+        self.assertEqual(result["source"], "fork")
+        self.assertEqual(result["reason"], "other")
+        self.assertEqual(result["tool_name"], "Bash")
+
+    def test_hook_entrypoint_records_a_sanitized_event_from_its_environment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            key_path = root / "capture-key"
+            key_path.write_bytes(KEY)
+            key_path.chmod(0o600)
+            output_path = root / "events.jsonl"
+            payload = json.dumps({
+                "hook_event_name": "SessionStart",
+                "session_id": "private-session",
+                "source": "startup",
+                "cwd": "/private/path",
+            }).encode()
+            environment = {
+                **os.environ,
+                "AGENTDUST_FIXTURE_CAPTURE_PATH": str(output_path),
+                "AGENTDUST_FIXTURE_KEY_FILE": str(key_path),
+            }
+
+            result = subprocess.run(
+                [sys.executable, str(Path(__file__).with_name("capture_claude_fixture.py"))],
+                input=payload,
+                capture_output=True,
+                env=environment,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            record = json.loads(output_path.read_text())
+            self.assertEqual(record["hook_event_name"], "SessionStart")
+            self.assertEqual(record["source"], "startup")
+            self.assertNotIn("private-session", json.dumps(record))
+            self.assertNotIn("/private/path", json.dumps(record))
+
+    def test_main_ignores_missing_payload_or_unsafe_environment_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = str(Path(directory) / "events.jsonl")
+            key_path = str(Path(directory) / "capture-key")
+            Path(key_path).write_bytes(KEY)
+            Path(key_path).chmod(0o600)
+            cases = [
+                (None, output_path, key_path),
+                (b"{}", "", key_path),
+                (b"{}", output_path, ""),
+                (b"{}", "relative-output.jsonl", key_path),
+                (b"{}", output_path, "relative-key"),
+                (b"{}", output_path, key_path),
+                (b"{}", output_path, str(Path(directory) / "missing-key")),
+            ]
+            for payload, output, key in cases:
+                with self.subTest(output=output, key=key):
+                    with patch.dict(os.environ, {
+                        "AGENTDUST_FIXTURE_CAPTURE_PATH": output,
+                        "AGENTDUST_FIXTURE_KEY_FILE": key,
+                    }), patch("capture_claude_fixture._read_bounded_stdin", return_value=payload):
+                        main()
+            self.assertFalse(Path(output_path).exists())
 
     def test_ids_are_stable_only_within_the_ephemeral_key(self):
         payload = b'{"hook_event_name":"SubagentStart","session_id":"s1","agent_id":"a1"}'

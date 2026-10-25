@@ -190,6 +190,14 @@ class CheckerTest(unittest.TestCase):
         problem = self.only_problem(build_model(rows=rows))
         self.assertIn("implemented", problem)
 
+    def test_an_unclosed_inline_code_span_does_not_create_a_path(self):
+        rows = [
+            ("Refuse symlinks", "S1", "implemented", f"`{TEST_FILE}"),
+            GOOD_ROWS[1],
+        ]
+        problem = self.only_problem(build_model(rows=rows))
+        self.assertIn("implemented", problem)
+
     def test_an_unrecognised_status_is_reported(self):
         for status in ["done", "planned", "planned M", "implemented (M1)", "M1", ""]:
             with self.subTest(status=status):

@@ -211,12 +211,11 @@ def is_requirement_list(value):
         position = consume_requirement_identifier(value, position)
         if position is None:
             return False
-        if position == len(value):
-            return True
-        position = consume_requirement_separator(value, position)
-        if position is None or position == len(value):
-            return False
-    return False
+        if position < len(value):
+            position = consume_requirement_separator(value, position)
+            if position is None or position == len(value):
+                return False
+    return position == len(value)
 
 
 def check_requirement(number, row, columns):
