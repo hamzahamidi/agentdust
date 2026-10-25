@@ -44,7 +44,7 @@ if ! git -C "$TAP_DIR" diff --cached --quiet; then
   git -C "$TAP_DIR" -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "agentdust $VERSION"
 fi
 
-if [ "$(git -C "$TAP_DIR" rev-parse HEAD)" != "$branch_start" ]; then
+if [[ $(git -C "$TAP_DIR" rev-parse HEAD) != "$branch_start" ]]; then
   git -C "$TAP_DIR" push origin "HEAD:$branch"
 fi
 
@@ -54,7 +54,7 @@ if git -C "$TAP_DIR" diff --quiet "origin/$base" -- Formula; then
 fi
 
 existing_pr="$(gh pr list --repo "$TAP_REPOSITORY" --head "$branch" --state open --json number --jq '.[0].number // ""')"
-if [ -n "$existing_pr" ]; then
+if [[ -n "$existing_pr" ]]; then
   echo "Pull request #$existing_pr is already open"
 else
   gh pr create --repo "$TAP_REPOSITORY" --base "$base" --head "$branch" --title "agentdust $VERSION" --body "Updates the formula to agentdust $VERSION. Publish the release before merging this pull request."

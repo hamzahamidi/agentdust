@@ -164,126 +164,160 @@ fn execute(args: &[&str]) -> io::Result<()> {
     {
         return Err(error(USAGE));
     }
-    #[cfg(target_os = "linux")]
-    if enable.is_some() || args == ["resume"] {
-        require_supported_data_volume(&dir)?;
-    }
-    if let Some(request) = &enable {
-        let existing = automatic::read(&dir)?;
-        if !existing.projects.is_empty() {
-            merged_projects(
-                &existing.projects,
-                &request.projects,
-                &secret::load_existing(&dir).map_err(error)?,
-            )?;
-        }
-    }
+    validate_request(&dir, args, enable.as_ref())?;
     let provider = Provider::new()?;
     if let Some(request) = &enable {
-        println!(
-            "Selected {} exact session-start directories:",
-            request.projects.len()
-        );
-        for project in &request.projects {
-            println!(
-                "  {}",
-                agentdust_core::sanitize::escape(&project.to_string_lossy())
-            );
-        }
+        show_selection(request);
     }
     if !enable.as_ref().is_some_and(|request| request.unattended) {
         human_consent(&provider, args)?;
     }
     safe_open::ensure_dir(&dir).map_err(error)?;
-    let mut guard = PolicyGuard::acquire(&dir)?;
-    if let Some(request) = enable {
-        let install_secret = secret::load_or_create(&dir).map_err(error)?;
-        add_projects(&mut guard, &request.projects, &install_secret)?;
-        drop(guard);
-        if let Err(err) = install_worker(&dir) {
-            let mut guard = PolicyGuard::acquire(&dir)?;
-            guard.policy.enabled = false;
-            guard.write()?;
-            return Err(err);
-        }
-        println!(
-            "Automatic cleanup enabled for {} selected directories. Scope is exact, not recursive.",
-            request.projects.len()
-        );
-        return Ok(());
+    let guard = PolicyGuard::acquire(&dir)?;
+    match enable {
+        Some(request) => enable_cleanup(&dir, guard, &request),
+        None => execute_policy(args, &dir, &provider, guard),
     }
+}
+
+fn validate_request(dir: &Path, _args: &[&str], enable: Option<&EnableRequest>) -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    if enable.is_some() || _args == ["resume"] {
+        require_supported_data_volume(dir)?;
+    }
+    if let Some(request) = enable {
+        let existing = automatic::read(dir)?;
+        if !existing.projects.is_empty() {
+            merged_projects(
+                &existing.projects,
+                &request.projects,
+                &secret::load_existing(dir).map_err(error)?,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn show_selection(request: &EnableRequest) {
+    println!(
+        "Selected {} exact session-start directories:",
+        request.projects.len()
+    );
+    for project in &request.projects {
+        println!(
+            "  {}",
+            agentdust_core::sanitize::escape(&project.to_string_lossy())
+        );
+    }
+}
+
+fn enable_cleanup(dir: &Path, mut guard: PolicyGuard, request: &EnableRequest) -> io::Result<()> {
+    let install_secret = secret::load_or_create(dir).map_err(error)?;
+    add_projects(&mut guard, &request.projects, &install_secret)?;
+    drop(guard);
+    if let Err(err) = install_worker(dir) {
+        let mut guard = PolicyGuard::acquire(dir)?;
+        guard.policy.enabled = false;
+        guard.write()?;
+        return Err(err);
+    }
+    println!(
+        "Automatic cleanup enabled for {} selected directories. Scope is exact, not recursive.",
+        request.projects.len()
+    );
+    Ok(())
+}
+
+fn execute_policy(args: &[&str], dir: &Path, provider: &Provider, guard: PolicyGuard) -> io::Result<()> {
     match args {
         ["resume"] => {
-            if guard.policy.projects.is_empty() {
-                return Err(error("enable a project directory first"));
-            }
-            guard.policy.enabled = true;
-            guard.write()?;
-            drop(guard);
-            if let Err(err) = install_worker(&dir) {
-                let mut guard = PolicyGuard::acquire(&dir)?;
-                guard.policy.enabled = false;
-                guard.write()?;
-                return Err(err);
-            }
-            println!("Automatic cleanup resumed for the previously enabled directories.");
+            resume(dir, guard)?;
         }
-        ["disable", project] => {
-            let project = fs::canonicalize(project)?;
-            let install_secret = secret::load_existing(&dir).map_err(error)?;
-            let key = cwd::cwd_key(
-                &install_secret,
-                project.to_str().ok_or_else(|| error("project is not UTF-8"))?,
-            )
-            .ok_or_else(|| error("project cannot be recorded"))?;
-            guard.policy.projects.retain(|candidate| candidate != &key);
-            let stop = guard.policy.projects.is_empty();
-            if stop {
-                guard.policy.enabled = false;
-            }
-            guard.write()?;
-            drop(guard);
-            if stop {
-                remove_worker()?;
-            }
-            println!("Selected directory is outside automatic cleanup scope.");
-        }
-        ["pause"] | ["disable"] => {
-            guard.policy.enabled = false;
-            if args == ["disable"] {
-                guard.policy.projects.clear();
-            }
-            guard.write()?;
-            drop(guard);
-            remove_worker()?;
-            println!("Automatic cleanup is off. Kept process identities remain protected.");
-        }
-        ["keep", pid] => {
-            let pid: i32 = pid.parse().map_err(error)?;
-            let identity = match provider.read(pid)? {
-                ProcessRead::Present(process) => process.kernel,
-                ProcessRead::PathUnreadable(kernel) => kernel,
-                ProcessRead::Gone => return Err(error("process is gone")),
-            };
-            if identity.uid != unsafe { libc::geteuid() } || pid <= 1 {
-                return Err(error("select one process owned by this user"));
-            }
-            if !guard.policy.keep.contains(&identity) {
-                guard.policy.keep.push(identity);
-            }
-            guard.write()?;
-            println!("Kept process {pid}. Manual and automatic cleanup will leave this identity alone.");
-        }
-        ["unkeep", pid] => {
-            let pid: i32 = pid.parse().map_err(error)?;
-            guard.policy.keep.retain(|identity| identity.pid != pid);
-            guard.write()?;
-            println!(
-                "Removed keeps for PID {pid}. Future cleanup still requires fresh ownership and identity checks."
-            );
-        }
+        ["disable", project] => disable_project(dir, guard, project)?,
+        ["pause"] | ["disable"] => disable_all(args, guard)?,
+        ["keep", pid] => keep_process(provider, guard, pid)?,
+        ["unkeep", pid] => unkeep_process(guard, pid)?,
         _ => unreachable!(),
     }
+    Ok(())
+}
+
+fn resume(dir: &Path, mut guard: PolicyGuard) -> io::Result<()> {
+    if guard.policy.projects.is_empty() {
+        return Err(error("enable a project directory first"));
+    }
+    guard.policy.enabled = true;
+    guard.write()?;
+    drop(guard);
+    if let Err(err) = install_worker(dir) {
+        let mut guard = PolicyGuard::acquire(dir)?;
+        guard.policy.enabled = false;
+        guard.write()?;
+        return Err(err);
+    }
+    println!("Automatic cleanup resumed for the previously enabled directories.");
+    Ok(())
+}
+
+fn disable_project(dir: &Path, mut guard: PolicyGuard, path: &str) -> io::Result<()> {
+    let project = fs::canonicalize(path)?;
+    let install_secret = secret::load_existing(dir).map_err(error)?;
+    let key = cwd::cwd_key(
+        &install_secret,
+        project.to_str().ok_or_else(|| error("project is not UTF-8"))?,
+    )
+    .ok_or_else(|| error("project cannot be recorded"))?;
+    guard.policy.projects.retain(|candidate| candidate != &key);
+    let stop = guard.policy.projects.is_empty();
+    if stop {
+        guard.policy.enabled = false;
+    }
+    guard.write()?;
+    drop(guard);
+    if stop {
+        remove_worker()?;
+    }
+    println!("Selected directory is outside automatic cleanup scope.");
+    Ok(())
+}
+
+fn disable_all(args: &[&str], mut guard: PolicyGuard) -> io::Result<()> {
+    guard.policy.enabled = false;
+    if args == ["disable"] {
+        guard.policy.projects.clear();
+    }
+    guard.write()?;
+    drop(guard);
+    remove_worker()?;
+    println!("Automatic cleanup is off. Kept process identities remain protected.");
+    Ok(())
+}
+
+fn keep_process(provider: &Provider, mut guard: PolicyGuard, value: &str) -> io::Result<()> {
+    let pid: i32 = value.parse().map_err(error)?;
+    let identity = match provider.read(pid)? {
+        ProcessRead::Present(process) => process.kernel,
+        ProcessRead::PathUnreadable(kernel) => kernel,
+        ProcessRead::Gone => return Err(error("process is gone")),
+    };
+    if identity.uid != unsafe { libc::geteuid() } || pid <= 1 {
+        return Err(error("select one process owned by this user"));
+    }
+    if !guard.policy.keep.contains(&identity) {
+        guard.policy.keep.push(identity);
+    }
+    guard.write()?;
+    println!("Kept process {pid}. Manual and automatic cleanup will leave this identity alone.");
+    Ok(())
+}
+
+fn unkeep_process(mut guard: PolicyGuard, value: &str) -> io::Result<()> {
+    let pid: i32 = value.parse().map_err(error)?;
+    guard.policy.keep.retain(|identity| identity.pid != pid);
+    guard.write()?;
+    println!(
+        "Removed keeps for PID {pid}. Future cleanup still requires fresh ownership and identity checks."
+    );
     Ok(())
 }
 
@@ -720,45 +754,14 @@ fn worker(dir: &Path) -> io::Result<()> {
             .map_err(error)?;
             next_maintenance_check = Instant::now() + Duration::from_secs(60);
         }
-        let fresh_stamp = journal_stamp(dir)?;
-        if fresh_stamp != stamp {
-            let report = Journal::new(dir).read().map_err(error)?;
-            if report.unsupported_version || report.skipped_lines() != 0 {
-                automatic::write_report(
-                    dir,
-                    &json!({"wall_ms": clock::wall_ms(), "state": "unavailable", "reason": "journal_unavailable", "recent_results": history}),
-                )?;
-                return Err(error("journal unavailable"));
-            }
-            records = report.records;
-            stamp = fresh_stamp;
-        }
-        let identities: HashSet<_> = records
-            .iter()
-            .filter_map(|record| {
-                record
-                    .agent_identity
-                    .as_ref()
-                    .map(|identity| identity.kernel(&record.boot))
-            })
-            .collect();
-        if identities.len() > 4096 {
-            return Err(error("owner watch limit reached"));
-        }
+        refresh_records(dir, &mut stamp, &mut records, &history)?;
+        let identities = owner_identities(&records)?;
         gone.borrow_mut().retain(|identity| identities.contains(identity));
         let probe = OwnerProbe {
             provider: &provider,
             gone: &gone,
         };
-        let scopes = session::scopes(&records, &probe);
-        let mut current = Vec::new();
-        for scope in scopes {
-            for owner in scope.owner_states() {
-                if !current.iter().any(|(identity, _)| identity == &owner.identity) {
-                    current.push((owner.identity, owner.liveness));
-                }
-            }
-        }
+        let current = current_owners(&records, &probe);
         if current.len() > 4096 {
             return Err(error("owner watch limit reached"));
         }
@@ -767,14 +770,77 @@ fn worker(dir: &Path) -> io::Result<()> {
             owners = current;
         }
         if reconcile > 0 {
-            let guard = PolicyGuard::acquire(dir)?;
-            automatic::prune_attempts(dir, &probe)?;
-            drop(guard);
-            let pending = sweep(&executor, dir, &mut history)?;
+            let pending = reconcile_once(&executor, dir, &probe, &mut history)?;
             reconcile = if pending { reconcile - 1 } else { 0 };
         }
         std::thread::sleep(Duration::from_secs(1));
     }
+}
+
+fn refresh_records(
+    dir: &Path,
+    stamp: &mut Vec<(String, u64, u64, i64, i64)>,
+    records: &mut Vec<journal::Record>,
+    history: &[Value],
+) -> io::Result<()> {
+    let fresh_stamp = journal_stamp(dir)?;
+    if fresh_stamp == *stamp {
+        return Ok(());
+    }
+    let report = Journal::new(dir).read().map_err(error)?;
+    if report.unsupported_version || report.skipped_lines() != 0 {
+        automatic::write_report(
+            dir,
+            &json!({"wall_ms": clock::wall_ms(), "state": "unavailable", "reason": "journal_unavailable", "recent_results": history}),
+        )?;
+        return Err(error("journal unavailable"));
+    }
+    *records = report.records;
+    *stamp = fresh_stamp;
+    Ok(())
+}
+
+fn owner_identities(records: &[journal::Record]) -> io::Result<HashSet<KernelIdentity>> {
+    let identities: HashSet<_> = records
+        .iter()
+        .filter_map(|record| {
+            record
+                .agent_identity
+                .as_ref()
+                .map(|identity| identity.kernel(&record.boot))
+        })
+        .collect();
+    if identities.len() > 4096 {
+        return Err(error("owner watch limit reached"));
+    }
+    Ok(identities)
+}
+
+fn current_owners(
+    records: &[journal::Record],
+    probe: &impl LivenessProbe,
+) -> Vec<(KernelIdentity, Liveness)> {
+    let mut current = Vec::new();
+    for scope in session::scopes(records, probe) {
+        for owner in scope.owner_states() {
+            if !current.iter().any(|(identity, _)| identity == &owner.identity) {
+                current.push((owner.identity, owner.liveness));
+            }
+        }
+    }
+    current
+}
+
+fn reconcile_once(
+    executor: &Executor,
+    dir: &Path,
+    probe: &impl LivenessProbe,
+    history: &mut Vec<Value>,
+) -> io::Result<bool> {
+    let guard = PolicyGuard::acquire(dir)?;
+    automatic::prune_attempts(dir, probe)?;
+    drop(guard);
+    sweep(executor, dir, history)
 }
 
 fn sweep(executor: &Executor, dir: &Path, history: &mut Vec<Value>) -> io::Result<bool> {

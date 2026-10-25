@@ -87,123 +87,15 @@ fn every_acknowledged_record_is_present_once_after_a_forced_final_run_whatever_t
     let acknowledged = Mutex::new(Vec::<String>::new());
 
     let (writers, rotator, reads) = thread::scope(|scope| {
-        let writers: Vec<_> = (0..WRITERS)
+        let writers = (0..WRITERS)
             .map(|writer| {
                 let (dir, finished, acknowledged) = (&dir, &finished, &acknowledged);
-                scope.spawn(move || {
-                    let _finished = Finished(finished);
-                    let mut written = Written {
-                        acknowledged: Vec::new(),
-                        dropped: Vec::new(),
-                    };
-                    for seq in 0..PER_WRITER {
-                        let id = format!("w{writer}-{seq}");
-                        let record = numbered(&id, (writer * PER_WRITER + seq) as u64 + 1);
-                        match journal(dir).append(&record) {
-                            Ok(_) => {
-                                acknowledged.lock().unwrap().push(id.clone());
-                                written.acknowledged.push(id);
-                            }
-                            Err(JournalError::Stale { .. }) => written.dropped.push(id),
-                            Err(other) => panic!("{id}: {other}"),
-                        }
-                        if seq % 8 == 0 {
-                            thread::sleep(Duration::from_micros(100));
-                        }
-                    }
-                    written
-                })
+                scope.spawn(move || write_records(dir, writer, finished, acknowledged))
             })
-            .collect();
-
-        let straggler = scope.spawn(|| {
-            let _finished = Finished(&finished);
-            let mut written = Written {
-                acknowledged: Vec::new(),
-                dropped: Vec::new(),
-            };
-            for round in 0..STRAGGLER_ROUNDS {
-                let id = format!("s-{round}");
-                let record = numbered(&id, 100_000 + round as u64);
-                let mut writer = Straggler {
-                    cycles: &cycles,
-                    waiting: true,
-                };
-                match journal(&dir).append_with(&record, &mut writer) {
-                    Ok(appended) => {
-                        assert!(appended.attempts >= 2, "{id} was written once across a full run");
-                        acknowledged.lock().unwrap().push(id.clone());
-                        written.acknowledged.push(id);
-                    }
-                    Err(JournalError::Stale { .. }) => written.dropped.push(id),
-                    Err(other) => panic!("{id}: {other}"),
-                }
-            }
-            written
-        });
-
-        let rotator = scope.spawn(|| {
-            let mut summary = Rotated {
-                markers: 0,
-                dropped_markers: 0,
-                other_drops: 0,
-                last_rotation: Rotation::Empty,
-                last_changed: 0,
-            };
-            loop {
-                let last = finished.load(Ordering::SeqCst) == THREADS;
-                summary.markers += 1;
-                let marker = expired(
-                    &format!("marker-{}", summary.markers),
-                    10_000 + summary.markers as u64,
-                );
-                journal(&dir).append(&marker).unwrap();
-                let report = journal(&dir)
-                    .prune(&keep_everything(), T + summary.markers as u64, BOOT)
-                    .unwrap();
-                summary.dropped_markers += report.retained.dropped_earlier_boot;
-                summary.other_drops += report.retained.dropped_aged
-                    + report.retained.dropped_over_cap
-                    + report.retained.dropped_pinned;
-                summary.last_rotation = report.rotation;
-                summary.last_changed = report.retained.rewritten + report.retained.deleted;
-                cycles.fetch_add(1, Ordering::SeqCst);
-                if last {
-                    return summary;
-                }
-                thread::sleep(Duration::from_millis(1));
-            }
-        });
-
-        let reader = scope.spawn(|| {
-            let mut reads = 0usize;
-            loop {
-                let last = finished.load(Ordering::SeqCst) == THREADS;
-                let before = acknowledged.lock().unwrap().clone();
-                let report = journal(&dir).read().unwrap();
-                reads += 1;
-                assert_eq!(report.malformed_lines, 0);
-                assert_eq!(report.newer_version_lines + report.unknown_kind_lines, 0);
-                let current: BTreeSet<&str> = report
-                    .records
-                    .iter()
-                    .map(|record| record.session_id.as_str())
-                    .collect();
-                let missing: Vec<_> = before
-                    .iter()
-                    .filter(|id| !current.contains(id.as_str()))
-                    .take(3)
-                    .collect();
-                assert!(
-                    missing.is_empty(),
-                    "a read lacks records acknowledged before it began: {missing:?}"
-                );
-                if last {
-                    return reads;
-                }
-                thread::sleep(Duration::from_millis(2));
-            }
-        });
+            .collect::<Vec<_>>();
+        let straggler = scope.spawn(|| straggler_records(&dir, &finished, &cycles, &acknowledged));
+        let rotator = scope.spawn(|| rotate_until_finished(&dir, &finished, &cycles));
+        let reader = scope.spawn(|| read_until_finished(&dir, &finished, &acknowledged));
 
         let mut written: Vec<Written> = writers.into_iter().map(|writer| writer.join().unwrap()).collect();
         written.push(straggler.join().unwrap());
@@ -253,5 +145,127 @@ fn every_acknowledged_record_is_present_once_after_a_forced_final_run_whatever_t
         if fs::metadata(&path).unwrap().is_file() {
             assert_eq!(fs::metadata(&path).unwrap().mode() & 0o777, 0o600, "{name}");
         }
+    }
+}
+
+fn write_records(
+    dir: &TempDir,
+    writer: usize,
+    finished: &AtomicUsize,
+    acknowledged: &Mutex<Vec<String>>,
+) -> Written {
+    let _finished = Finished(finished);
+    let mut written = Written {
+        acknowledged: Vec::new(),
+        dropped: Vec::new(),
+    };
+    for seq in 0..PER_WRITER {
+        let id = format!("w{writer}-{seq}");
+        let record = numbered(&id, (writer * PER_WRITER + seq) as u64 + 1);
+        match journal(dir).append(&record) {
+            Ok(_) => {
+                acknowledged.lock().unwrap().push(id.clone());
+                written.acknowledged.push(id);
+            }
+            Err(JournalError::Stale { .. }) => written.dropped.push(id),
+            Err(other) => panic!("{id}: {other}"),
+        }
+        if seq % 8 == 0 {
+            thread::sleep(Duration::from_micros(100));
+        }
+    }
+    written
+}
+
+fn straggler_records(
+    dir: &TempDir,
+    finished: &AtomicUsize,
+    cycles: &AtomicUsize,
+    acknowledged: &Mutex<Vec<String>>,
+) -> Written {
+    let _finished = Finished(finished);
+    let mut written = Written {
+        acknowledged: Vec::new(),
+        dropped: Vec::new(),
+    };
+    for round in 0..STRAGGLER_ROUNDS {
+        let id = format!("s-{round}");
+        let record = numbered(&id, 100_000 + round as u64);
+        let mut writer = Straggler {
+            cycles,
+            waiting: true,
+        };
+        match journal(dir).append_with(&record, &mut writer) {
+            Ok(appended) => {
+                assert!(appended.attempts >= 2, "{id} was written once across a full run");
+                acknowledged.lock().unwrap().push(id.clone());
+                written.acknowledged.push(id);
+            }
+            Err(JournalError::Stale { .. }) => written.dropped.push(id),
+            Err(other) => panic!("{id}: {other}"),
+        }
+    }
+    written
+}
+
+fn rotate_until_finished(dir: &TempDir, finished: &AtomicUsize, cycles: &AtomicUsize) -> Rotated {
+    let mut summary = Rotated {
+        markers: 0,
+        dropped_markers: 0,
+        other_drops: 0,
+        last_rotation: Rotation::Empty,
+        last_changed: 0,
+    };
+    loop {
+        let last = finished.load(Ordering::SeqCst) == THREADS;
+        summary.markers += 1;
+        let marker = expired(
+            &format!("marker-{}", summary.markers),
+            10_000 + summary.markers as u64,
+        );
+        journal(dir).append(&marker).unwrap();
+        let report = journal(dir)
+            .prune(&keep_everything(), T + summary.markers as u64, BOOT)
+            .unwrap();
+        summary.dropped_markers += report.retained.dropped_earlier_boot;
+        summary.other_drops +=
+            report.retained.dropped_aged + report.retained.dropped_over_cap + report.retained.dropped_pinned;
+        summary.last_rotation = report.rotation;
+        summary.last_changed = report.retained.rewritten + report.retained.deleted;
+        cycles.fetch_add(1, Ordering::SeqCst);
+        if last {
+            return summary;
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+}
+
+fn read_until_finished(dir: &TempDir, finished: &AtomicUsize, acknowledged: &Mutex<Vec<String>>) -> usize {
+    let mut reads = 0usize;
+    loop {
+        let last = finished.load(Ordering::SeqCst) == THREADS;
+        let before = acknowledged.lock().unwrap().clone();
+        let report = journal(dir).read().unwrap();
+        reads += 1;
+        assert_eq!(report.malformed_lines, 0);
+        assert_eq!(report.newer_version_lines + report.unknown_kind_lines, 0);
+        let current: BTreeSet<&str> = report
+            .records
+            .iter()
+            .map(|record| record.session_id.as_str())
+            .collect();
+        let missing: Vec<_> = before
+            .iter()
+            .filter(|id| !current.contains(id.as_str()))
+            .take(3)
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "a read lacks records acknowledged before it began: {missing:?}"
+        );
+        if last {
+            return reads;
+        }
+        thread::sleep(Duration::from_millis(2));
     }
 }

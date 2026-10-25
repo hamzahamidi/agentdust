@@ -20,18 +20,44 @@ ADVERSARIES = (
 DEFAULT_MODEL = "docs/threat-model.md"
 DEFAULT_SPEC = "docs/superpowers/specs/2026-10-03-agentdust-design.md"
 
-FENCE = re.compile(r"^\s*(```|~~~)")
-HEADING = re.compile(r"^##\s+(?:\d+\.\s+)?(.+?)\s*$")
+FENCE = re.compile(r"^\s*(?:```|~~~)")
 SECTION_91 = re.compile(r"^#{2,3}\s+9\.1\b")
 ANY_HEADING = re.compile(r"^#{1,3}\s")
-SPEC_ROW = re.compile(r"^\|\s*(S\d+)\s*\|")
-CITATION = re.compile(r"\bS\d+\b")
+SPEC_ROW = re.compile(r"^\|\s*(S[0-9]+)\s*\|", re.ASCII)
+CITATION = re.compile(r"\bS[0-9]+\b", re.ASCII)
 SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")
-STATUS = re.compile(r"implemented|planned m\d")
-REQUIREMENT = re.compile(r"(?i:none)|S\d+(?:(?:\s*,\s*|\s+)S\d+)*")
+STATUS = re.compile(r"(?:implemented|planned m[0-9]+)", re.IGNORECASE | re.ASCII)
+REQUIREMENT = re.compile(
+    r"(?:none|S[0-9]+(?:[ \t]*,[ \t]*S[0-9]+|[ \t]+S[0-9]+)*)",
+    re.IGNORECASE | re.ASCII,
+)
 RESIDUAL = re.compile(r"^\*\*Residual risk\.\*\*")
 BULLET = re.compile(r"^\s*[-*]\s+\S")
-PATH_SPAN = re.compile(r"`([^`\s]*/[^`\s]*)`")
+
+
+def heading_title(line):
+    if len(line) < 3 or not line.startswith("##") or not line[2].isspace():
+        return None
+    title = line[2:].strip()
+    number, separator, rest = title.partition(".")
+    if separator and number.isascii() and number.isdigit() and rest[:1].isspace():
+        title = rest.lstrip()
+    return title or None
+
+
+def path_spans(text):
+    start = 0
+    while True:
+        start = text.find("`", start)
+        if start < 0:
+            return
+        end = text.find("`", start + 1)
+        if end < 0:
+            return
+        token = text[start + 1 : end]
+        if "/" in token and not any(character.isspace() for character in token):
+            yield token
+        start = end + 1
 
 
 def prose_lines(text):
@@ -63,9 +89,9 @@ def sections(model_text):
     found = {}
     current = None
     for _, line in prose_lines(model_text):
-        heading = HEADING.match(line)
-        if heading:
-            current = found.setdefault(heading.group(1).lower(), [])
+        title = heading_title(line)
+        if title is not None:
+            current = found.setdefault(title.lower(), [])
         elif current is not None:
             current.append(line)
     return found
@@ -147,30 +173,38 @@ def check_citations(model_text, known):
     return problems
 
 
+def check_requirement(number, row, columns):
+    column = columns.get("requirement")
+    if column is None:
+        return []
+    requirement = row[column] if column < len(row) else ""
+    if REQUIREMENT.fullmatch(requirement):
+        return []
+    return [f'line {number}: requirement "{requirement}" is not "none" or a list of S-ids']
+
+
+def check_status(number, row, columns, root):
+    column = columns["status"]
+    status = row[column].lower() if column < len(row) else ""
+    if not STATUS.fullmatch(status):
+        return [f'line {number}: status "{status}" is not "implemented" or "planned M<n>"']
+    if status != "implemented":
+        return []
+    paths = [token for cell in row for token in path_spans(cell)]
+    if not paths:
+        return [f"line {number}: an implemented row names no repository path"]
+    return [
+        f"line {number}: {token} is not a file in the repository"
+        for token in paths
+        if not in_repository(root, token)
+    ]
+
+
 def check_rows(model_text, root):
     problems = []
     for number, row, columns in control_rows(model_text):
-        if "requirement" in columns:
-            requirement = row[columns["requirement"]] if columns["requirement"] < len(row) else ""
-            if not REQUIREMENT.fullmatch(requirement):
-                problems.append(
-                    f'line {number}: requirement "{requirement}" is not "none" or a list of S-ids'
-                )
-        column = columns["status"]
-        status = row[column].lower() if column < len(row) else ""
-        if not STATUS.fullmatch(status):
-            problems.append(
-                f'line {number}: status "{status}" is not "implemented" or "planned M<n>"'
-            )
-        elif status == "implemented":
-            paths = [token for cell in row for token in PATH_SPAN.findall(cell)]
-            if not paths:
-                problems.append(f"line {number}: an implemented row names no repository path")
-            problems += [
-                f"line {number}: {token} is not a file in the repository"
-                for token in paths
-                if not in_repository(root, token)
-            ]
+        problems.extend(check_requirement(number, row, columns))
+        problems.extend(check_status(number, row, columns, root))
     return problems
 
 

@@ -28,6 +28,7 @@ class FormulaTest(unittest.TestCase):
                 "--url", url,
                 "--out", str(self.path / out),
             ],
+            cwd=self.path,
             capture_output=True,
             text=True,
         )

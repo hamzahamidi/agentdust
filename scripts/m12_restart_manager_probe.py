@@ -19,6 +19,7 @@ SYNCHRONIZE = 0x00100000
 WAIT_OBJECT_0 = 0
 WAIT_TIMEOUT = 258
 WAIT_FAILED = 0xFFFFFFFF
+DESCENDANT_IDENTITY = "identity-descendant.json"
 
 DWORD = ctypes.c_uint32
 UINT = ctypes.c_uint32
@@ -31,13 +32,13 @@ class FILETIME(ctypes.Structure):
     _fields_ = [("dwLowDateTime", DWORD), ("dwHighDateTime", DWORD)]
 
 
-class RM_UNIQUE_PROCESS(ctypes.Structure):
+class RmUniqueProcess(ctypes.Structure):
     _fields_ = [("dwProcessId", DWORD), ("ProcessStartTime", FILETIME)]
 
 
-class RM_PROCESS_INFO(ctypes.Structure):
+class RmProcessInfo(ctypes.Structure):
     _fields_ = [
-        ("Process", RM_UNIQUE_PROCESS),
+        ("Process", RmUniqueProcess),
         ("strAppName", WCHAR * 256),
         ("strServiceShortName", WCHAR * 64),
         ("ApplicationType", ctypes.c_int),
@@ -69,9 +70,9 @@ kernel32.GetConsoleWindow.restype = HANDLE
 
 rstrtmgr.RmStartSession.argtypes = [ctypes.POINTER(DWORD), DWORD, ctypes.c_wchar_p]
 rstrtmgr.RmStartSession.restype = DWORD
-rstrtmgr.RmRegisterResources.argtypes = [DWORD, UINT, ctypes.c_void_p, UINT, ctypes.POINTER(RM_UNIQUE_PROCESS), UINT, ctypes.c_void_p]
+rstrtmgr.RmRegisterResources.argtypes = [DWORD, UINT, ctypes.c_void_p, UINT, ctypes.POINTER(RmUniqueProcess), UINT, ctypes.c_void_p]
 rstrtmgr.RmRegisterResources.restype = DWORD
-rstrtmgr.RmGetList.argtypes = [DWORD, ctypes.POINTER(UINT), ctypes.POINTER(UINT), ctypes.POINTER(RM_PROCESS_INFO), ctypes.POINTER(DWORD)]
+rstrtmgr.RmGetList.argtypes = [DWORD, ctypes.POINTER(UINT), ctypes.POINTER(UINT), ctypes.POINTER(RmProcessInfo), ctypes.POINTER(DWORD)]
 rstrtmgr.RmGetList.restype = DWORD
 rstrtmgr.RmShutdown.argtypes = [DWORD, UINT, ctypes.c_void_p]
 rstrtmgr.RmShutdown.restype = DWORD
@@ -122,7 +123,7 @@ def worker(role, directory, mode, spawn_child):
             child = subprocess.Popen([
                 sys.executable, str(Path(__file__).resolve()), "--worker", "descendant", str(directory), "stay", "0"
             ], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0)
-            write_json(directory / "identity-descendant.json", {
+            write_json(directory / DESCENDANT_IDENTITY, {
                 "pid": child.pid,
                 "created": process_creation_time(child._handle),
             })
@@ -166,7 +167,7 @@ def launch_worker(directory, role, mode, owned, spawn_child=False):
         raise
     owned.append((process.pid, created))
     ready_path = Path(directory) / f"ready-{role}.json"
-    descendant_identity = Path(directory) / "identity-descendant.json"
+    descendant_identity = Path(directory) / DESCENDANT_IDENTITY
     descendant_registered = False
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
@@ -198,7 +199,7 @@ def rm_session_for(pid, created):
     code = rstrtmgr.RmStartSession(ctypes.byref(session), 0, key)
     if code != 0:
         raise OSError(f"RmStartSession returned {code}")
-    unique = RM_UNIQUE_PROCESS()
+    unique = RmUniqueProcess()
     unique.dwProcessId = pid
     unique.ProcessStartTime.dwLowDateTime = created & 0xFFFFFFFF
     unique.ProcessStartTime.dwHighDateTime = (created >> 32) & 0xFFFFFFFF
@@ -217,7 +218,7 @@ def rm_list(session):
     if needed.value == 0:
         return []
     count = UINT(needed.value)
-    processes = (RM_PROCESS_INFO * needed.value)()
+    processes = (RmProcessInfo * needed.value)()
     code = rstrtmgr.RmGetList(session, ctypes.byref(needed), ctypes.byref(count), processes, ctypes.byref(reboot))
     if code != 0:
         raise OSError(f"RmGetList returned {code}")
@@ -313,8 +314,7 @@ def cleanup_failure_message(failures):
 
 
 def run_probe(directory):
-    if not kernel32.FreeConsole():
-        pass
+    kernel32.FreeConsole()
     if not kernel32.AllocConsole():
         raise ctypes.WinError(ctypes.get_last_error())
     parent_events = Path(directory) / "events-parent.jsonl"
@@ -326,7 +326,7 @@ def run_probe(directory):
     summary = {"targeted_shutdown": {}, "unresponsive_shutdown": {}, "stale_identity": {}}
     try:
         target, target_record = launch_worker(directory, "target", "exit", owned, spawn_child=True)
-        descendant_identity = wait_ready(Path(directory) / "identity-descendant.json", 5)
+        descendant_identity = wait_ready(Path(directory) / DESCENDANT_IDENTITY, 5)
         descendant_record = wait_ready(Path(directory) / "ready-descendant.json", 5)
         if (descendant_identity["pid"], descendant_identity["created"]) != (descendant_record["pid"], descendant_record["created"]):
             raise RuntimeError("descendant identity changed before readiness")

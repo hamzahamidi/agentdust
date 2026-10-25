@@ -136,7 +136,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
                 self.assertIsInstance(job["timeout-minutes"], int)
 
     def test_two_releases_of_one_tag_never_run_side_by_side(self):
-        self.assertEqual(self.doc["concurrency"]["cancel-in-progress"], False)
+        self.assertFalse(self.doc["concurrency"]["cancel-in-progress"])
         self.assertIn("github.ref", self.doc["concurrency"]["group"])
 
     def test_every_script_the_workflow_runs_exists(self):
@@ -318,8 +318,8 @@ class PackageTest(unittest.TestCase):
         self.assertEqual(sbom["with"]["format"], "cyclonedx-json")
         self.assertEqual(sbom["with"]["output-file"], "dist/agentdust-${{ env.VERSION }}-sbom.cdx.json")
         self.assertEqual(sbom["with"]["syft-version"], "v1.54.0")
-        self.assertEqual(sbom["with"]["upload-artifact"], False)
-        self.assertEqual(sbom["with"]["upload-release-assets"], False)
+        self.assertFalse(sbom["with"]["upload-artifact"])
+        self.assertFalse(sbom["with"]["upload-release-assets"])
         release_files = step_with(self.package, "actions/upload-artifact")
         self.assertEqual(release_files["with"]["name"], "release-files")
         self.assertEqual(release_files["with"]["path"], "dist")

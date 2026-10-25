@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::ffi::{CStr, CString};
 use std::fs::File;
 use std::io;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path};
@@ -65,6 +65,39 @@ struct Scanner {
     entries: u64,
     limited: bool,
     seen: HashSet<(u64, u64)>,
+}
+
+#[derive(Clone, Copy)]
+struct WalkOptions {
+    category: Category,
+    depth: usize,
+    classify: bool,
+    projects: bool,
+    cache: bool,
+}
+
+impl WalkOptions {
+    fn child_category(self, name: &[u8], regular: bool) -> Category {
+        if self.classify && self.depth == 0 {
+            classify_name(name, regular)
+        } else if self.classify && self.depth == 1 && self.cache && name == b"changelog.md" && regular {
+            Category::Rebuildable
+        } else if self.projects && self.depth == 2 && name == b"memory" {
+            Category::ApplicationState
+        } else {
+            self.category
+        }
+    }
+
+    fn descend(self, name: &[u8], category: Category) -> Self {
+        Self {
+            category,
+            depth: self.depth + 1,
+            projects: self.projects || (self.classify && self.depth == 0 && name == b"projects"),
+            cache: self.classify && self.depth == 0 && name == b"cache",
+            ..self
+        }
+    }
 }
 
 pub fn report(config: &Path, project: &Path) -> DiskReport {
@@ -138,11 +171,13 @@ impl Scanner {
                     self.walk(
                         &file,
                         meta.dev(),
-                        category,
-                        0,
-                        classify,
-                        false,
-                        false,
+                        WalkOptions {
+                            category,
+                            depth: 0,
+                            classify,
+                            projects: false,
+                            cache: false,
+                        },
                         &mut result,
                     );
                     if self.limited
@@ -167,19 +202,8 @@ impl Scanner {
         result
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn walk(
-        &mut self,
-        file: &File,
-        device: u64,
-        category: Category,
-        depth: usize,
-        classify: bool,
-        projects: bool,
-        cache: bool,
-        result: &mut RootReport,
-    ) {
-        if depth >= MAX_DEPTH {
+    fn walk(&mut self, file: &File, device: u64, options: WalkOptions, result: &mut RootReport) {
+        if options.depth >= MAX_DEPTH {
             result.skipped.depth_limit += 1;
             return;
         }
@@ -205,79 +229,86 @@ impl Scanner {
             if name.as_bytes() == b"." || name.as_bytes() == b".." {
                 continue;
             }
-            self.entries += 1;
-            let metadata = match stat_at(file.as_raw_fd(), &name) {
-                Ok(metadata) => metadata,
-                Err(_) => {
-                    result.skipped.errors += 1;
-                    continue;
-                }
-            };
-            let kind = metadata.st_mode & libc::S_IFMT;
-            if kind == libc::S_IFLNK {
-                result.skipped.symlinks += 1;
-                continue;
-            }
-            if kind != libc::S_IFREG && kind != libc::S_IFDIR {
-                result.skipped.special_files += 1;
-                continue;
-            }
-            let child_category = if classify && depth == 0 {
-                classify_name(name.as_bytes(), kind == libc::S_IFREG)
-            } else if classify
-                && depth == 1
-                && cache
-                && name.as_bytes() == b"changelog.md"
-                && kind == libc::S_IFREG
-            {
-                Category::Rebuildable
-            } else if projects && depth == 2 && name.as_bytes() == b"memory" {
-                Category::ApplicationState
-            } else {
-                category
-            };
-            if metadata.st_dev as u64 != device {
-                result.skipped.other_filesystems += 1;
-                continue;
-            }
-            if self.seen.contains(&(metadata.st_dev as u64, metadata.st_ino)) {
-                result.skipped.duplicate_inodes += 1;
-                continue;
-            }
-            if kind == libc::S_IFDIR {
-                match open_at(file.as_raw_fd(), &name).and_then(|child| {
-                    let actual = child.metadata()?;
-                    if actual.dev() != metadata.st_dev as u64 || actual.ino() != metadata.st_ino {
-                        return Err(io::Error::other("directory changed"));
-                    }
-                    Ok((child, actual))
-                }) {
-                    Ok((child, actual)) => {
-                        self.seen.insert((actual.dev(), actual.ino()));
-                        add(result, child_category, &actual);
-                        self.walk(
-                            &child,
-                            device,
-                            child_category,
-                            depth + 1,
-                            classify,
-                            projects || (classify && depth == 0 && name.as_bytes() == b"projects"),
-                            classify && depth == 0 && name.as_bytes() == b"cache",
-                            result,
-                        );
-                    }
-                    Err(_) => result.skipped.errors += 1,
-                }
-            } else {
-                self.seen.insert((metadata.st_dev as u64, metadata.st_ino));
-                let usage = &mut result.usage[child_category as usize];
-                usage.files += 1;
-                usage.logical_bytes = usage.logical_bytes.saturating_add(metadata.st_size.max(0) as u64);
-                usage.allocated_bytes = usage
-                    .allocated_bytes
-                    .saturating_add((metadata.st_blocks.max(0) as u64).saturating_mul(512));
-            }
+            self.walk_entry(file, device, options, &name, result);
         }
+    }
+
+    fn walk_entry(
+        &mut self,
+        file: &File,
+        device: u64,
+        options: WalkOptions,
+        name: &CStr,
+        result: &mut RootReport,
+    ) {
+        self.entries += 1;
+        let metadata = match stat_at(file.as_raw_fd(), name) {
+            Ok(metadata) => metadata,
+            Err(_) => {
+                result.skipped.errors += 1;
+                return;
+            }
+        };
+        let kind = metadata.st_mode & libc::S_IFMT;
+        if kind == libc::S_IFLNK {
+            result.skipped.symlinks += 1;
+            return;
+        }
+        if kind != libc::S_IFREG && kind != libc::S_IFDIR {
+            result.skipped.special_files += 1;
+            return;
+        }
+        if metadata.st_dev as u64 != device {
+            result.skipped.other_filesystems += 1;
+            return;
+        }
+        if self.seen.contains(&(metadata.st_dev as u64, metadata.st_ino)) {
+            result.skipped.duplicate_inodes += 1;
+            return;
+        }
+        let category = options.child_category(name.to_bytes(), kind == libc::S_IFREG);
+        if kind == libc::S_IFDIR {
+            self.walk_directory(file, device, options, name, category, &metadata, result);
+        } else {
+            self.add_file(category, &metadata, result);
+        }
+    }
+
+    fn walk_directory(
+        &mut self,
+        file: &File,
+        device: u64,
+        options: WalkOptions,
+        name: &CStr,
+        category: Category,
+        metadata: &libc::stat,
+        result: &mut RootReport,
+    ) {
+        let child = open_at(file.as_raw_fd(), name).and_then(|child| {
+            let actual = child.metadata()?;
+            if actual.dev() != metadata.st_dev as u64 || actual.ino() != metadata.st_ino {
+                return Err(io::Error::other("directory changed"));
+            }
+            Ok((child, actual))
+        });
+        match child {
+            Ok((child, actual)) => {
+                self.seen.insert((actual.dev(), actual.ino()));
+                add(result, category, &actual);
+                self.walk(&child, device, options.descend(name.to_bytes(), category), result);
+            }
+            Err(_) => result.skipped.errors += 1,
+        }
+    }
+
+    fn add_file(&mut self, category: Category, metadata: &libc::stat, result: &mut RootReport) {
+        self.seen.insert((metadata.st_dev as u64, metadata.st_ino));
+        let usage = &mut result.usage[category as usize];
+        usage.files += 1;
+        usage.logical_bytes = usage.logical_bytes.saturating_add(metadata.st_size.max(0) as u64);
+        usage.allocated_bytes = usage
+            .allocated_bytes
+            .saturating_add((metadata.st_blocks.max(0) as u64).saturating_mul(512));
     }
 }
 
@@ -384,14 +415,17 @@ impl Directory {
         if duplicate < 0 {
             return Err(io::Error::last_os_error());
         }
-        // SAFETY: duplicate is a fresh descriptor, released on failure or transferred to fdopendir.
+        // SAFETY: duplicate is a fresh descriptor owned by this value.
         let owned = unsafe { OwnedFd::from_raw_fd(duplicate) };
+        let directory_fd = owned.into_raw_fd();
         // SAFETY: fdopendir takes ownership only on success.
-        let directory = unsafe { libc::fdopendir(owned.as_raw_fd()) };
+        let directory = unsafe { libc::fdopendir(directory_fd) };
         if directory.is_null() {
-            return Err(io::Error::last_os_error());
+            let error = io::Error::last_os_error();
+            // SAFETY: fdopendir did not take ownership because it failed.
+            unsafe { libc::close(directory_fd) };
+            return Err(error);
         }
-        std::mem::forget(owned);
         Ok(Self(directory))
     }
     fn next(&self) -> io::Result<Option<CString>> {

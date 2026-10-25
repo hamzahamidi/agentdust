@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use agentdust_core::apply::lock::IdentityLock;
-use agentdust_core::manifest::{self, Entry, Origin, Resource};
+use agentdust_core::manifest::{self, Entry, Manifest, Origin, Resource};
 use agentdust_core::safe_open;
 use agentdust_core::user_file::{self, Loaded, Snapshot};
 use serde_json::Value;
@@ -42,6 +42,27 @@ enum Mcp {
     Absent,
     Matching,
     Conflict,
+}
+
+struct SetupState {
+    path: PathBuf,
+    target: String,
+    config: Loaded,
+    before: Loaded,
+    previous: Option<Manifest>,
+    next: Manifest,
+    command: String,
+    mcp_target: String,
+    mcp_state: Option<Mcp>,
+}
+
+struct ChangePlan {
+    after: String,
+    complete: bool,
+    next: Manifest,
+    add_mcp: bool,
+    remove_mcp: bool,
+    file_changed: bool,
 }
 
 fn mcp(env: &RunEnv<'_>) -> Result<Mcp, String> {
@@ -148,78 +169,129 @@ fn run_inner(
     ask: &mut dyn FnMut(&str) -> bool,
     include_mcp: bool,
 ) -> Result<(String, bool), String> {
-    let path = env.config_dir.join("hooks.json");
-    let target = path.to_str().ok_or("hook path is not UTF-8")?;
-    let config = user_file::load(&env.config_dir.join("config.toml")).map_err(|e| e.to_string())?;
-    if let Some(config) = text(&config)? {
-        let parsed: toml::Value = toml::from_str(config).map_err(|_| "Codex config.toml is invalid")?;
-        if parsed.get("hooks").is_some_and(|hooks| {
-            !hooks.as_table().is_some_and(|table| {
-                table.len() == 1 && table.get("state").is_some_and(toml::Value::is_table)
-            })
-        }) {
-            return Err("Codex has inline hooks in config.toml. Move them to hooks.json before using AgentDust setup.".into());
-        }
-        if parsed
-            .get("features")
-            .and_then(|f| f.get("hooks"))
-            .and_then(toml::Value::as_bool)
-            == Some(false)
-        {
-            return Err("Codex hooks are disabled in config.toml".into());
-        }
-    }
-    let before = user_file::load(&path).map_err(|e| e.to_string())?;
-    let previous = manifest::load(env.data_dir).map_err(|e| e.to_string())?;
-    if mode == Mode::Remove && previous.is_none() {
+    let Some(mut setup) = load_setup(env, mode, include_mcp)? else {
         return Ok((
             "Nothing to remove: no AgentDust setup ownership record exists.\n".into(),
             true,
         ));
+    };
+    if mode == Mode::Check {
+        return check_setup(&setup, include_mcp);
     }
-    let mut next = previous.clone().unwrap_or_default();
+    if setup.mcp_state == Some(Mcp::Conflict) {
+        return Err("a different or disabled Codex agentdust MCP entry exists; it is preserved".into());
+    }
+    let plan = plan_changes(env, mode, include_mcp, &mut setup)?;
+    if is_current(&setup, &plan) {
+        return Ok((current_message(include_mcp), plan.complete));
+    }
+    let summary = change_summary(&setup, &plan, include_mcp)?;
+    if !ask(&summary) {
+        return Ok(("Cancelled. Nothing was changed.\n".into(), false));
+    }
+    apply_changes(env, &setup, &plan)?;
+    Ok((success_message(mode, include_mcp), plan.complete))
+}
+
+fn load_setup(env: &RunEnv<'_>, mode: Mode, include_mcp: bool) -> Result<Option<SetupState>, String> {
+    let path = env.config_dir.join("hooks.json");
+    let target = path.to_str().ok_or("hook path is not UTF-8")?.to_owned();
+    let config_path = env.config_dir.join("config.toml");
+    let config = user_file::load(&config_path).map_err(|e| e.to_string())?;
+    check_codex_config(&config)?;
+    let before = user_file::load(&path).map_err(|e| e.to_string())?;
+    let previous = manifest::load(env.data_dir).map_err(|e| e.to_string())?;
+    if mode == Mode::Remove && previous.is_none() {
+        return Ok(None);
+    }
+    let next = previous.clone().unwrap_or_default();
     let command = format!(
         "{} hook codex",
         hook_config::shell_quote(env.exe.to_str().ok_or("binary path is not UTF-8")?)
     );
-    let state = if include_mcp { Some(mcp(env)?) } else { None };
-    let states =
-        hook_config::inspect(text(&before)?, target, &next.entries, &command).map_err(|e| e.to_string())?;
-    if mode == Mode::Check {
-        let ok = state != Some(Mcp::Conflict)
-            && (!include_mcp || state == Some(Mcp::Matching))
-            && states
-                .iter()
-                .all(|s| matches!(s.state, HookState::Installed | HookState::PreExisting));
-        let mut out = format!("Codex hooks: {}\n", path.display());
-        for hook in states {
-            out.push_str(&format!("{}: {:?}\n", hook.event, hook.state));
-        }
-        if let Some(state) = state {
-            out.push_str(&format!("Codex MCP: {state:?}\n"));
-        } else {
-            out.push_str("Codex MCP: not configured by hooks-only setup\n");
-        }
-        out.push_str(
-            "Hook execution requires trust in Codex /hooks. Configuration checks do not verify trust.\n",
+    let mcp_state = if include_mcp { Some(mcp(env)?) } else { None };
+    Ok(Some(SetupState {
+        path,
+        target,
+        config,
+        before,
+        previous,
+        next,
+        command,
+        mcp_target: config_path.to_string_lossy().into_owned(),
+        mcp_state,
+    }))
+}
+
+fn check_codex_config(config: &Loaded) -> Result<(), String> {
+    let Some(config) = text(config)? else {
+        return Ok(());
+    };
+    let parsed: toml::Value = toml::from_str(config).map_err(|_| "Codex config.toml is invalid")?;
+    if parsed.get("hooks").is_some_and(|hooks| {
+        !hooks
+            .as_table()
+            .is_some_and(|table| table.len() == 1 && table.get("state").is_some_and(toml::Value::is_table))
+    }) {
+        return Err(
+            "Codex has inline hooks in config.toml. Move them to hooks.json before using AgentDust setup."
+                .into(),
         );
-        return Ok((out, ok));
     }
-    if state == Some(Mcp::Conflict) {
-        return Err("a different or disabled Codex agentdust MCP entry exists; it is preserved".into());
+    if parsed
+        .get("features")
+        .and_then(|features| features.get("hooks"))
+        .and_then(toml::Value::as_bool)
+        == Some(false)
+    {
+        return Err("Codex hooks are disabled in config.toml".into());
     }
-    let mcp_target = env.config_dir.join("config.toml").to_string_lossy().into_owned();
-    let owned_mcp = include_mcp
-        .then(|| {
-            next.entries
-                .iter()
-                .find(|e| e.resource == Resource::McpServer && e.target == mcp_target && e.key == "agentdust")
-                .cloned()
-        })
-        .flatten();
+    Ok(())
+}
+
+fn check_setup(setup: &SetupState, include_mcp: bool) -> Result<(String, bool), String> {
+    let states = hook_config::inspect(
+        text(&setup.before)?,
+        &setup.target,
+        &setup.next.entries,
+        &setup.command,
+    )
+    .map_err(|e| e.to_string())?;
+    let ok = setup.mcp_state != Some(Mcp::Conflict)
+        && (!include_mcp || setup.mcp_state == Some(Mcp::Matching))
+        && states
+            .iter()
+            .all(|hook| matches!(hook.state, HookState::Installed | HookState::PreExisting));
+    let mut output = format!("Codex hooks: {}\n", setup.path.display());
+    for hook in states {
+        output.push_str(&format!("{}: {:?}\n", hook.event, hook.state));
+    }
+    if let Some(state) = &setup.mcp_state {
+        output.push_str(&format!("Codex MCP: {state:?}\n"));
+    } else {
+        output.push_str("Codex MCP: not configured by hooks-only setup\n");
+    }
+    output.push_str(
+        "Hook execution requires trust in Codex /hooks. Configuration checks do not verify trust.\n",
+    );
+    Ok((output, ok))
+}
+
+fn plan_changes(
+    env: &RunEnv<'_>,
+    mode: Mode,
+    include_mcp: bool,
+    setup: &mut SetupState,
+) -> Result<ChangePlan, String> {
     let (after, entries, complete) = if mode == Mode::Install {
-        let installed = hook_config::install_with_timeout(text(&before)?, target, &next.entries, &command, 3)
-            .map_err(|e| e.to_string())?;
+        let installed = hook_config::install_with_timeout(
+            text(&setup.before)?,
+            &setup.target,
+            &setup.next.entries,
+            &setup.command,
+            3,
+        )
+        .map_err(|e| e.to_string())?;
         if installed
             .states
             .iter()
@@ -231,33 +303,51 @@ fn run_inner(
         }
         (installed.text, installed.entries, true)
     } else {
-        let removed =
-            hook_config::remove(text(&before)?, target, &next.entries).map_err(|e| e.to_string())?;
+        let removed = hook_config::remove(text(&setup.before)?, &setup.target, &setup.next.entries)
+            .map_err(|e| e.to_string())?;
         (removed.text, removed.kept, removed.drift.is_empty())
     };
-    next.entries
-        .retain(|e| !(e.resource == Resource::Hook && e.target == target));
-    next.entries.extend(entries);
-    let add = mode == Mode::Install && state == Some(Mcp::Absent);
-    let remove = mode == Mode::Remove
-        && state == Some(Mcp::Matching)
-        && owned_mcp.as_ref().is_some_and(|e| {
-            e.origin == Origin::Created && e.command == env.exe.to_string_lossy() && e.args == ["mcp"]
+    setup
+        .next
+        .entries
+        .retain(|entry| !(entry.resource == Resource::Hook && entry.target == setup.target));
+    setup.next.entries.extend(entries);
+    let owned_mcp = setup
+        .next
+        .entries
+        .iter()
+        .find(|entry| {
+            entry.resource == Resource::McpServer
+                && entry.target == setup.mcp_target
+                && entry.key == "agentdust"
+        })
+        .cloned();
+    let add_mcp = mode == Mode::Install && setup.mcp_state == Some(Mcp::Absent);
+    let remove_mcp = mode == Mode::Remove
+        && setup.mcp_state == Some(Mcp::Matching)
+        && owned_mcp.as_ref().is_some_and(|entry| {
+            entry.origin == Origin::Created
+                && entry.command == env.exe.to_string_lossy()
+                && entry.args == ["mcp"]
         });
     if include_mcp {
-        next.entries.retain(|e| {
-            !(e.resource == Resource::McpServer && e.target == mcp_target && e.key == "agentdust")
+        setup.next.entries.retain(|entry| {
+            !(entry.resource == Resource::McpServer
+                && entry.target == setup.mcp_target
+                && entry.key == "agentdust")
         });
     }
     if include_mcp && mode == Mode::Install {
-        next.entries.push(Entry {
+        setup.next.entries.push(Entry {
             resource: Resource::McpServer,
-            target: mcp_target,
+            target: setup.mcp_target.clone(),
             key: "agentdust".into(),
-            origin: if add {
+            origin: if add_mcp {
                 Origin::Created
             } else {
-                owned_mcp.as_ref().map_or(Origin::PreExisting, |e| e.origin)
+                owned_mcp
+                    .as_ref()
+                    .map_or(Origin::PreExisting, |entry| entry.origin)
             },
             command: env.exe.to_string_lossy().into_owned(),
             args: vec!["mcp".into()],
@@ -266,82 +356,110 @@ fn run_inner(
             created_event_key: false,
         });
     }
-    let file_changed = before.bytes().unwrap_or_default() != after.as_bytes();
-    if !file_changed && !add && !remove && previous.as_ref() == Some(&next) {
-        return Ok((
-            if include_mcp {
-                "Codex configuration is current. Review new hooks in Codex /hooks before they run.\n".into()
-            } else {
-                "Codex hooks are current. MCP configuration was left untouched.\n".into()
-            },
-            complete,
-        ));
+    let file_changed = setup.before.bytes().unwrap_or_default() != after.as_bytes();
+    Ok(ChangePlan {
+        after,
+        complete,
+        next: setup.next.clone(),
+        add_mcp,
+        remove_mcp,
+        file_changed,
+    })
+}
+
+fn is_current(setup: &SetupState, plan: &ChangePlan) -> bool {
+    !plan.file_changed && !plan.add_mcp && !plan.remove_mcp && setup.previous.as_ref() == Some(&plan.next)
+}
+
+fn current_message(include_mcp: bool) -> String {
+    if include_mcp {
+        "Codex configuration is current. Review new hooks in Codex /hooks before they run.\n".into()
+    } else {
+        "Codex hooks are current. MCP configuration was left untouched.\n".into()
     }
-    let mut plan = format!(
+}
+
+fn change_summary(setup: &SetupState, plan: &ChangePlan, include_mcp: bool) -> Result<String, String> {
+    let mut summary = format!(
         "Codex hook changes in {}\n{}",
-        path.display(),
+        setup.path.display(),
         unified_diff(
-            text(&before)?.unwrap_or_default(),
-            &after,
+            text(&setup.before)?.unwrap_or_default(),
+            &plan.after,
             "hooks.json",
             "hooks.json"
         )
     );
     if !include_mcp {
-        plan.push_str("Linux hooks-only setup leaves MCP configuration untouched.\n");
+        summary.push_str("Linux hooks-only setup leaves MCP configuration untouched.\n");
     }
-    if add {
-        plan.push_str("Registers agentdust mcp with the Codex CLI.\n");
+    if plan.add_mcp {
+        summary.push_str("Registers agentdust mcp with the Codex CLI.\n");
     }
-    if remove {
-        plan.push_str("Removes the setup-owned Codex MCP entry.\n");
+    if plan.remove_mcp {
+        summary.push_str("Removes the setup-owned Codex MCP entry.\n");
     }
-    if !ask(&plan) {
-        return Ok(("Cancelled. Nothing was changed.\n".into(), false));
-    }
+    Ok(summary)
+}
+
+fn apply_changes(env: &RunEnv<'_>, setup: &SetupState, plan: &ChangePlan) -> Result<(), String> {
     safe_open::ensure_dir(env.data_dir).map_err(|e| e.to_string())?;
     let _lock = IdentityLock::try_acquire(&env.data_dir.join("setup-locks"), "codex")
         .map_err(|e| e.to_string())?
         .ok_or("Codex setup is busy")?;
-    if manifest::load(env.data_dir).map_err(|e| e.to_string())? != previous {
+    if manifest::load(env.data_dir).map_err(|e| e.to_string())? != setup.previous {
         return Err("setup manifest changed after it was read".into());
     }
-    if user_file::load(&env.config_dir.join("config.toml")).map_err(|e| e.to_string())? != config {
+    if user_file::load(&env.config_dir.join("config.toml")).map_err(|e| e.to_string())? != setup.config {
         return Err("Codex configuration changed after it was read".into());
     }
-    if file_changed {
-        user_file::replace(&path, &before, after.as_bytes()).map_err(|e| e.to_string())?;
+    if plan.file_changed {
+        user_file::replace(&setup.path, &setup.before, plan.after.as_bytes()).map_err(|e| e.to_string())?;
     }
-    let applied = (|| {
-        if add || remove {
-            change_mcp(env, add)?;
-        }
-        manifest::store(env.data_dir, &next).map_err(|e| e.to_string())
-    })();
-    if let Err(reason) = applied {
-        let mut failures = Vec::new();
-        if add
-            && mcp(env) == Ok(Mcp::Matching)
-            && let Err(e) = change_mcp(env, false)
-        {
-            failures.push(e);
-        }
-        if remove
-            && mcp(env) == Ok(Mcp::Absent)
-            && let Err(e) = change_mcp(env, true)
-        {
-            failures.push(e);
-        }
-        if file_changed && let Err(e) = restore(&path, &before, &after) {
-            failures.push(e);
-        }
+    if let Err(reason) = apply_manifest_and_mcp(env, plan) {
+        let failures = rollback_changes(env, setup, plan);
         return Err(format!("{reason}; rollback failures: {failures:?}"));
     }
-    Ok((if mode == Mode::Install {
+    Ok(())
+}
+
+fn apply_manifest_and_mcp(env: &RunEnv<'_>, plan: &ChangePlan) -> Result<(), String> {
+    if plan.add_mcp || plan.remove_mcp {
+        change_mcp(env, plan.add_mcp)?;
+    }
+    manifest::store(env.data_dir, &plan.next).map_err(|e| e.to_string())
+}
+
+fn rollback_changes(env: &RunEnv<'_>, setup: &SetupState, plan: &ChangePlan) -> Vec<String> {
+    let mut failures = Vec::new();
+    if plan.add_mcp
+        && mcp(env) == Ok(Mcp::Matching)
+        && let Err(error) = change_mcp(env, false)
+    {
+        failures.push(error);
+    }
+    if plan.remove_mcp
+        && mcp(env) == Ok(Mcp::Absent)
+        && let Err(error) = change_mcp(env, true)
+    {
+        failures.push(error);
+    }
+    if plan.file_changed
+        && let Err(error) = restore(&setup.path, &setup.before, &plan.after)
+    {
+        failures.push(error);
+    }
+    failures
+}
+
+fn success_message(mode: Mode, include_mcp: bool) -> String {
+    if mode == Mode::Install {
         if include_mcp {
-            "Codex hooks and MCP configured. Review and trust the six AgentDust hooks in Codex /hooks, then start a new chat. Automatic cleanup waits until all recorded Codex host processes are gone.\n"
+            "Codex hooks and MCP configured. Review and trust the six AgentDust hooks in Codex /hooks, then start a new chat. Automatic cleanup waits until all recorded Codex host processes are gone.\n".into()
         } else {
-            "Codex hooks configured. MCP configuration was left untouched. Review and trust the six AgentDust hooks in Codex /hooks, then start a new chat.\n"
+            "Codex hooks configured. MCP configuration was left untouched. Review and trust the six AgentDust hooks in Codex /hooks, then start a new chat.\n".into()
         }
-    } else { "Setup-owned Codex hooks removed. MCP configuration was left untouched. Modified hooks are preserved.\n" }.into(), complete))
+    } else {
+        "Setup-owned Codex hooks removed. MCP configuration was left untouched. Modified hooks are preserved.\n".into()
+    }
 }

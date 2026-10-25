@@ -18,7 +18,7 @@ impl CliRunner for Codex {
     fn run(&self, args: &[&str]) -> Result<CliOutput, CliError> {
         self.calls
             .borrow_mut()
-            .push(args.iter().map(|s| s.to_string()).collect());
+            .push(args.iter().copied().map(str::to_string).collect());
         let mut output = CliOutput {
             code: Some(0),
             stdout: String::new(),

@@ -13,9 +13,9 @@ export PATH="$HOME/.cargo/bin:$PATH"
 export AGENTDUST_EXT4_TEST_ROOT="$home/tmp"
 
 grep -qi 'microsoft-standard-WSL2' /proc/sys/kernel/osrelease
-test "$(uname -m)" = x86_64
-test "$(findmnt -n -o FSTYPE -T "$HOME")" = ext4
-test "$(findmnt -n -o FSTYPE -T /mnt/c)" != ext4
+[[ $(uname -m) == x86_64 ]]
+[[ $(findmnt -n -o FSTYPE -T "$HOME") == ext4 ]]
+[[ $(findmnt -n -o FSTYPE -T /mnt/c) != ext4 ]]
 
 if ! command -v cargo >/dev/null 2>&1; then
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.99.0
@@ -49,7 +49,7 @@ cargo test --locked -p agentdust --test linux_cli
 cargo build --locked -p agentdust -p agentdust-testkit --bins
 version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')
 release_dist=${AGENTDUST_RELEASE_DIST:-}
-if [ -n "$release_dist" ]; then
+if [[ -n "$release_dist" ]]; then
     mkdir -p "$TMPDIR/release-dist"
     cp "$release_dist/agentdust-$version-linux-x64.tar.gz" "$TMPDIR/release-dist/"
     cp "$release_dist/agentdust-$version.tgz" "$TMPDIR/release-dist/"
@@ -62,8 +62,8 @@ fi
 mkdir -p "$TMPDIR/release-install"
 tar -xzf "$TMPDIR/release-dist/agentdust-$version-linux-x64.tar.gz" -C "$TMPDIR/release-install"
 release_binary="$TMPDIR/release-install/agentdust-$version-linux-x64/agentdust"
-test "$("$release_binary" version)" = "agentdust $version"
-if [ -z "$release_dist" ]; then
+[[ $("$release_binary" version) == "agentdust $version" ]]
+if [[ -z "$release_dist" ]]; then
     cmp "$target/release/agentdust" "$release_binary"
 fi
 
@@ -72,7 +72,7 @@ if AGENTDUST_DATA_DIR=/mnt/c/agentdust-wsl2-ci-data "$release_binary" setup --ch
     exit 1
 fi
 grep -q 'requires writable ext4' "$TMPDIR/drvfs-check.err"
-test ! -e /mnt/c/agentdust-wsl2-ci-data
+[[ ! -e /mnt/c/agentdust-wsl2-ci-data ]]
 
 cargo test --locked -p agentdust-core --test linux_journal_ext4 -- --ignored ext4_journal_append_rotation_and_torn_tail_recovery
 cargo test --locked -p agentdust --test linux_setup_ext4 -- --ignored claude_codex_setup_hooks_and_mcp_work_on_ext4
@@ -108,7 +108,7 @@ rm "$HOME/.config/systemd/user/agentdust-automatic.service"
 systemctl --user daemon-reload
 
 mkdir -p "$TMPDIR/npm-install"
-if [ -n "$release_dist" ]; then
+if [[ -n "$release_dist" ]]; then
     npm install --global --prefix "$TMPDIR/npm-install" "$TMPDIR/release-dist/agentdust-$version.tgz" --ignore-scripts --no-audit --no-fund
 else
     mkdir -p "$TMPDIR/npm-build/bin" "$TMPDIR/npm-build/vendor/linux-x64" "$TMPDIR/npm-dist"
@@ -119,15 +119,17 @@ else
     npm pack "$TMPDIR/npm-build" --pack-destination "$TMPDIR/npm-dist" --ignore-scripts
     npm install --global --prefix "$TMPDIR/npm-install" "$TMPDIR/npm-dist/agentdust-$version.tgz" --ignore-scripts --no-audit --no-fund
 fi
-test "$("$TMPDIR/npm-install/bin/agentdust" version)" = "agentdust $version"
+[[ $("$TMPDIR/npm-install/bin/agentdust" version) == "agentdust $version" ]]
 cmp "$release_binary" "$TMPDIR/npm-install/lib/node_modules/agentdust/vendor/linux-x64/agentdust"
-if [ -z "$release_dist" ]; then
+if [[ -z "$release_dist" ]]; then
     cmp "$target/release/agentdust" "$TMPDIR/npm-build/vendor/linux-x64/agentdust"
 fi
 
 host_pid=$(powershell.exe -NoProfile -NonInteractive -Command '$p = Start-Process -FilePath "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList @("-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 900") -PassThru; $p.Id' | tr -d '\r')
 case "$host_pid" in
-    ''|*[!0-9]*) echo 'WSL interop did not return a Windows host PID' >&2; exit 1 ;;
+    ''|0|*[!0-9]*) echo 'WSL interop did not return a Windows host PID' >&2; exit 1 ;;
+    [1-9]*) ;;
+    *) echo 'WSL interop returned an unexpected Windows host PID' >&2; exit 1 ;;
 esac
 assert_host_alive() {
     powershell.exe -NoProfile -NonInteractive -Command "if (-not (Get-Process -Id $host_pid -ErrorAction SilentlyContinue)) { exit 1 }" >/dev/null
@@ -142,9 +144,10 @@ for proc_exe in /proc/[0-9]*/exe; do
     exe=$(readlink "$proc_exe" 2>/dev/null || true)
     case "${exe,,}" in
         *powershell.exe|*pwsh.exe) windows_process_seen=1 ;;
+        *) : ;;
     esac
 done
-test "$windows_process_seen" = 0
+[[ $windows_process_seen == 0 ]]
 "$release_binary" doctor --json > "$TMPDIR/windows-host-doctor.json"
 python3 - "$TMPDIR/windows-host-doctor.json" <<'PY'
 import json

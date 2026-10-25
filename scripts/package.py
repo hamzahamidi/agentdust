@@ -4,7 +4,10 @@ import hashlib
 import io
 import os
 import tarfile
+import tempfile
 from pathlib import Path
+
+from workspace_paths import resolve_within
 
 
 def add_file(tar: tarfile.TarFile, path: Path, arcname: str, mode: int, mtime: int) -> None:
@@ -26,10 +29,17 @@ def main() -> None:
     parser.add_argument("--out-dir", required=True, type=Path)
     args = parser.parse_args()
 
+    root = Path.cwd()
+    try:
+        binary = resolve_within(args.binary, (root,))
+        out_dir = resolve_within(args.out_dir, (root, Path(tempfile.gettempdir())))
+    except ValueError as error:
+        parser.error(str(error))
+
     mtime = int(os.environ.get("SOURCE_DATE_EPOCH", "0"))
     name = f"agentdust-{args.version}-{args.target}"
     files = [
-        (args.binary, f"{name}/agentdust", 0o755),
+        (binary, f"{name}/agentdust", 0o755),
         (Path("LICENSE"), f"{name}/LICENSE", 0o644),
         (Path("README.md"), f"{name}/README.md", 0o644),
     ]
@@ -38,11 +48,12 @@ def main() -> None:
         for path, arcname, mode in sorted(files, key=lambda entry: entry[1]):
             add_file(tar, path, arcname, mode, mtime)
 
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-    out = args.out_dir / f"{name}.tar.gz"
-    with out.open("wb") as handle:
-        with gzip.GzipFile(filename="", mode="wb", fileobj=handle, mtime=0, compresslevel=9) as gz:
-            gz.write(raw.getvalue())
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / f"{name}.tar.gz"
+    with out.open("wb") as handle, gzip.GzipFile(
+        filename="", mode="wb", fileobj=handle, mtime=0, compresslevel=9
+    ) as gz:
+        gz.write(raw.getvalue())
     print(f"{hashlib.sha256(out.read_bytes()).hexdigest()}  {out.name}")
 
 

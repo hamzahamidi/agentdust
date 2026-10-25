@@ -40,6 +40,7 @@ class TapUpdateTest(unittest.TestCase):
                 "--url", f"https://example.invalid/agentdust-{version}-darwin-arm64.tar.gz",
                 "--out", str(out),
             ],
+            cwd=self.path,
             check=True,
             capture_output=True,
         )
@@ -56,8 +57,8 @@ class TapUpdateTest(unittest.TestCase):
 
     def test_the_first_release_creates_the_formula(self):
         written = self.update("0.1.0")
-        self.assertEqual(written, [FORMULA])
-        self.assertEqual(self.files(), [FORMULA])
+        self.assertEqual([FORMULA], written)
+        self.assertEqual([FORMULA], self.files())
         self.assertEqual(self.read(FORMULA), self.make_formula("0.1.0").read_text(encoding="utf-8"))
 
     def test_a_patch_release_replaces_the_formula_and_adds_no_versioned_one(self):
@@ -192,14 +193,20 @@ class TapUpdateTest(unittest.TestCase):
         formula = self.make_formula("0.1.0")
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            code = tap_update.main(["--tap", str(self.tap), "--formula", str(formula), "--version", "0.1.0"])
+            code = tap_update.main(
+                ["--tap", str(self.tap), "--formula", str(formula), "--version", "0.1.0"],
+                root=self.path,
+            )
         self.assertEqual((code, out.getvalue(), err.getvalue()), (0, FORMULA + "\n", ""))
 
     def test_the_command_line_exits_1_with_a_message_and_changes_nothing_on_refusal(self):
         formula = self.make_formula("0.1.0")
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            code = tap_update.main(["--tap", str(self.tap), "--formula", str(formula), "--version", "0.9.9"])
+            code = tap_update.main(
+                ["--tap", str(self.tap), "--formula", str(formula), "--version", "0.9.9"],
+                root=self.path,
+            )
         self.assertEqual((code, out.getvalue()), (1, ""))
         self.assertIn("0.9.9", err.getvalue())
         self.assertEqual(self.files(), [])
@@ -208,6 +215,7 @@ class TapUpdateTest(unittest.TestCase):
         formula = self.make_formula("0.1.0")
         result = subprocess.run(
             [sys.executable, str(SCRIPTS / "tap_update.py"), "--tap", str(self.tap), "--formula", str(formula), "--version", "0.1.0"],
+            cwd=self.path,
             capture_output=True,
             text=True,
         )

@@ -241,7 +241,7 @@ fn observe(plant_it: Plant) -> (Outcome, bool) {
     result.unwrap();
     let (bytes, inode) = before.expect("only the refusal rows plant something that is not a file");
     let copied = !corrupt_copies(&dir).is_empty();
-    if !path.exists() {
+    if !path.is_file() {
         return (Outcome::Deleted, copied);
     }
     if fs::read(&path).unwrap() == bytes && inode_of(&path) == inode {

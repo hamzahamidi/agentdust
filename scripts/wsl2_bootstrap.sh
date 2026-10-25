@@ -2,7 +2,7 @@
 set -euo pipefail
 
 source_dir=${1:?repository path required}
-test -f "$source_dir/Cargo.toml"
+[[ -f "$source_dir/Cargo.toml" ]]
 
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential ca-certificates curl libssl-dev nodejs npm pkg-config python3

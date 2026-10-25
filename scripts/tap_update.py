@@ -3,7 +3,9 @@ import re
 import sys
 from pathlib import Path
 
-VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
+from workspace_paths import resolve_within
+
+VERSION = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", re.ASCII)
 VERSION_LINE = re.compile(r'^\s*version "([^"]*)"\s*$', re.MULTILINE)
 CLASS_LINE = "class Agentdust < Formula"
 FORMULA_DIR = "Formula"
@@ -81,14 +83,15 @@ def update_tap(tap_dir, formula, version):
     return [str(path.relative_to(tap)) for path, _ in writes]
 
 
-def main(argv=None):
+def main(argv=None, root=None):
     parser = argparse.ArgumentParser(description="Put a release formula into a checkout of the tap.")
     parser.add_argument("--tap", type=Path, required=True)
     parser.add_argument("--formula", type=Path, required=True)
     parser.add_argument("--version", required=True)
     args = parser.parse_args(argv)
     try:
-        written = update_tap(args.tap, args.formula, args.version)
+        formula = resolve_within(args.formula, (root or Path.cwd(),))
+        written = update_tap(args.tap, formula, args.version)
     except (TapError, OSError) as error:
         print(f"tap update failed: {error}", file=sys.stderr)
         return 1
