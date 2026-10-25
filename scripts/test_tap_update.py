@@ -123,12 +123,13 @@ class TapUpdateTest(unittest.TestCase):
 
     def test_a_version_older_than_the_formula_in_the_tap_is_refused_and_nothing_changes(self):
         self.update("0.2.0")
-        before = self.files(), self.read(FORMULA)
+        expected_state = self.files(), self.read(FORMULA)
         with self.assertRaises(tap_update.TapError) as caught:
             self.update("0.1.3")
         self.assertIn("0.1.3", str(caught.exception))
         self.assertIn("0.2.0", str(caught.exception))
-        self.assertEqual(before, (self.files(), self.read(FORMULA)))
+        actual_state = self.files(), self.read(FORMULA)
+        self.assertEqual(expected_state, actual_state)
 
     def test_the_same_version_again_with_the_same_content_changes_nothing(self):
         self.update("0.1.0")
