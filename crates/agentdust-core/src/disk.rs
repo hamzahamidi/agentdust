@@ -108,6 +108,12 @@ impl WalkOptions {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn device_id(device: libc::dev_t) -> u64 {
+    device
+}
+
+#[cfg(not(target_os = "linux"))]
 fn device_id(device: libc::dev_t) -> u64 {
     u64::try_from(device).unwrap_or_default()
 }
