@@ -76,6 +76,14 @@ struct WalkOptions {
     cache: bool,
 }
 
+struct WalkEntry<'a> {
+    device: u64,
+    options: WalkOptions,
+    name: &'a CStr,
+    category: Category,
+    metadata: &'a libc::stat,
+}
+
 impl WalkOptions {
     fn child_category(self, name: &[u8], regular: bool) -> Category {
         if self.classify && self.depth == 0 {
@@ -268,25 +276,26 @@ impl Scanner {
         }
         let category = options.child_category(name.to_bytes(), kind == libc::S_IFREG);
         if kind == libc::S_IFDIR {
-            self.walk_directory(file, device, options, name, category, &metadata, result);
+            self.walk_directory(
+                file,
+                WalkEntry {
+                    device,
+                    options,
+                    name,
+                    category,
+                    metadata: &metadata,
+                },
+                result,
+            );
         } else {
             self.add_file(category, &metadata, result);
         }
     }
 
-    fn walk_directory(
-        &mut self,
-        file: &File,
-        device: u64,
-        options: WalkOptions,
-        name: &CStr,
-        category: Category,
-        metadata: &libc::stat,
-        result: &mut RootReport,
-    ) {
-        let child = open_at(file.as_raw_fd(), name).and_then(|child| {
+    fn walk_directory(&mut self, file: &File, entry: WalkEntry<'_>, result: &mut RootReport) {
+        let child = open_at(file.as_raw_fd(), entry.name).and_then(|child| {
             let actual = child.metadata()?;
-            if actual.dev() != metadata.st_dev as u64 || actual.ino() != metadata.st_ino {
+            if actual.dev() != entry.metadata.st_dev as u64 || actual.ino() != entry.metadata.st_ino {
                 return Err(io::Error::other("directory changed"));
             }
             Ok((child, actual))
@@ -294,8 +303,13 @@ impl Scanner {
         match child {
             Ok((child, actual)) => {
                 self.seen.insert((actual.dev(), actual.ino()));
-                add(result, category, &actual);
-                self.walk(&child, device, options.descend(name.to_bytes(), category), result);
+                add(result, entry.category, &actual);
+                self.walk(
+                    &child,
+                    entry.device,
+                    entry.options.descend(entry.name.to_bytes(), entry.category),
+                    result,
+                );
             }
             Err(_) => result.skipped.errors += 1,
         }

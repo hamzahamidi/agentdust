@@ -5,6 +5,7 @@ set -euo pipefail
 : "${TAP_REPOSITORY:?TAP_REPOSITORY is required}"
 : "${TAP_DIR:?TAP_DIR is required}"
 : "${FORMULA:?FORMULA is required}"
+: "${GITHUB_WORKSPACE:?GITHUB_WORKSPACE is required}"
 : "${GH_TOKEN:?GH_TOKEN is required}"
 
 askpass="$(mktemp)"
@@ -37,7 +38,7 @@ else
   branch_start="$(git -C "$TAP_DIR" rev-parse HEAD)"
 fi
 
-python3 scripts/tap_update.py --tap "$TAP_DIR" --formula "$FORMULA" --version "$VERSION"
+python3 scripts/tap_update.py --root "$GITHUB_WORKSPACE" --tap "$TAP_DIR" --formula "$FORMULA" --version "$VERSION"
 git -C "$TAP_DIR" add Formula
 
 if ! git -C "$TAP_DIR" diff --cached --quiet; then

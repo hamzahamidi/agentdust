@@ -28,8 +28,8 @@ CITATION = re.compile(r"\bS[0-9]+\b", re.ASCII)
 SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")
 STATUS = re.compile(r"(?:implemented|planned m[0-9]+)", re.IGNORECASE | re.ASCII)
 REQUIREMENT = re.compile(
-    r"(?:none|S[0-9]+(?:[ \t]*,[ \t]*S[0-9]+|[ \t]+S[0-9]+)*)",
-    re.IGNORECASE | re.ASCII,
+    r"S[0-9]+(?:[ \t]*,[ \t]*S[0-9]+|[ \t]+S[0-9]+)*",
+    re.ASCII,
 )
 RESIDUAL = re.compile(r"^\*\*Residual risk\.\*\*")
 BULLET = re.compile(r"^\s*[-*]\s+\S")
@@ -178,7 +178,7 @@ def check_requirement(number, row, columns):
     if column is None:
         return []
     requirement = row[column] if column < len(row) else ""
-    if REQUIREMENT.fullmatch(requirement):
+    if requirement.lower() == "none" or REQUIREMENT.fullmatch(requirement):
         return []
     return [f'line {number}: requirement "{requirement}" is not "none" or a list of S-ids']
 

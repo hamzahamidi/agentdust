@@ -85,14 +85,15 @@ def update_tap(tap_dir, formula, version):
 
 def main(argv=None, root=None):
     parser = argparse.ArgumentParser(description="Put a release formula into a checkout of the tap.")
+    parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--tap", type=Path, required=True)
     parser.add_argument("--formula", type=Path, required=True)
     parser.add_argument("--version", required=True)
     args = parser.parse_args(argv)
     try:
-        formula = resolve_within(args.formula, (root or Path.cwd(),))
+        formula = resolve_within(args.formula, (root or args.root,))
         written = update_tap(args.tap, formula, args.version)
-    except (TapError, OSError) as error:
+    except (TapError, OSError, ValueError) as error:
         print(f"tap update failed: {error}", file=sys.stderr)
         return 1
     for path in written:

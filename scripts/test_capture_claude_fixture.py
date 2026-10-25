@@ -87,7 +87,7 @@ class CaptureClaudeFixtureTest(unittest.TestCase):
             self.assertIsNone(normalise(payload, KEY))
 
         with patch("capture_claude_fixture._read_bounded_stdin", side_effect=RecursionError):
-            self.assertEqual(main(), 0)
+            self.assertIsNone(main())
 
     def test_private_capture_file_is_created_with_mode_0600(self):
         from capture_claude_fixture import _append_private

@@ -298,7 +298,7 @@ class PackageTest(unittest.TestCase):
         self.assertIn('epoch="$(git log -1 --format=%ct)"', self.script)
 
     def test_the_checksum_lists_the_tarball_and_is_verified(self):
-        self.assertIn("shasum -a 256 *.tar.gz *.tgz *-sbom.cdx.json > SHA256SUMS", self.script)
+        self.assertIn("shasum -a 256 ./*.tar.gz ./*.tgz ./*-sbom.cdx.json > SHA256SUMS", self.script)
         self.assertIn("shasum -a 256 -c SHA256SUMS", self.script)
 
     def test_the_binary_and_the_tarball_are_attested(self):
@@ -446,6 +446,7 @@ class TapJobTest(unittest.TestCase):
         env = {
             **os.environ,
             "FORMULA": str(formula),
+            "GITHUB_WORKSPACE": str(root),
             "GH_TOKEN": "test-token",
             "PATH": f"{fake_bin}:{os.environ['PATH']}",
             "PR_MARKER": str(pr_marker),
@@ -495,7 +496,7 @@ class TapJobTest(unittest.TestCase):
         command = runs(self.tap)
         self.assertIn("bash scripts/create_tap_pr.sh", command)
         helper = (ROOT / "scripts/create_tap_pr.sh").read_text(encoding="utf-8")
-        self.assertIn('python3 scripts/tap_update.py --tap "$TAP_DIR" --formula "$FORMULA" --version "$VERSION"', helper)
+        self.assertIn('python3 scripts/tap_update.py --root "$GITHUB_WORKSPACE" --tap "$TAP_DIR" --formula "$FORMULA" --version "$VERSION"', helper)
         self.assertIn('merge --no-edit "origin/$base"', helper)
         self.assertIn("gh pr create", helper)
         recovery = (WORKFLOWS / "homebrew-tap-recovery.yml").read_text(encoding="utf-8")
